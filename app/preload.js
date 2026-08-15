@@ -1,0 +1,40 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("storage", {
+  get: async (key) => {
+    const value = await ipcRenderer.invoke("vault-get", key);
+    if (value === null || value === undefined) throw new Error("key not found: " + key);
+    return { key, value };
+  },
+  set: async (key, value) => { await ipcRenderer.invoke("vault-set", key, value); return { key, value }; },
+  delete: async (key) => { await ipcRenderer.invoke("vault-delete", key); return { key, deleted: true }; },
+  list: async (prefix) => ({ keys: await ipcRenderer.invoke("vault-list", prefix || ""), prefix }),
+});
+
+contextBridge.exposeInMainWorld("auth", {
+  status: () => ipcRenderer.invoke("auth-status"),
+  setPassword: (pw) => ipcRenderer.invoke("auth-set-password", pw),
+  changePassword: (o, n) => ipcRenderer.invoke("auth-change-password", o, n),
+  removePassword: (pw) => ipcRenderer.invoke("auth-remove-password", pw),
+  unlockPassword: (pw) => ipcRenderer.invoke("auth-unlock-password", pw),
+  setPin: (pw, pin) => ipcRenderer.invoke("auth-set-pin", pw, pin),
+  removePin: (pw) => ipcRenderer.invoke("auth-remove-pin", pw),
+  unlockPin: (pin) => ipcRenderer.invoke("auth-unlock-pin", pin),
+  lock: () => ipcRenderer.invoke("auth-lock"),
+});
+
+contextBridge.exposeInMainWorld("transfer", {
+  start: () => ipcRenderer.invoke("transfer-start"),
+  stop: () => ipcRenderer.invoke("transfer-stop"),
+  status: () => ipcRenderer.invoke("transfer-status"),
+  receive: (code, replace) => ipcRenderer.invoke("transfer-receive", code, replace),
+});
+contextBridge.exposeInMainWorld("updater", {
+  status: () => ipcRenderer.invoke("updates-status"),
+  install: (text) => ipcRenderer.invoke("updates-install", text),
+  revert: () => ipcRenderer.invoke("updates-revert"),
+  relaunch: () => ipcRenderer.invoke("updates-relaunch"),
+});
+contextBridge.exposeInMainWorld("vaultInfo", {
+  encrypted: () => ipcRenderer.invoke("vault-encrypted"),
+});

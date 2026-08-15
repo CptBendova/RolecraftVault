@@ -1,0 +1,17 @@
+{
+  "name": "rolecraft-vault",
+  "version": "1.9.2",
+  "private": true,
+  "description": "Private, offline roleplay library — characters, personas, lorebooks and prompts.",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron app",
+    "check": "node scripts/check-integrity.js",
+    "build:web": "node scripts/build-web.js",
+    "build:installer": "node scripts/build-installer.js",
+    "sign": "node scripts/sign-update.js"
+  },
+  "devDependencies": {
+    "electron": "33.3.1"
+  }
+}

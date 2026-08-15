@@ -1,0 +1,11 @@
+# never commit the signing key — it is the root of trust for every update
+keys/*.pem
+
+node_modules/
+dist/
+*.exe
+*.rcvup
+*.zip
+
+.DS_Store
+Thumbs.db
