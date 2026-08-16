@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.092";
+const FACTORY_BUILD = "1.093";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -50,6 +50,13 @@ function verifyUpdatePackage(pkg) {
 function activeUpdate() {
   try {
     const man = JSON.parse(fs.readFileSync(updateManifestPath(), "utf8"));
+    // A patch only replaces app.js, so it keeps shadowing the bundled one even after
+    // the shell is reinstalled — running a new installer would silently leave you on
+    // the old interface. The build that was current when the patch was applied is
+    // recorded here; if it no longer matches, the shell has moved on and the patch is
+    // stale. Patches written before this field existed predate every build that has
+    // it, so a missing value is stale too. Versions are never ordered, only compared.
+    if (man.factoryBuild !== FACTORY_BUILD) { revertUpdateToFactory(); return null; }
     const appJs = fs.readFileSync(updateAppJsPath());
     const digest = crypto.createHash("sha256").update(appJs).digest("hex");
     if (digest !== man.hashes["app.js"]) throw new Error("hash");
@@ -700,6 +707,7 @@ function setupAuthIpc() {
       fs.writeFileSync(updateAppJsPath(), v.appJs);
       fs.writeFileSync(updateManifestPath(), JSON.stringify({
         version: pkg.version, notes: v.notes, hashes: pkg.hashes, sig: pkg.sig, installedAt: new Date().toISOString(),
+        factoryBuild: FACTORY_BUILD, // so a later shell upgrade can tell this patch is stale
       }));
       return { ok: true, version: v.version, notes: v.notes };
     } catch (err) { return { ok: false, error: "Couldn't write the update: " + err.message }; }

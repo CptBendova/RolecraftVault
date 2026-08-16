@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.092";
+const APP_VERSION = "1.093";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.092";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.092 — current",
+  heading: "1.093 — current",
+  notes: ["Reinstalling the app now actually replaces the interface. An installed patch kept overriding the newly installed one, so a fresh install could still show the old interface — including a missing version history. Patches now record which build they were applied to and step aside once the app itself is updated.", "Settings are in a more sensible order: appearance and layout first, then security, then updates and version history, with backups and device transfer at the bottom."]
+}, {
+  heading: "1.092",
   notes: ["Records are now written to a temporary file and swapped into place, so a crash or power cut mid-save can no longer leave a half-written vault.", "Setting, changing or removing the master password is all-or-nothing. A record that cannot be read aborts the whole operation with nothing altered, and an interruption part-way through is finished automatically on the next launch.", "If saved data cannot be read, the vault now says so and stays closed instead of opening empty — which previously risked the next save writing over everything that was still intact.", "The auto-revert failsafe no longer mistakes an update stuck on the loading screen for a working one, and allows more time for large vaults to open.", "The version number is now the same everywhere — the app, the installer and the update package had drifted to three different values."]
 }, {
   heading: "Before 1.092",
@@ -6306,160 +6309,7 @@ function SettingsModal({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: ic,
     size: 14
-  }), label)))), window.transfer && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: { fontWeight: 700, marginBottom: 4 }
-  }, "Transfer to another device"), /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.55 }
-  }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network, and the receiving device needs the one\u2011time code."),
-  xferMsg && /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 13, color: xferMsg.ok ? "var(--brass)" : "#e2698a", marginBottom: 10, lineHeight: 1.5 }
-  }, xferMsg.text),
-  xfer ? /*#__PURE__*/React.createElement("div", {
-    className: "card",
-    style: { padding: "14px 16px", marginBottom: 10 }
-  }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Code for the other device"),
-  /*#__PURE__*/React.createElement("div", {
-    className: "serif",
-    style: { fontSize: 26, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
-  }, xfer.code), /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10 }
-  }, "On the other device: Settings \u2192 Transfer \u2192 type this code. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes."),
-  /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: async () => {
-      await window.transfer.stop();
-      setXfer(null);
-      setXferMsg({ ok: true, text: "Sending stopped." });
-    }
-  }, "Stop sending")) : /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-brass",
-    disabled: xferBusy,
-    style: { marginBottom: 10 },
-    onClick: async () => {
-      setXferBusy(true);
-      setXferMsg(null);
-      const r = await window.transfer.start();
-      setXferBusy(false);
-      if (r && r.ok) setXfer(r);
-      else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
-    }
-  }, xferBusy ? spinner("Starting\u2026") : "Share this vault"),
-  /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
-  }, "Receive from another device"),
-  /*#__PURE__*/React.createElement("input", {
-    value: xferCode,
-    onChange: e => { setXferCode(e.target.value); setXferConfirm(false); },
-    placeholder: "Type the code shown on the other device",
-    style: { width: "100%", marginBottom: 8 }
-  }),
-  /*#__PURE__*/React.createElement("label", {
-    style: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "var(--mut)", marginBottom: 10 }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: xferReplace,
-    onChange: e => { setXferReplace(e.target.checked); setXferConfirm(false); }
-  }), "Mirror the other device (also delete records it no longer has)"),
-  /*#__PURE__*/React.createElement("button", {
-    className: xferConfirm ? "btn btn-danger" : "btn btn-ghost",
-    disabled: !xferCode.trim() || xferBusy,
-    style: { opacity: !xferCode.trim() || xferBusy ? .5 : 1 },
-    onClick: async () => {
-      if (!xferConfirm) { setXferConfirm(true); return; }
-      setXferBusy(true);
-      setXferMsg(null);
-      const r = await window.transfer.receive(xferCode.trim(), xferReplace);
-      setXferBusy(false);
-      setXferConfirm(false);
-      if (r && r.ok) {
-        setXferCode("");
-        if (r.upToDate) {
-          setXferMsg({ ok: true, text: "Already up to date \u2014 nothing needed copying (" + r.unchanged + " records checked)." });
-        } else {
-          const bits = [];
-          if (r.added) bits.push(r.added + " new");
-          if (r.updated) bits.push(r.updated + " updated");
-          if (r.removed) bits.push(r.removed + " removed");
-          const mb = r.bytes ? " (" + (r.bytes > 1048576 ? (r.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.bytes / 1024)) + " KB") + " transferred)" : "";
-          setXferMsg({ ok: true, text: (bits.join(", ") || "No changes") + mb + ", " + r.unchanged + " already matched. Relaunch to see them." });
-        }
-      } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
-    }
-  }, xferBusy ? spinner("Checking what changed\u2026") : xferConfirm ? (xferReplace ? "Confirm \u2014 mirror the other device" : "Confirm \u2014 merge changes in") : "Sync from other device")),
-  window.updater && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, "App updates"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: "var(--mut)",
-      marginBottom: 10
-    }
-  }, "Build ", upd ? upd.build : "…", upd && upd.active ? " · update " + upd.active + " active" : " · factory version", ". Updates are signed files — the app only accepts packages signed with your update key, so patches install in place without reinstalling. If an update ever misbehaves, the app auto-reverts to the factory version, and Ctrl+Shift+F12 forces a revert at any time."), updMsg && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: updMsg.ok ? "var(--brass)" : "#e2698a",
-      marginBottom: 10
-    }
-  }, updMsg.text), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => updRef.current.click()
-  }, "Install update file…"), upd && upd.active && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: async () => {
-      const r = await window.updater.revert();
-      setUpdMsg(r.ok ? {
-        ok: true,
-        text: "Reverted to the factory version — relaunch to apply."
-      } : {
-        ok: false,
-        text: r.error
-      });
-      window.updater.status().then(setUpd);
-    }
-  }, "Revert to factory"), updMsg && updMsg.ok && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-primary",
-    onClick: () => window.updater.relaunch()
-  }, "Relaunch now")), /*#__PURE__*/React.createElement("input", {
-    ref: updRef,
-    type: "file",
-    accept: ".rcvup,.json",
-    hidden: true,
-    onChange: async e => {
-      const f = e.target.files && e.target.files[0];
-      e.target.value = "";
-      if (!f) return;
-      try {
-        const text = await f.text();
-        const r = await window.updater.install(text);
-        setUpdMsg(r.ok ? {
-          ok: true,
-          text: "Update " + r.version + " installed — relaunch to apply."
-        } : {
-          ok: false,
-          text: r.error
-        });
-        window.updater.status().then(setUpd);
-      } catch (err) {
-        setUpdMsg({
-          ok: false,
-          text: "Couldn't read that file"
-        });
-      }
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }), label)))), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6663,99 +6513,78 @@ function SettingsModal({
       color: on ? "var(--brass)" : "var(--dim)",
       fontWeight: 600
     }
-  }, v)))), /*#__PURE__*/React.createElement("div", {
+  }, v)))), window.updater && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       marginBottom: 4
     }
-  }, "Backup & transfer"), /*#__PURE__*/React.createElement("div", {
+  }, "App updates"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--mut)",
-      lineHeight: 1.5,
-      marginBottom: 12
+      marginBottom: 10
     }
-  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. \"Download all images\" saves just the pictures as a zip, at the original quality they were added in. Import it here later to restore or move devices. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
+  }, "Build ", upd ? upd.build : "…", upd && upd.active ? " · update " + upd.active + " active" : " · factory version", ". Updates are signed files — the app only accepts packages signed with your update key, so patches install in place without reinstalling. If an update ever misbehaves, the app auto-reverts to the factory version, and Ctrl+Shift+F12 forces a revert at any time."), updMsg && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: updMsg.ok ? "var(--brass)" : "#e2698a",
+      marginBottom: 10
+    }
+  }, updMsg.text), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 10,
+      gap: 8,
       flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-brass",
-    onClick: onExport
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-flex",
-      gap: 7,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.down,
-    size: 14
-  }), " Export backup")), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: () => importRef.current.click()
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-flex",
-      gap: 7,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.up,
-    size: 14
-  }), " Import backup")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => updRef.current.click()
+  }, "Install update file…"), upd && upd.active && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onDownloadImages
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-flex",
-      gap: 7,
-      alignItems: "center"
+    onClick: async () => {
+      const r = await window.updater.revert();
+      setUpdMsg(r.ok ? {
+        ok: true,
+        text: "Reverted to the factory version — relaunch to apply."
+      } : {
+        ok: false,
+        text: r.error
+      });
+      window.updater.status().then(setUpd);
     }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.img,
-    size: 14
-  }), " Download all images")), /*#__PURE__*/React.createElement("input", {
-    ref: importRef,
+  }, "Revert to factory"), updMsg && updMsg.ok && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => window.updater.relaunch()
+  }, "Relaunch now")), /*#__PURE__*/React.createElement("input", {
+    ref: updRef,
     type: "file",
-    accept: "application/json",
+    accept: ".rcvup,.json",
     hidden: true,
-    onChange: e => {
-      if (e.target.files[0]) setPendingImport(e.target.files[0]);
+    onChange: async e => {
+      const f = e.target.files && e.target.files[0];
       e.target.value = "";
+      if (!f) return;
+      try {
+        const text = await f.text();
+        const r = await window.updater.install(text);
+        setUpdMsg(r.ok ? {
+          ok: true,
+          text: "Update " + r.version + " installed — relaunch to apply."
+        } : {
+          ok: false,
+          text: r.error
+        });
+        window.updater.status().then(setUpd);
+      } catch (err) {
+        setUpdMsg({
+          ok: false,
+          text: "Couldn't read that file"
+        });
+      }
     }
-  })), pendingImport && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      padding: 14,
-      border: "1px solid var(--danger-line)",
-      borderRadius: 10,
-      background: "var(--danger-soft)"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      marginBottom: 10
-    }
-  }, "Restore ", /*#__PURE__*/React.createElement("b", null, pendingImport.name), "? This replaces everything currently in the vault."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-danger",
-    onClick: () => {
-      onImport(pendingImport);
-      setPendingImport(null);
-    }
-  }, "Replace and restore"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => setPendingImport(null)
-  }, "Cancel"))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6848,6 +6677,180 @@ function SettingsModal({
       marginBottom: 4
     }
   }, n)))))), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "Backup & transfer"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.5,
+      marginBottom: 12
+    }
+  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. \"Download all images\" saves just the pictures as a zip, at the original quality they were added in. Import it here later to restore or move devices. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    onClick: onExport
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.down,
+    size: 14
+  }), " Export backup")), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => importRef.current.click()
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.up,
+    size: 14
+  }), " Import backup")), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onDownloadImages
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.img,
+    size: 14
+  }), " Download all images")), /*#__PURE__*/React.createElement("input", {
+    ref: importRef,
+    type: "file",
+    accept: "application/json",
+    hidden: true,
+    onChange: e => {
+      if (e.target.files[0]) setPendingImport(e.target.files[0]);
+      e.target.value = "";
+    }
+  })), pendingImport && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      padding: 14,
+      border: "1px solid var(--danger-line)",
+      borderRadius: 10,
+      background: "var(--danger-soft)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginBottom: 10
+    }
+  }, "Restore ", /*#__PURE__*/React.createElement("b", null, pendingImport.name), "? This replaces everything currently in the vault."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-danger",
+    onClick: () => {
+      onImport(pendingImport);
+      setPendingImport(null);
+    }
+  }, "Replace and restore"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setPendingImport(null)
+  }, "Cancel"))), window.transfer && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 700, marginBottom: 4 }
+  }, "Transfer to another device"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.55 }
+  }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network, and the receiving device needs the one\u2011time code."),
+  xferMsg && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: xferMsg.ok ? "var(--brass)" : "#e2698a", marginBottom: 10, lineHeight: 1.5 }
+  }, xferMsg.text),
+  xfer ? /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: { padding: "14px 16px", marginBottom: 10 }
+  }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Code for the other device"),
+  /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: { fontSize: 26, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
+  }, xfer.code), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10 }
+  }, "On the other device: Settings \u2192 Transfer \u2192 type this code. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes."),
+  /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: async () => {
+      await window.transfer.stop();
+      setXfer(null);
+      setXferMsg({ ok: true, text: "Sending stopped." });
+    }
+  }, "Stop sending")) : /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    disabled: xferBusy,
+    style: { marginBottom: 10 },
+    onClick: async () => {
+      setXferBusy(true);
+      setXferMsg(null);
+      const r = await window.transfer.start();
+      setXferBusy(false);
+      if (r && r.ok) setXfer(r);
+      else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
+    }
+  }, xferBusy ? spinner("Starting\u2026") : "Share this vault"),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
+  }, "Receive from another device"),
+  /*#__PURE__*/React.createElement("input", {
+    value: xferCode,
+    onChange: e => { setXferCode(e.target.value); setXferConfirm(false); },
+    placeholder: "Type the code shown on the other device",
+    style: { width: "100%", marginBottom: 8 }
+  }),
+  /*#__PURE__*/React.createElement("label", {
+    style: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "var(--mut)", marginBottom: 10 }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: xferReplace,
+    onChange: e => { setXferReplace(e.target.checked); setXferConfirm(false); }
+  }), "Mirror the other device (also delete records it no longer has)"),
+  /*#__PURE__*/React.createElement("button", {
+    className: xferConfirm ? "btn btn-danger" : "btn btn-ghost",
+    disabled: !xferCode.trim() || xferBusy,
+    style: { opacity: !xferCode.trim() || xferBusy ? .5 : 1 },
+    onClick: async () => {
+      if (!xferConfirm) { setXferConfirm(true); return; }
+      setXferBusy(true);
+      setXferMsg(null);
+      const r = await window.transfer.receive(xferCode.trim(), xferReplace);
+      setXferBusy(false);
+      setXferConfirm(false);
+      if (r && r.ok) {
+        setXferCode("");
+        if (r.upToDate) {
+          setXferMsg({ ok: true, text: "Already up to date \u2014 nothing needed copying (" + r.unchanged + " records checked)." });
+        } else {
+          const bits = [];
+          if (r.added) bits.push(r.added + " new");
+          if (r.updated) bits.push(r.updated + " updated");
+          if (r.removed) bits.push(r.removed + " removed");
+          const mb = r.bytes ? " (" + (r.bytes > 1048576 ? (r.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.bytes / 1024)) + " KB") + " transferred)" : "";
+          setXferMsg({ ok: true, text: (bits.join(", ") || "No changes") + mb + ", " + r.unchanged + " already matched. Relaunch to see them." });
+        }
+      } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
+    }
+  }, xferBusy ? spinner("Checking what changed\u2026") : xferConfirm ? (xferReplace ? "Confirm \u2014 mirror the other device" : "Confirm \u2014 merge changes in") : "Sync from other device")),
+  /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
