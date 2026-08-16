@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.113";
+const FACTORY_BUILD = "1.114";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -227,6 +227,23 @@ function buildManifest() {
   }
   return m;
 }
+/* Both sides of a transfer look identical once you are staring at a code, which
+   is how someone mirrors the wrong way round and deletes the vault they meant to
+   keep. Each device says its own name so the receiving screen can spell out
+   which vault is about to be changed. */
+function deviceName() {
+  try {
+    const h = String(os.hostname() || "").split(".")[0].trim();
+    if (h) return h.slice(0, 40);
+  } catch (e) {}
+  return "Unnamed device";
+}
+function countRecords(manifest) {
+  // only the things a person would recognise as "their stuff"
+  let n = 0;
+  for (const k of Object.keys(manifest)) if (!/^(img:|th:|ui:)/.test(k)) n++;
+  return n;
+}
 const transferPlainPath = () => path.join(updatesDir, "transfer.plain");
 
 /* Streams the vault to disk one record at a time as encrypted NDJSON.
@@ -333,6 +350,23 @@ function startTransferServer() {
   transferServer = http.createServer((req, res) => {
     const route = (req.url || "").split("?")[0];
     // the sending device lists what it holds; only differing records get sent
+    /* Who is on the other end. Deliberately a separate route rather than a field
+       inside /manifest: a receiver on an older build reads that manifest as a
+       bare key map, and any extra field in it would look like a record it lacks
+       — which, mirroring, would empty its own vault. Older builds never call
+       this route, and newer ones cope with the 404. */
+    if (req.method === "GET" && route === "/whoami") {
+      try {
+        const blob = encryptPayload(Buffer.from(JSON.stringify({
+          device: deviceName(), records: countRecords(buildManifest())
+        }), "utf8"), secret);
+        res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": blob.length });
+        res.end(blob);
+      } catch (e) {
+        res.writeHead(500); res.end("err");
+      }
+      return;
+    }
     if (req.method === "GET" && route === "/manifest") {
       try {
         const blob = encryptPayload(Buffer.from(JSON.stringify(buildManifest()), "utf8"), secret);
@@ -379,7 +413,7 @@ function startTransferServer() {
       const code = makeCode(ip, port, secret);
       transferState = { secret, code, expiresAt: Date.now() + 10 * 60 * 1000 };
       transferState.timer = setTimeout(stopTransferServer, 10 * 60 * 1000);
-      resolve({ ok: true, code, ip, port, expiresInMinutes: 10 });
+      resolve({ ok: true, code, ip, port, expiresInMinutes: 10, device: deviceName() });
     });
   });
 }
@@ -507,8 +541,10 @@ function httpToFile(opts, body, destPath) {
   });
 }
 
-/* Incremental sync: compare fingerprints, pull only what differs. */
-async function receiveTransfer(code, mirror) {
+/* Incremental sync: compare fingerprints, pull only what differs.
+   With preview set, everything below is read-only: it reports what would change
+   on THIS device and writes nothing. */
+async function receiveTransfer(code, mirror, preview) {
   let target;
   try { target = parseCode(code); } catch (e) { return { ok: false, error: "That code isn't valid" }; }
   const base = { host: target.ip, port: target.port, timeout: 30000 };
@@ -521,6 +557,13 @@ async function receiveTransfer(code, mirror) {
       return { ok: false, error: "The other device didn't answer. Same Wi-Fi? Still on the Send screen?" };
     return { ok: false, error: "Couldn't read the other device \u2014 check the code was typed correctly" };
   }
+  // a sender on an older build has no /whoami; the sync still works, it just
+  // cannot be named on screen
+  let them = null;
+  try {
+    const blob = await httpBuffer(Object.assign({ path: "/whoami", method: "GET" }, base));
+    them = JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
+  } catch (e) {}
   const local = buildManifest();
   const needed = [];
   let added = 0, updated = 0;
@@ -530,9 +573,23 @@ async function receiveTransfer(code, mirror) {
   }
   const removable = mirror ? Object.keys(local).filter(k => remote[k] === undefined) : [];
   const unchanged = Object.keys(remote).length - needed.length;
+  const who = {
+    thisDevice: deviceName(),
+    thisRecords: countRecords(local),
+    otherDevice: them && them.device || null,
+    otherRecords: them && typeof them.records === "number" ? them.records : null,
+  };
+
+  if (preview) {
+    return Object.assign({
+      ok: true, preview: true, mirror: !!mirror,
+      added, updated, removed: removable.length, unchanged,
+      upToDate: !needed.length && !removable.length,
+    }, who);
+  }
 
   if (!needed.length && !removable.length) {
-    return { ok: true, added: 0, updated: 0, removed: 0, unchanged, bytes: 0, upToDate: true };
+    return Object.assign({ ok: true, added: 0, updated: 0, removed: 0, unchanged, bytes: 0, upToDate: true }, who);
   }
 
   let bytes = 0;
@@ -568,7 +625,7 @@ async function receiveTransfer(code, mirror) {
   for (const k of removable) {
     try { fs.unlinkSync(keyToFile(k)); removed++; } catch (e) {}
   }
-  return { ok: true, added, updated, removed, unchanged, bytes };
+  return Object.assign({ ok: true, added, updated, removed, unchanged, bytes }, who);
 }
 
 const passwordSet = () => !!loadSecurity();
@@ -689,9 +746,10 @@ function setupAuthIpc() {
   ipcMain.handle("transfer-start", () => startTransferServer());
   ipcMain.handle("transfer-stop", () => { stopTransferServer(); return { ok: true }; });
   ipcMain.handle("transfer-status", () => transferState
-    ? { active: true, code: transferState.code, minutesLeft: Math.max(0, Math.round((transferState.expiresAt - Date.now()) / 60000)) }
-    : { active: false });
-  ipcMain.handle("transfer-receive", (e, code, replace) => receiveTransfer(code, replace));
+    ? { active: true, code: transferState.code, minutesLeft: Math.max(0, Math.round((transferState.expiresAt - Date.now()) / 60000)), device: deviceName() }
+    : { active: false, device: deviceName() });
+  ipcMain.handle("transfer-receive", (e, code, replace) => receiveTransfer(code, replace, false));
+  ipcMain.handle("transfer-preview", (e, code, replace) => receiveTransfer(code, replace, true));
   ipcMain.handle("updates-status", () => {
     const act = activeUpdate();
     return { build: FACTORY_BUILD, active: act ? act.version : null, notes: act ? act.notes : "" };

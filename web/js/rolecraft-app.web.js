@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.113";
+const APP_VERSION = "1.114";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.113";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.113 — current",
+  heading: "1.114 — current",
+  notes: ["Device transfer now tells you which vault you are standing in. Both machines say their own name, the panel is split into “send this one” and “receive onto this one”, and before anything is written you get a summary: which device the records are coming from, which device they are landing on, and exactly how many will be added, overwritten and deleted. Nothing is touched until you confirm that summary.", "Mirroring is off by default now. It deletes from whichever device is receiving, and having it on by default was the wrong way round for something that cannot be undone. The tick box now spells out which device loses records, by name.", "Inside a lorebook there is an “Import entry” button. Point it at a JSON file and everything in it joins that book, whatever world the file itself claims — one entry on its own works, and so does a whole lorebook. Duplicate titles still ask before landing. Importing from the Lorebooks screen is unchanged and still files entries by their own world.", "“Export for CharSnap” on a single lore entry, not just the whole book. It writes the same Chub-compatible file with one entry in it."]
+}, {
+  heading: "1.113",
   notes: ["The “Recently deleted” list in Settings now folds away, the way version history does, and stays folded until you open it. A month of deletions could otherwise fill Settings and push everything under it off the screen. The heading says how many are waiting, so you can see there is something in there without opening it."]
 }, {
   heading: "1.112",
@@ -758,6 +761,45 @@ function normalizeLoreImport(obj, fallbackWorld) {
   }
   for (const raw of asArray(obj)) if (raw && typeof raw === "object" && (raw.content || raw.entry || raw.description)) push(raw);
   return done();
+}
+
+/* CharSnap's lorebook import uses the Chub/world-info structure plus CharSnap's
+   own fields (triggers/description/entryType) — emit both per entry. One entry
+   on its own is the same file with a single entry in it, so a whole book and a
+   single entry can never drift apart. */
+function loreToCharSnap(bookName, entries) {
+  const out = {
+    name: bookName || "Lorebook",
+    description: "",
+    entries: {}
+  };
+  entries.forEach((e, i) => {
+    const nm = e.title || "Untitled";
+    const txt = e.content || "";
+    const trig = (e.triggers || []).map(String).filter(Boolean);
+    if (!trig.length) trig.push(nm); // CharSnap requires at least 1 trigger per entry
+    out.entries[String(i + 1)] = {
+      id: i + 1,
+      keys: trig,
+      secondary_keys: [],
+      comment: nm,
+      content: txt,
+      constant: false,
+      selective: true,
+      insertion_order: i + 1,
+      enabled: true,
+      position: "before_char",
+      case_sensitive: false,
+      priority: 10,
+      extensions: {},
+      name: nm,
+      triggers: trig,
+      description: txt,
+      entryType: e.entryType || "Other",
+      isPublic: false
+    };
+  });
+  return out;
 }
 
 /* Convert a vault character into CharSnap's "Import Full Character JSON" shape:
@@ -2964,6 +3006,7 @@ function LoreEntryView({
   onToggleBlur,
   kicker,
   onCopy,
+  onExportCharSnap,
   onEdit,
   onClose,
   onAddImages,
@@ -3055,7 +3098,11 @@ function LoreEntryView({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.copy,
     size: 13
-  }), " Copy")), /*#__PURE__*/React.createElement("button", {
+  }), " Copy")), onExportCharSnap && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    title: "Just this entry, as a CharSnap lorebook file with one entry in it.",
+    onClick: onExportCharSnap
+  }, "Export for CharSnap"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: onEdit
   }, "Edit"), /*#__PURE__*/React.createElement("button", {
@@ -3250,6 +3297,7 @@ function LorebookPage({
   onClose,
   onOpenEntry,
   onNewEntry,
+  onImportEntry,
   onRename,
   onDeleteBook,
   onExportBook,
@@ -3383,7 +3431,11 @@ function LorebookPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.plus,
     size: 14
-  }), " New ", entryNoun)), world && /*#__PURE__*/React.createElement("button", {
+  }), " New ", entryNoun)), onImportEntry && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    title: "Add " + entriesNoun + " from a JSON file straight into this " + bookNoun + ". One " + entryNoun + " on its own is fine, and so is a whole lorebook file — everything in it lands here rather than in a book of its own.",
+    onClick: onImportEntry
+  }, "Import ", entryNoun), world && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
       setRenaming(true);
@@ -6823,13 +6875,19 @@ function SettingsModal({
   }, React.createElement("span", { className: "spin" }), label);
   const [xferCode, setXferCode] = useState("");
   const [xferMsg, setXferMsg] = useState(null);
-  const [xferReplace, setXferReplace] = useState(true);
-  const [xferConfirm, setXferConfirm] = useState(false);
+  /* Mirroring deletes from whichever device is receiving. It used to be on by
+     default, which is the wrong way round for a destructive option: merging
+     costs nothing to undo, mirroring the wrong way costs a vault. */
+  const [xferReplace, setXferReplace] = useState(false);
+  const [xferPlan, setXferPlan] = useState(null); // dry run: what a sync would do here
+  const [thisDevice, setThisDevice] = useState(null);
   useEffect(() => {
     if (window.transfer) window.transfer.status().then(s => {
       if (s && s.active) setXfer(s);
+      if (s && s.device) setThisDevice(s.device);
     }).catch(() => {});
   }, []);
+  const here = thisDevice ? "“" + thisDevice + "”" : "this device";
   const [upd, setUpd] = useState(null);
   const [updMsg, setUpdMsg] = useState(null);
   const updRef = useRef(null);
@@ -7492,9 +7550,17 @@ function SettingsModal({
   }, "Transfer to another device"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.55 }
   }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network, and the receiving device needs the one\u2011time code."),
+  /* Which vault you are standing in. A transfer only ever writes to the device
+     you are sitting at, and that is the one sentence people needed. */
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: "var(--text)", marginBottom: 10, lineHeight: 1.55, padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--panel)" }
+  }, "You are on ", /*#__PURE__*/React.createElement("strong", null, thisDevice || "this device"), ". Nothing below changes the other device \u2014 sending only offers this vault up, and receiving writes onto ", /*#__PURE__*/React.createElement("strong", null, thisDevice || "this device"), "."),
   xferMsg && /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: xferMsg.ok ? "var(--brass)" : "#e2698a", marginBottom: 10, lineHeight: 1.5 }
   }, xferMsg.text),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
+  }, "Send ", here, " to another device"),
   xfer ? /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: { padding: "14px 16px", marginBottom: 10 }
@@ -7504,7 +7570,7 @@ function SettingsModal({
     style: { fontSize: 26, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
   }, xfer.code), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10 }
-  }, "On the other device: Settings \u2192 Transfer \u2192 type this code. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes."),
+  }, "On the other device: Settings \u2192 Transfer \u2192 type this code. It pulls from ", thisDevice || "this device", "; nothing here is altered. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes."),
   /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: async () => {
@@ -7521,37 +7587,74 @@ function SettingsModal({
       setXferMsg(null);
       const r = await window.transfer.start();
       setXferBusy(false);
-      if (r && r.ok) setXfer(r);
-      else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
+      if (r && r.ok) {
+        setXfer(r);
+        if (r.device) setThisDevice(r.device);
+      } else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
     }
   }, xferBusy ? spinner("Starting\u2026") : "Share this vault"),
   /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
-  }, "Receive from another device"),
+  }, "Receive onto ", here),
   /*#__PURE__*/React.createElement("input", {
     value: xferCode,
-    onChange: e => { setXferCode(e.target.value); setXferConfirm(false); },
+    onChange: e => { setXferCode(e.target.value); setXferPlan(null); },
     placeholder: "Type the code shown on the other device",
     style: { width: "100%", marginBottom: 8 }
   }),
   /*#__PURE__*/React.createElement("label", {
-    style: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "var(--mut)", marginBottom: 10 }
+    style: { display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.5 }
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
+    style: { marginTop: 2 },
     checked: xferReplace,
-    onChange: e => { setXferReplace(e.target.checked); setXferConfirm(false); }
-  }), "Mirror the other device (also delete records it no longer has)"),
+    onChange: e => { setXferReplace(e.target.checked); setXferPlan(null); }
+  }), /*#__PURE__*/React.createElement("span", null, "Mirror the other device \u2014 also ", /*#__PURE__*/React.createElement("strong", { style: { color: "var(--danger)" } }, "delete anything on ", thisDevice || "this device"), " that the other one does not have. Leave this off to merge, which only ever adds and updates.")),
+  /* A dry run first. It reads both manifests and writes nothing, so the numbers
+     on the confirm step are the real ones rather than a guess. */
+  xferPlan && /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: { padding: "12px 14px", marginBottom: 10, borderColor: xferPlan.removed ? "var(--danger-line)" : "var(--line)" }
+  }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "About to happen"),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, lineHeight: 1.6, margin: "6px 0 0", color: "var(--text)" }
+  }, /*#__PURE__*/React.createElement("strong", null, xferPlan.otherDevice || "The other device"), xferPlan.otherRecords != null ? " (" + xferPlan.otherRecords + " records)" : "", " \u2192 ", /*#__PURE__*/React.createElement("strong", null, xferPlan.thisDevice || "this device"), xferPlan.thisRecords != null ? " (" + xferPlan.thisRecords + " records)" : ""),
+  /*#__PURE__*/React.createElement("ul", {
+    style: { margin: "8px 0 0", paddingLeft: 18, fontSize: 13, color: "var(--mut)", lineHeight: 1.6 }
+  }, /*#__PURE__*/React.createElement("li", null, xferPlan.added, " to be copied over"),
+  /*#__PURE__*/React.createElement("li", null, xferPlan.updated, " to be overwritten with the other device's version"),
+  /*#__PURE__*/React.createElement("li", { style: xferPlan.removed ? { color: "var(--danger)", fontWeight: 600 } : null }, xferPlan.removed, " to be deleted from ", xferPlan.thisDevice || "this device", xferPlan.removed ? " \u2014 this cannot be undone from here" : ""),
+  /*#__PURE__*/React.createElement("li", null, xferPlan.unchanged, " already the same")),
+  xferPlan.otherDevice ? null : /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, color: "var(--dim)", marginTop: 8, lineHeight: 1.5 }
+  }, "The other device is on an older build, so it cannot tell you its name. The counts above are still correct.")),
+  /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
   /*#__PURE__*/React.createElement("button", {
-    className: xferConfirm ? "btn btn-danger" : "btn btn-ghost",
+    className: xferPlan ? (xferPlan.removed ? "btn btn-danger" : "btn btn-primary") : "btn btn-ghost",
     disabled: !xferCode.trim() || xferBusy,
     style: { opacity: !xferCode.trim() || xferBusy ? .5 : 1 },
     onClick: async () => {
-      if (!xferConfirm) { setXferConfirm(true); return; }
+      if (!xferPlan) {
+        setXferBusy(true);
+        setXferMsg(null);
+        const p = window.transfer.preview
+          ? await window.transfer.preview(xferCode.trim(), xferReplace)
+          : { ok: false, error: "This build cannot preview a sync \u2014 update both devices." };
+        setXferBusy(false);
+        if (p && p.ok) {
+          if (p.device) setThisDevice(p.device);
+          if (p.thisDevice) setThisDevice(p.thisDevice);
+          if (p.upToDate) {
+            setXferMsg({ ok: true, text: "Already up to date \u2014 nothing needs copying (" + p.unchanged + " records checked)." });
+          } else setXferPlan(p);
+        } else setXferMsg({ ok: false, text: p && p.error || "Couldn't reach the other device" });
+        return;
+      }
       setXferBusy(true);
       setXferMsg(null);
       const r = await window.transfer.receive(xferCode.trim(), xferReplace);
       setXferBusy(false);
-      setXferConfirm(false);
+      setXferPlan(null);
       if (r && r.ok) {
         setXferCode("");
         if (r.upToDate) {
@@ -7562,11 +7665,16 @@ function SettingsModal({
           if (r.updated) bits.push(r.updated + " updated");
           if (r.removed) bits.push(r.removed + " removed");
           const mb = r.bytes ? " (" + (r.bytes > 1048576 ? (r.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.bytes / 1024)) + " KB") + " transferred)" : "";
-          setXferMsg({ ok: true, text: (bits.join(", ") || "No changes") + mb + ", " + r.unchanged + " already matched. Relaunch to see them." });
+          setXferMsg({ ok: true, text: (bits.join(", ") || "No changes") + mb + " onto " + (r.thisDevice || "this device") + ", " + r.unchanged + " already matched. Relaunch to see them." });
         }
       } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
     }
-  }, xferBusy ? spinner("Checking what changed\u2026") : xferConfirm ? (xferReplace ? "Confirm \u2014 mirror the other device" : "Confirm \u2014 merge changes in") : "Sync from other device")),
+  }, xferBusy ? spinner(xferPlan ? "Syncing\u2026" : "Checking what would change\u2026") : xferPlan ? (xferReplace ? "Confirm \u2014 mirror onto " + (xferPlan.thisDevice || "this device") : "Confirm \u2014 merge onto " + (xferPlan.thisDevice || "this device")) : "Check what would change"),
+  xferPlan && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: xferBusy,
+    onClick: () => setXferPlan(null)
+  }, "Cancel"))),
   /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
@@ -8601,7 +8709,12 @@ function RolecraftVault() {
   };
   const [jsonImportType, setJsonImportType] = useState(null);
   const jsonImportRef = useRef(null);
-  const triggerJsonImport = type => {
+  /* Importing from inside a lorebook files everything into that book, whatever
+     world the file itself claims. A ref, not state: the file picker's change
+     event fires long after the click and would read a stale value. */
+  const loreImportWorld = useRef(null);
+  const triggerJsonImport = (type, intoWorld) => {
+    loreImportWorld.current = typeof intoWorld === "string" ? intoWorld : null;
     setJsonImportType(type);
     setTimeout(() => jsonImportRef.current && jsonImportRef.current.click(), 0);
   };
@@ -8635,7 +8748,9 @@ function RolecraftVault() {
   };
   const handleJsonImportFile = async file => {
     const type = jsonImportType;
+    const intoWorld = loreImportWorld.current;
     setJsonImportType(null);
+    loreImportWorld.current = null;
     try {
       const data = JSON.parse(await file.text());
       if (type === "characters") {
@@ -8691,11 +8806,16 @@ function RolecraftVault() {
         }
         await commitPersonaImport(fresh, [], "copies");
       } else if (type === "lore") {
-        const res = normalizeLoreImport(data, file.name.replace(/\.json$/i, ""));
+        const res = normalizeLoreImport(data, intoWorld === null ? file.name.replace(/\.json$/i, "") : intoWorld);
         if (!res.entries.length) {
           toast("No lore entries found in that file");
           return;
         }
+        // imported from inside a book: every entry belongs to that book, even if
+        // the file names a world of its own
+        if (intoWorld !== null) res.entries.forEach(e => {
+          e.world = intoWorld;
+        });
         // re-importing a lorebook used to append the lot a second time
         const byKey = new Map(lore.map(e => [loreKey(e), e]));
         const freshEntries = [],
@@ -11407,6 +11527,7 @@ function RolecraftVault() {
           world: viewLoreBook
         }
       }),
+      onImportEntry: () => triggerJsonImport("lore", viewLoreBook || ""),
       onRename: async name => {
         const nm = name.trim();
         const next = lore.map(e => (e.world || "").trim() === viewLoreBook ? {
@@ -11445,40 +11566,7 @@ function RolecraftVault() {
       },
       onStats: () => openRecordStats(viewLoreBook || "Lorebook", entries.map(e => [e.title, e.content, (e.triggers || []).join(" ")].filter(Boolean).join("\n")).join("\n"), entries.flatMap(e => (e.images || []).map(im => im.imgId))),
       onExportCharSnap: () => askExport("this lorebook (CharSnap format)", () => {
-        // CharSnap's lorebook import uses the Chub/world-info structure plus
-        // CharSnap's own fields (triggers/description/entryType) — emit both per entry.
-        const out = {
-          name: viewLoreBook || "Lorebook",
-          description: "",
-          entries: {}
-        };
-        entries.forEach((e, i) => {
-          const nm = e.title || "Untitled";
-          const txt = e.content || "";
-          const trig = (e.triggers || []).map(String).filter(Boolean);
-          if (!trig.length) trig.push(nm); // CharSnap requires at least 1 trigger per entry
-          out.entries[String(i + 1)] = {
-            id: i + 1,
-            keys: trig,
-            secondary_keys: [],
-            comment: nm,
-            content: txt,
-            constant: false,
-            selective: true,
-            insertion_order: i + 1,
-            enabled: true,
-            position: "before_char",
-            case_sensitive: false,
-            priority: 10,
-            extensions: {},
-            name: nm,
-            triggers: trig,
-            description: txt,
-            entryType: e.entryType || "Other",
-            isPublic: false
-          };
-        });
-        downloadJSON(out, sanitizeName(viewLoreBook || "lorebook") + "-charsnap.json");
+        downloadJSON(loreToCharSnap(viewLoreBook, entries), sanitizeName(viewLoreBook || "lorebook") + "-charsnap.json");
         toast("Lorebook exported for CharSnap (Chub-compatible)");
       }),
       onExportBook: () => askExport("this lorebook (including images)", async () => {
@@ -11523,6 +11611,10 @@ function RolecraftVault() {
       blurred: blurred,
       onToggleBlur: toggleBlur,
       onClose: () => setViewLoreEntryId(null),
+      onExportCharSnap: () => askExport("this entry (CharSnap format)", () => {
+        downloadJSON(loreToCharSnap(ve.world, [ve]), sanitizeName(ve.title || "entry") + "-charsnap.json");
+        toast("Entry exported for CharSnap (Chub-compatible)");
+      }),
       onEdit: () => {
         setViewLoreEntryId(null);
         setEditingRecord({

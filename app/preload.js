@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("transfer", {
   stop: () => ipcRenderer.invoke("transfer-stop"),
   status: () => ipcRenderer.invoke("transfer-status"),
   receive: (code, replace) => ipcRenderer.invoke("transfer-receive", code, replace),
+  // read-only: reports what a sync would do to this device, changes nothing
+  preview: (code, replace) => ipcRenderer.invoke("transfer-preview", code, replace),
 });
 contextBridge.exposeInMainWorld("updater", {
   status: () => ipcRenderer.invoke("updates-status"),
