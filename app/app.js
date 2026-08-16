@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.098";
+const APP_VERSION = "1.099";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.098";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.098 — current",
+  heading: "1.099 — current",
+  notes: ["Importing a lorebook you already have no longer adds a second copy of every entry. The app now notices entries that are already in the book and asks what you want: skip them, update them from the file, or keep both anyway. Genuinely new entries come in either way.", "Two entries count as the same when they sit in the same book under the same title, so this works on files from CharSnap and Chub too, where the entry numbering is meaningless.", "Updating an entry from a text-only file keeps its pictures. Only a file that brings its own pictures replaces them."]
+}, {
+  heading: "1.098",
   notes: ["New “Export text only” button on the Characters screen: every character as plain text with no pictures at all. A library that runs to megabytes as a normal export comes out a few kilobytes this way — small enough to read, paste somewhere, or hand to an AI to go over.", "Any lorebooks your characters are linked to travel in that same file, so their wording can be checked against the lore without juggling two exports. Lorebooks nothing points at are left out.", "Lorebooks have the same button when you open one. Both files import straight back into the vault, so text can go out and come back freely — there are simply no pictures to bring with it.", "Exporting a character with “Export JSON” no longer nags about CharSnap tags. That check now only appears where it belongs, on “Export for CharSnap”."]
 }, {
   heading: "1.097",
@@ -1801,6 +1804,8 @@ function NewBucketModal({
 /* ---------- duplicate import decision modal ---------- */
 function DupeImportModal({
   noun,
+  nounPlural, // "entry" does not pluralise by adding an s
+  softImages, // lore keeps its pictures when the incoming file has none
   names,
   freshCount,
   onOverwrite,
@@ -1835,24 +1840,24 @@ function DupeImportModal({
       fontSize: 23,
       margin: "2px 0 8px"
     }
-  }, names.length, " ", noun, names.length === 1 ? "" : "s", " already in your vault"), /*#__PURE__*/React.createElement("div", {
+  }, names.length, " ", names.length === 1 ? noun : nounPlural || noun + "s", " already in your vault"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13.5,
       color: "var(--mut)",
       lineHeight: 1.6,
       marginBottom: 10
     }
-  }, "This file contains ", noun, "s whose names match ones you already have:", " ", /*#__PURE__*/React.createElement("b", {
+  }, "This file contains ", nounPlural || noun + "s", " whose names match ones you already have:", " ", /*#__PURE__*/React.createElement("b", {
     style: {
       color: "var(--text)"
     }
-  }, shown.join(", "), names.length > shown.length ? " +" + (names.length - shown.length) + " more" : ""), ".", freshCount > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " ", freshCount, " new ", noun, freshCount === 1 ? "" : "s", " will import either way.")), sure && /*#__PURE__*/React.createElement("div", {
+  }, shown.join(", "), names.length > shown.length ? " +" + (names.length - shown.length) + " more" : ""), ".", freshCount > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " ", freshCount, " new ", freshCount === 1 ? noun : nounPlural || noun + "s", " will import either way.")), sure && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "#e2698a",
       marginBottom: 10
     }
-  }, "Are you sure? Overwriting replaces the saved text ", /*#__PURE__*/React.createElement("b", null, "and images"), " of the matching ", noun, names.length === 1 ? "" : "s", " with this file's version. This can't be undone."), /*#__PURE__*/React.createElement("div", {
+  }, softImages ? /*#__PURE__*/React.createElement(React.Fragment, null, "Are you sure? Overwriting replaces the saved text of the matching ", names.length === 1 ? noun : nounPlural || noun + "s", " with this file's version. This can't be undone. Pictures are kept unless the file brings its own.") : /*#__PURE__*/React.createElement(React.Fragment, null, "Are you sure? Overwriting replaces the saved text ", /*#__PURE__*/React.createElement("b", null, "and images"), " of the matching ", names.length === 1 ? noun : nounPlural || noun + "s", " with this file's version. This can't be undone.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -7203,6 +7208,46 @@ function RolecraftVault() {
     if (mode === "skip") parts.push("duplicates skipped");
     toast("Personas: " + (parts.join(" \u00b7 ") || "nothing to do"));
   };
+  /* Two entries are "the same" when they sit in the same book under the same
+     title, which is what someone re-importing a lorebook means by it. Ids are no
+     use: a Chub or CharSnap file numbers its entries 1, 2, 3, and the vault mints
+     fresh ids on the way in regardless. */
+  const loreKey = e => String(e.world || "").trim().toLowerCase() + " " + String(e.title || "").trim().toLowerCase();
+  const commitLoreImport = async (freshEntries, overwrites, mode, payload) => {
+    await writeImportedImages(payload.images, payload.thumbs);
+    await applyImportedBlur(payload.blurred);
+    let next = lore;
+    if (overwrites.length) {
+      const byId = new Map(overwrites.map(d => [d.existingId, d.entry]));
+      next = next.map(e => {
+        const inc = byId.get(e.id);
+        if (!inc) return e;
+        /* A text-only file carries no pictures. Overwriting with one must not
+           strip the entry's existing images — the text is being updated, not the
+           artwork — so old images are only discarded when new ones replace them. */
+        const bringsImages = (inc.images || []).length > 0;
+        if (bringsImages) (e.images || []).forEach(im => {
+          sDel("img:" + im.imgId);
+          sDel("th:" + im.imgId);
+        });
+        return {
+          ...inc,
+          id: e.id,
+          images: bringsImages ? inc.images : e.images || [],
+          createdAt: e.createdAt,
+          updatedAt: Date.now()
+        };
+      });
+    }
+    next = [...next, ...freshEntries];
+    setLore(next);
+    await sSet("lore:all", JSON.stringify(next));
+    const parts = [];
+    if (freshEntries.length) parts.push(freshEntries.length + " imported");
+    if (overwrites.length) parts.push(overwrites.length + " updated");
+    if (mode === "skip") parts.push("duplicates skipped");
+    toast("Lore: " + (parts.join(" · ") || "nothing to do"));
+  };
   const [selectMode, setSelectMode] = useState(false);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
   const bulkDeleteChars = async ids => {
@@ -8094,12 +8139,27 @@ function RolecraftVault() {
           toast("No lore entries found in that file");
           return;
         }
-        await writeImportedImages(res.images, res.thumbs);
-        await applyImportedBlur(res.blurred);
-        const next = [...lore, ...res.entries];
-        setLore(next);
-        await sSet("lore:all", JSON.stringify(next));
-        toast("Imported " + res.entries.length + (res.entries.length === 1 ? " lore entry" : " lore entries"));
+        // re-importing a lorebook used to append the lot a second time
+        const byKey = new Map(lore.map(e => [loreKey(e), e]));
+        const freshEntries = [],
+          dupeEntries = [];
+        res.entries.forEach(e => {
+          const existing = byKey.get(loreKey(e));
+          if (existing) dupeEntries.push({
+            entry: e,
+            existingId: existing.id
+          });else freshEntries.push(e);
+        });
+        if (dupeEntries.length) {
+          setDupePrompt({
+            type: "lore",
+            fresh: freshEntries,
+            dupes: dupeEntries,
+            payload: res
+          });
+          return;
+        }
+        await commitLoreImport(freshEntries, [], "copies", res);
       }
     } catch (e) {
       toast("Couldn't read that file — is it valid JSON?");
@@ -11177,11 +11237,15 @@ function RolecraftVault() {
     }
   }, "Create collection")))), dupePrompt && (() => {
     const dp = dupePrompt;
-    const noun = dp.type === "characters" ? "character" : "persona";
-    const names = dp.dupes.map(d => (dp.type === "characters" ? d.item.char.name : d.item.persona.name) || "Untitled");
-    const commit = dp.type === "characters" ? commitCharImport : commitPersonaImport;
+    const isLore = dp.type === "lore";
+    const noun = dp.type === "characters" ? "character" : isLore ? "lore entry" : "persona";
+    const names = dp.dupes.map(d => (isLore ? d.entry.title : dp.type === "characters" ? d.item.char.name : d.item.persona.name) || "Untitled");
+    // lore entries arrive as one payload for the whole file, not one per entry
+    const commit = isLore ? (fresh, over, mode) => commitLoreImport(fresh, over, mode, dp.payload) : dp.type === "characters" ? commitCharImport : commitPersonaImport;
     return /*#__PURE__*/React.createElement(DupeImportModal, {
       noun: noun,
+      nounPlural: isLore ? "lore entries" : undefined,
+      softImages: isLore,
       names: names,
       freshCount: dp.fresh.length,
       onOverwrite: async () => {
@@ -11194,7 +11258,7 @@ function RolecraftVault() {
       },
       onCopies: async () => {
         setDupePrompt(null);
-        await commit([...dp.fresh, ...dp.dupes.map(d => d.item)], [], "copies");
+        await commit([...dp.fresh, ...dp.dupes.map(d => isLore ? d.entry : d.item)], [], "copies");
       },
       onCancel: () => {
         setDupePrompt(null);
