@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.108";
+const APP_VERSION = "1.109";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.108";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.108 — current",
+  heading: "1.109 — current",
+  notes: ["Writing is no longer thrown away by a stray click. Clicking outside a lore entry or prompt while writing one closed it instantly and lost everything typed. It now asks first, and only when you have actually changed something — Escape asks too, and closing an untouched entry still just closes.", "The theme button now says which theme you are using — “Theme · Dark” — instead of naming the one it would switch to. Reading it as the current theme was the obvious mistake, and it was easy to think you were on the CharSnap theme when you were on the light one.", "The CharSnap theme's main buttons are outlined gold on a dark fill, matching how CharSnap actually draws them, rather than a solid gold slab."]
+}, {
+  heading: "1.108",
   notes: ["Character, persona and lorebook headers are now a dark banner in every theme, so the name and details stay readable whatever picture sits behind them. Before this, a pale banner swallowed the text in the dark themes and a dark one swallowed it in the light theme — the shade over the picture was far too thin either way.", "Names on the character cards keep a light colour in every theme, and sit on their own shading, so they read over any artwork — light, dark or busy.", "New setting: Text contrast, next to Reading text size. Three levels, if you would like the smaller grey text — labels, captions, secondary lines — plainer than the standard requires. It is remembered between sessions."]
 }, {
   heading: "1.107",
@@ -902,7 +905,13 @@ const CSS = `
     --lockbg: radial-gradient(ellipse at 50% 30%, #18181c 0%, #0a0a0c 65%);
     --scroll: #2b2b32; --shadow: 0 10px 30px rgba(0,0,0,.65);
     --btn-grad: linear-gradient(135deg, #f4cd55, #dda51e); --btn-text: #141414;
+    --cs-btn-face: rgba(240,194,57,.10);
   }
+  /* CharSnap draws its primary actions as outlined gold on a dark fill rather than
+     a solid gold slab, so match that instead of approximating it. */
+  .rcv.charsnap .btn-primary { background: var(--cs-btn-face); color: var(--brass);
+    border: 1px solid var(--brass-line); }
+  .rcv.charsnap .btn-primary:hover { background: rgba(240,194,57,.18); }
   .rcv.charsnap .eyebrow { color: var(--blue); letter-spacing: .24em; }
   .rcv.charsnap .navitem.active { box-shadow: inset 3px 0 0 var(--brass); }
   .rcv .serif { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
@@ -6256,13 +6265,60 @@ function RecordModal({
 }) {
   const [r, setR] = useState(initial);
   const [confirmDel, setConfirmDel] = useState(false);
+  /* Clicking the backdrop used to close outright and throw away everything typed.
+     Compare against what was opened rather than tracking edits, so undoing a change
+     by hand counts as unchanged and closes without nagging. */
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const dirty = JSON.stringify(r) !== JSON.stringify(initial);
+  const tryClose = () => dirty ? setConfirmLeave(true) : onClose();
+  useEffect(() => {
+    const h = e => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      tryClose();
+    };
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
+  }, [dirty, r]);
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
-    onClick: onClose
+    onClick: tryClose
   }, /*#__PURE__*/React.createElement("div", {
     className: "card modal",
     onClick: e => e.stopPropagation()
+  }, confirmLeave && /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid var(--brass-line)",
+      background: "var(--brass-soft)",
+      borderRadius: 10,
+      padding: "12px 14px",
+      marginBottom: 16
+    }
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "You have unsaved changes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.55,
+      marginBottom: 12
+    }
+  }, "Closing now throws away what you have written here."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => setConfirmLeave(false)
+  }, "Keep editing"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onClose
+  }, "Discard changes"))),/*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -6282,7 +6338,7 @@ function RecordModal({
       padding: "7px 10px"
     },
     "aria-label": "Close",
-    onClick: onClose
+    onClick: tryClose
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.x,
     size: 15
@@ -8874,11 +8930,11 @@ function RolecraftVault() {
     className: "navitem",
     onClick: () => setTheme(theme === "dark" ? "light" : theme === "light" ? "charsnap" : "dark")
   }, /*#__PURE__*/React.createElement(Ic, {
-    d: theme === "dark" ? icons.sun : theme === "light" ? icons.persona : icons.moon,
+    d: theme === "dark" ? icons.moon : theme === "light" ? icons.sun : icons.persona,
     size: 16
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
-  }, theme === "dark" ? "Light theme" : theme === "light" ? "CharSnap theme" : "Dark theme")), authState.passwordSet && /*#__PURE__*/React.createElement("button", {
+  }, theme === "dark" ? "Theme · Dark" : theme === "light" ? "Theme · Light" : "Theme · CharSnap")), authState.passwordSet && /*#__PURE__*/React.createElement("button", {
     className: "navitem",
     onClick: lockVault
   }, /*#__PURE__*/React.createElement(Ic, {
