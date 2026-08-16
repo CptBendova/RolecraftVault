@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.101";
+const APP_VERSION = "1.102";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.101";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.101 — current",
+  heading: "1.102 — current",
+  notes: ["“Update from JSON” now brings the searchable terms across. It never touched them at all, so updating a character from a file full of terms left whatever handful was already there — which is why only a few showed up no matter what the file contained.", "It also no longer piles tags up. Tags used to be merged with the ones already on the character, so a tag removed from the file could never be got rid of here; the file's list now replaces what is there. A file that carries no tags or terms leaves both alone."]
+}, {
+  heading: "1.101",
   notes: ["Searchable terms are now shown when you open a character, under the tags. They were being imported and saved correctly all along, but the only place they appeared was inside the editor — so after importing a character there was nowhere to see them, which looked exactly like the import having ignored them.", "The search box now actually searches them, which is the point of the field. Looking up a nickname, a title, or the name of the world a character comes from will now find them even when that word appears nowhere else. The tagline is searched too."]
 }, {
   heading: "1.100",
@@ -5144,7 +5147,14 @@ function CharacterEditor({
       ["age", "gender", "pronouns"].forEach(k => {
         if ((inc[k] || "").trim()) patch[k] = inc[k];
       });
-      if ((inc.tags || []).length) patch.tags = [...new Set([...(c.tags || []), ...inc.tags])];
+      /* The file is the source of truth for the lists it actually carries: they
+         replace rather than merge. Union-ing tags meant one that had been removed
+         upstream could never be got rid of here, and searchables were not applied
+         at all, so a file full of them left the character's own list untouched —
+         which read as the terms not importing. A file that carries neither leaves
+         both alone. */
+      if ((inc.tags || []).length) patch.tags = [...inc.tags];
+      if ((inc.searchables || []).length) patch.searchables = [...inc.searchables];
       if ((inc.sections || []).length) patch.sections = inc.sections.map(s => ({
         id: uid(),
         title: s.title || "",
@@ -5152,7 +5162,7 @@ function CharacterEditor({
       }));
       setC(p => ({ ...p, ...patch, history, __historyPushed: true }));
       setVIdx(-1);
-      toast("Default updated from JSON — images kept");
+      toast("Default updated from JSON — tags and terms replaced, images kept");
     } else if (mode === "variant" && vIdx >= 0) {
       const nextVariants = variants.map((x, j) => {
         if (j !== vIdx) return x;
