@@ -1,7 +1,16 @@
 # Rolecraft Vault
 
-Private, offline roleplay library — characters, personas, lorebooks and prompts,
-with encrypted local storage. Windows Electron app plus an embeddable web edition.
+Rolecraft Vault is a private library for roleplay writing — characters, personas,
+lorebooks and prompts — that lives entirely on your own computer, with no account
+and no sign-up. Everything is stored encrypted on disk, optionally behind a master
+password, and the app works with no internet connection at all. The interface
+genuinely cannot reach the network: a build check fails if a single `fetch` or
+`http://` finds its way in, so nothing you write is uploaded, synced or analysed.
+It reads and writes CharSnap characters and lorebooks, along with Chub lorebooks
+and Tavern character cards, so your writing moves between tools instead of being
+stuck in one. It ships as a Windows installer with signed in-place updates, plus
+an embeddable web edition, and every version is on the
+[releases page](https://github.com/CptBendova/RolecraftVault/releases).
 
 > **Working on this with Claude Code?** Read `CLAUDE.md` first. It records the
 > rules that are easy to break by accident (especially: don't regenerate `app/app.js`).
