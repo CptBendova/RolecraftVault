@@ -12,6 +12,10 @@ stuck in one. It ships as a Windows installer with signed in-place updates, plus
 an embeddable web edition, and every version is on the
 [releases page](https://github.com/CptBendova/RolecraftVault/releases).
 
+**The app is free to download and use. The source is not open source** — it is
+published so it can be read and audited, not reused. See [LICENSE](LICENSE); if
+you want to do something it does not cover, ask.
+
 > **Working on this with Claude Code?** Read `CLAUDE.md` first. It records the
 > rules that are easy to break by accident (especially: don't regenerate `app/app.js`).
 
