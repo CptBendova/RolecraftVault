@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.106";
+const APP_VERSION = "1.108";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,13 @@ const APP_VERSION = "1.106";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.106 — current",
+  heading: "1.108 — current",
+  notes: ["Character, persona and lorebook headers are now a dark banner in every theme, so the name and details stay readable whatever picture sits behind them. Before this, a pale banner swallowed the text in the dark themes and a dark one swallowed it in the light theme — the shade over the picture was far too thin either way.", "Names on the character cards keep a light colour in every theme, and sit on their own shading, so they read over any artwork — light, dark or busy.", "New setting: Text contrast, next to Reading text size. Three levels, if you would like the smaller grey text — labels, captions, secondary lines — plainer than the standard requires. It is remembered between sessions."]
+}, {
+  heading: "1.107",
+  notes: ["Character names are readable on the cards again in the light theme. The name followed the theme's text colour, which is near-black in light — sitting on the dark shade at the bottom of the picture, which made it all but invisible. Names and taglines on cards now keep a light colour whichever theme you use, because that shade is dark in all of them.", "Every piece of text and every button has been checked against the accessibility standard, in all three themes, including text sitting over artwork and the two-tone buttons. The blue button was a shade too light for its white label, and in the light theme the gold and red text used on their own tinted backgrounds were a little too pale. All now pass."]
+}, {
+  heading: "1.106",
   notes: ["Markdown works in the creator memo again. Moving the memo to the top of the character page in 1.103 accidentally started showing it as raw text, so headings, bold and links appeared as asterisks and hashes. It renders properly again, and still scrolls.", "The small grey labels — SEARCHABLE, LOREBOOKS, CREATOR MEMO, and the age and gender line — were too faint to read in every theme, and nearly invisible in the light one. All three themes have been measured against the accessibility standard for text contrast and now pass. The light theme's gold and red text were slightly too faint as well and have been deepened."]
 }, {
   heading: "1.105",
@@ -870,8 +876,8 @@ const CSS = `
     --ink: #f1f2f7; --ink2: #e9ebf3; --panel: #ffffff; --panel2: #f5f6fb;
     --line: rgba(28,40,80,.13); --line2: rgba(28,40,80,.26);
     --text: #1a2135; --mut: #59637f; --dim: #6a6e7f; /* AA on ink, was #99a0b8 at 2.33:1 */
-    --brass: #8c681c; --brass-soft: rgba(154,114,31,.1); --brass-line: rgba(154,114,31,.35); /* AA, was #9a721f at 3.91:1 */
-    --blue: #3f57c0; --blue-deep: #3a51b0; --danger: #b44f4f; /* AA, was #c25555 at 3.98:1 */
+    --brass: #81601a; --brass-soft: rgba(154,114,31,.1); --brass-line: rgba(154,114,31,.35); /* AA on brass-soft too */
+    --blue: #3f57c0; --blue-deep: #3a51b0; --danger: #a64949; /* AA on danger-soft too */
     --danger-soft: rgba(194,85,85,.09); --danger-line: rgba(194,85,85,.3);
     --chip-bg: rgba(63,87,192,.08); --chip-line: rgba(63,87,192,.28);
     --nav-hov: rgba(63,87,192,.06); --nav-act: rgba(63,87,192,.1);
@@ -913,7 +919,7 @@ const CSS = `
   .rcv .btn { border-radius: 9px; padding: 9px 16px; font-weight: 600; font-size: 13.5px; transition: filter .12s, background .12s; }
   .rcv .btn:hover { filter: brightness(1.08); }
   .rcv .btn:focus-visible, .rcv input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-  .rcv .btn-primary { background: var(--btn-grad, linear-gradient(135deg, #5d78e0, #4a63c8)); color: var(--btn-text, #fff); }
+  .rcv .btn-primary { background: var(--btn-grad, linear-gradient(135deg, #5670d0, #4a63c8)); color: var(--btn-text, #fff); }
   .rcv .btn-ghost { background: transparent; color: var(--mut); border: 1px solid var(--line); }
   .rcv .btn-ghost:hover { color: var(--text); border-color: var(--line2); }
   .rcv .btn-brass { background: var(--brass-soft); color: var(--brass); border: 1px solid var(--brass-line); }
@@ -934,7 +940,8 @@ const CSS = `
   .rcv .char-card .veil { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, rgba(6,9,20,.92) 88%); }
   .rcv.light .char-card .veil { background: linear-gradient(180deg, transparent 30%, rgba(6,9,20,.55) 62%, rgba(6,9,20,.96) 100%); }
   .rcv .char-card .meta { text-shadow: 0 1px 4px rgba(0,0,0,.65); }
-  .rcv .char-card .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px; }
+  .rcv .char-card .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px;
+    background: linear-gradient(180deg, rgba(6,9,20,0), rgba(6,9,20,.86) 24%, rgba(6,9,20,.94)); }
   .rcv .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); grid-auto-rows: 148px; grid-auto-flow: dense; gap: 12px; }
   .rcv .tile { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); padding: 0;
     cursor: pointer; background: var(--placeholder); }
@@ -942,7 +949,7 @@ const CSS = `
   .rcv .tile:hover img { transform: scale(1.05); }
   .rcv .tile:hover { border-color: var(--brass-line); }
   .rcv .tile .tlab { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px 10px 8px; font-size: 12px; font-weight: 600;
-    color: #eef1fb; background: linear-gradient(transparent, rgba(5,8,17,.88)); opacity: 0; transition: opacity .15s; text-align: left;
+    color: #eef1fb; background: linear-gradient(180deg, rgba(5,8,17,0), rgba(5,8,17,.86) 45%, rgba(5,8,17,.94)); opacity: 0; transition: opacity .15s; text-align: left;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rcv .tile:hover .tlab, .rcv .tile:focus-visible .tlab { opacity: 1; }
   .rcv .tile.big { grid-column: span 2; grid-row: span 2; }
@@ -977,8 +984,29 @@ const CSS = `
     justify-content: center; background: rgba(5,7,14,.58); opacity: 0; transition: opacity .15s; z-index: 1; }
   .rcv .wtile:hover .wacts, .rcv .wtile:focus-within .wacts { opacity: 1; }
   .rcv .wtile:hover { border-color: var(--brass-line); }
+  /* The character and persona headers sit over artwork whose brightness cannot be
+     known, so they are a dark surface in every theme — the same treatment the
+     cards use. Redefining the palette on the container means every descendant
+     keeps working without touching each one. Values solved so the faintest of
+     them still clears 4.5:1 over a pure white banner. */
+  /* Optional text-contrast boost. Only the faint colours need lifting — everything
+     else already clears the standard comfortably — so these move --mut and --dim
+     toward the main text colour. "max" simply makes them the text colour. */
+  .rcv.contrast-high { --mut: #bfc5db; --dim: #b9bed1; }
+  .rcv.light.contrast-high { --mut: #363f56; --dim: #3e4456; }
+  .rcv.charsnap.contrast-high { --mut: #cacbd1; --dim: #bdbec3; }
+  .rcv.contrast-max { --mut: var(--text); --dim: var(--text); }
+  .rcv.contrast-high .hero, .rcv.contrast-max .hero { --mut: #e2e6f4; --dim: #d3d8ea; }
+  .rcv .hero { background: #0a0e1c; color: var(--text);
+    --text: #f2f4fc; --mut: #c3c9dd; --dim: #a2a9c0;
+    --panel: #151b2c; --panel2: #1b2237; --field: rgba(8,12,26,.6);
+    --line: rgba(150,166,214,.18); --line2: rgba(150,166,214,.32);
+    --brass: #d9b25c; --blue: #8aa2f2; --danger: #e07a7a;
+    --chip-bg: rgba(138,162,242,.12); --chip-line: rgba(138,162,242,.3);
+    --brass-soft: rgba(217,178,92,.14); --brass-line: rgba(217,178,92,.35);
+    --danger-soft: rgba(224,122,122,.12); --danger-line: rgba(224,122,122,.3); }
   .rcv .hero-back { position: absolute; inset: 0; background-size: cover; background-position: center 25%;
-    filter: blur(26px) saturate(1.1); opacity: .35; transform: scale(1.15); }
+    filter: blur(26px) saturate(1.1); opacity: .18; transform: scale(1.15); }
   .rcv .cpage-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 420px); gap: 24px; align-items: start; }
   .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1fr) 200px; }
   .rcv .cpage-grid.nogal .cpage-aside { grid-template-columns: 1fr; }
@@ -3189,6 +3217,7 @@ function LorebookPage({
     },
     className: "scrollbody"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "hero",
     style: {
       position: "relative",
       overflow: "hidden",
@@ -3214,7 +3243,7 @@ function LorebookPage({
     style: {
       position: "absolute",
       inset: 0,
-      background: "linear-gradient(180deg, rgba(5,7,14,.35), var(--ink) 97%)"
+      background: "linear-gradient(180deg, rgba(5,7,14,.82), rgba(5,7,14,.92) 97%)"
     }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3661,6 +3690,7 @@ function CharacterPage({
     },
     className: "scrollbody"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "hero",
     style: {
       position: "relative",
       overflow: "hidden",
@@ -3685,7 +3715,7 @@ function CharacterPage({
     style: {
       position: "absolute",
       inset: 0,
-      background: "linear-gradient(180deg, rgba(5,7,14,.25), var(--ink) 96%)"
+      background: "linear-gradient(180deg, rgba(5,7,14,.82), rgba(5,7,14,.92) 96%)"
     }
   })) : profile && /*#__PURE__*/React.createElement("div", {
     className: "hero-back",
@@ -4374,6 +4404,7 @@ function PersonaPage({
     },
     className: "scrollbody"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "hero",
     style: {
       position: "relative",
       overflow: "hidden",
@@ -6592,6 +6623,8 @@ function SettingsModal({
   setTheme,
   textSize,
   setTextSize,
+  contrast,
+  setContrast,
   authState,
   refreshAuth
 }) {
@@ -6729,13 +6762,37 @@ function SettingsModal({
       marginTop: 8
     }
   }, "Applies to character, persona, lorebook and prompt text."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginTop: 18,
+      marginBottom: 4
+    }
+  }, "Text contrast"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, [["normal", "Normal"], ["high", "Higher"], ["max", "Maximum"]].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
+    key: v,
+    className: "btn " + (contrast === v ? "btn-primary" : "btn-ghost"),
+    style: {
+      flex: 1
+    },
+    onClick: () => setContrast(v)
+  }, label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--dim)",
+      marginTop: 8
+    }
+  }, "Darkens the smaller grey text — labels, captions and secondary lines. Everything already meets the accessibility standard at Normal; these go further if you want it plainer."), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       marginBottom: 4
     }
-  }, "Master password"), /*#__PURE__*/React.createElement("div", {
+  }, "Master password"),/*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--mut)",
@@ -7617,6 +7674,7 @@ function RolecraftVault() {
         const pbucketM = parse(await sGet("pbuckets:meta"), "pbuckets:meta", {});
         const blurList = parse(await sGet("blurset"), "blurset", []);
         const ts = await sGet("ui:textsize");
+        const ctr = await sGet("ui:contrast");
         if (damaged.length) {
           setLoadError(damaged);
           return; // nothing is loaded, so nothing can be written back over it
@@ -7630,6 +7688,7 @@ function RolecraftVault() {
         setPromptMeta(promptM);
         setPBucketMeta(pbucketM); // always set: a stale one would survive a lock
         setTextSize(ts || "medium");
+        setContrast(ctr || "normal");
         const blObj = {};
         blurList.forEach(id => blObj[id] = true);
         setBlurred(blObj);
@@ -7931,10 +7990,15 @@ function RolecraftVault() {
     }
   };
   const [textSize, setTextSize] = useState("medium"); // reading size for prose: small | medium | large
+  const [contrast, setContrast] = useState("normal"); // text contrast boost: normal | high | max
   const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : "14.5px";
   const applyTextSize = async s => {
     setTextSize(s);
     await sSet("ui:textsize", s);
+  };
+  const applyContrast = async v => {
+    setContrast(v);
+    await sSet("ui:contrast", v);
   };
   useEffect(() => {
     if (view !== "dashboard") return;
@@ -8653,7 +8717,7 @@ function RolecraftVault() {
     label: "Prompt Vault",
     icon: icons.prompt
   }];
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "");
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast);
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
     "data-rcv-state": "locked",
@@ -9909,6 +9973,7 @@ function RolecraftVault() {
     style: {
       fontSize: 17,
       fontWeight: 700,
+      color: "#f2f4fc", // fixed: the veil is dark in every theme, so --text would vanish in light
       textShadow: "0 1px 8px rgba(0,0,0,.6)"
     }
   }, c.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
@@ -9931,7 +9996,7 @@ function RolecraftVault() {
     size: 11
   }), (c.gallery || []).length), (c.tagline || (c.tags || []).join(" | ")) && /*#__PURE__*/React.createElement("span", {
     style: {
-      color: "var(--brass)",
+      color: "#d9b25c", // fixed for the same reason; --brass goes dark in the light theme
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -11797,11 +11862,15 @@ function RolecraftVault() {
       await sDel("ui:dashorder");
       await sDel("ui:advopen");
       await sSet("ui:textsize", "medium");
+      setContrast("normal");
+      await sSet("ui:contrast", "normal");
       toast("Layout reset to defaults");
     },
     onClose: () => setShowSettings(false),
     textSize: textSize,
     setTextSize: applyTextSize,
+    contrast: contrast,
+    setContrast: applyContrast,
     onExport: () => askExport("a full vault backup", exportAll),
     onImport: importAll,
     toast: toast,
