@@ -6242,6 +6242,10 @@ function SettingsModal({
     if (window.vaultInfo) window.vaultInfo.encrypted().then(setEnc).catch(() => {});
   }, [authState]);
   const importRef = useRef(null);
+  // version history is collapsed by default — it is reference material, not
+  // something to scroll past every time Settings is opened
+  const [histOpen, setHistOpen] = useState(false);
+  const [openRel, setOpenRel] = useState(0);
   const desktop = !!window.auth;
   const web = typeof window !== "undefined" && window.vaultPlatform === "web";
   const done = async msg => {
@@ -6758,25 +6762,72 @@ function SettingsModal({
       fontWeight: 700,
       marginBottom: 4
     }
-  }, "Version history"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setHistOpen(o => !o),
+    "aria-expanded": histOpen,
     style: {
-      fontSize: 13,
-      color: "var(--mut)",
-      marginBottom: 10
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
+      font: "inherit",
+      color: "var(--text)",
+      textAlign: "left"
     }
-  }, "What has changed in Rolecraft Vault."), CHANGELOG.map((rel, ri) => /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      color: "var(--mut)",
+      transform: histOpen ? "rotate(90deg)" : "none",
+      transition: "transform .12s"
+    }
+  }, "▸"), /*#__PURE__*/React.createElement("span", null, "Version history"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 400,
+      fontSize: 12,
+      color: "var(--dim)"
+    }
+  }, "v" + APP_VERSION))), histOpen && CHANGELOG.map((rel, ri) => /*#__PURE__*/React.createElement("div", {
     key: ri,
     style: {
-      marginBottom: 14
+      marginTop: ri ? 8 : 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setOpenRel(o => o === ri ? -1 : ri),
+    "aria-expanded": openRel === ri,
     style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
       fontSize: 13,
       fontWeight: 600,
       color: "var(--brass)",
-      marginBottom: rel.reconstructed ? 4 : 6
+      textAlign: "left"
     }
-  }, rel.heading), rel.reconstructed && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      opacity: .7,
+      transform: openRel === ri ? "rotate(90deg)" : "none",
+      transition: "transform .12s"
+    }
+  }, "▸"), rel.heading), openRel === ri && /*#__PURE__*/React.createElement("div", {
+    style: {
+      paddingLeft: 17,
+      marginTop: 6
+    }
+  }, rel.reconstructed && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--dim)",
@@ -6796,7 +6847,7 @@ function SettingsModal({
     style: {
       marginBottom: 4
     }
-  }, n))))), /*#__PURE__*/React.createElement("div", {
+  }, n)))))), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
