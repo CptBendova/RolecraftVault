@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.114";
+const APP_VERSION = "1.115";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.114";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.114 — current",
+  heading: "1.115 — current",
+  notes: ["Dropping a file onto the window used to replace the whole app with that file — the interface vanished and you were looking at raw JSON until you restarted. Since importing JSON files is half of what this app is for, that was an easy mistake to make. Files dropped anywhere the app is not expecting one are now ignored, and the window can no longer be navigated away from the interface at all.", "Exporting the Default variant to CharSnap no longer writes a variant name override of “Default” and a variant tagline override repeating the tagline you already set. Those fields are overrides, and the default has nothing to override. Named variants keep their own names, and only carry a tagline override when they actually have a tagline of their own.", "Locking the vault now clears deleted records from memory as well. Everything else was already cleared; the bin was not, so a locked vault still held the full text of anything you had deleted.", "A locked vault can no longer have records deleted. Writing was already blocked while locked, but deleting was not.", "Large exports could silently fail to save. The file was being handed to the browser and then withdrawn in the same instant, which a big library did not always survive.", "The device transfer now refuses an oversized request instead of trying to hold it in memory, so nothing else on your network can push the app over by sending it rubbish while you are on the send screen.", "Setting a master password on the web edition writes the security record before re-encrypting rather than after. Interrupted the other way round — a closed tab at the wrong moment — the records were encrypted with nothing left to record which key had been used."]
+}, {
+  heading: "1.114",
   notes: ["Device transfer now tells you which vault you are standing in. Both machines say their own name, the panel is split into “send this one” and “receive onto this one”, and before anything is written you get a summary: which device the records are coming from, which device they are landing on, and exactly how many will be added, overwritten and deleted. Nothing is touched until you confirm that summary.", "Mirroring is off by default now. It deletes from whichever device is receiving, and having it on by default was the wrong way round for something that cannot be undone. The tick box now spells out which device loses records, by name.", "Inside a lorebook there is an “Import entry” button. Point it at a JSON file and everything in it joins that book, whatever world the file itself claims — one entry on its own works, and so does a whole lorebook. Duplicate titles still ask before landing. Importing from the Lorebooks screen is unchanged and still files entries by their own world.", "“Export for CharSnap” on a single lore entry, not just the whole book. It writes the same Chub-compatible file with one entry in it."]
 }, {
   heading: "1.113",
@@ -297,6 +300,13 @@ const SAMPLE_CHARACTER_JSON = {
     always_active_system_prompt: ""
   }]
 };
+/* Revoking the object URL in the same tick as the click is a race: the browser
+   has only been handed the URL, and a large export (a whole library with its
+   pictures runs to tens of megabytes) may not have been read yet when the URL is
+   pulled out from under it, which shows up as a download that silently fails. */
+function revokeSoon(url) {
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 function downloadJSON(obj, filename) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], {
     type: "application/json"
@@ -306,7 +316,7 @@ function downloadJSON(obj, filename) {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  revokeSoon(url);
 }
 function mulberry32(a) {
   return function () {
@@ -409,7 +419,7 @@ function downloadBlob(blob, filename) {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  revokeSoon(url);
 }
 const extOf = u => {
   const m = /^data:image\/([\w+]+)/.exec(u || "");
@@ -886,9 +896,11 @@ function charToCharSnap(c, scope) {
     return out;
   };
   const scopeAll = scope === undefined || scope === "all";
-  const variants = scopeAll || scope === null ? [variantOf(c, baseDescription, "Default", tagline)] : [];
+  const variants = scopeAll || scope === null ? [variantOf(c, baseDescription, "", "")] : [];
   (scopeAll ? (c.variants || []).slice(0, 4) : (c.variants || []).filter(v => v.id === scope)).forEach((v, i) => {
-    // required fields fall back to the Default so each variant is complete
+    // required fields fall back to the Default so each variant is complete.
+    // The tagline is NOT inherited: variant_tagline is an override, and filling it
+    // with the character's own tagline would set an override that says nothing.
     variants.push(variantOf({
       personality: v.personality || c.personality,
       firstMessage: v.firstMessage || c.firstMessage,
@@ -897,8 +909,16 @@ function charToCharSnap(c, scope) {
       systemPrompt: v.systemPrompt,
       alwaysActiveSystemPrompt: v.alwaysActiveSystemPrompt,
       creatorMemo: v.creatorMemo
-    }, v.story || baseDescription, v.name || "Variant " + (i + 2), v.tagline || tagline));
+    }, v.story || baseDescription, v.name || "Variant " + (i + 2), v.tagline || ""));
   });
+  /* The first variant becomes the character's default on import, so it must not
+     carry overrides: variant_name "Default" renames the default to the word
+     "Default", and variant_tagline repeats the tagline already at the top level.
+     This holds however the list was built, including a single-variant export. */
+  if (variants[0]) {
+    delete variants[0].variant_name;
+    delete variants[0].variant_tagline;
+  }
   const scopedV = scopeAll || scope === null ? null : (c.variants || []).find(v => v.id === scope);
   /* Key order and set follow CharSnap's own "Full-Character" import template.
      tags/searchables go out even when empty, as the template does. This app has
@@ -8471,6 +8491,21 @@ function RolecraftVault() {
   useEffect(() => {
     if (view === "dashboard") setDashSeed(Date.now() & 0x7fffffff || 1);
   }, [view]);
+  /* Dropping a file anywhere the app is not itself handling the drop makes the
+     browser open that file in place of the app — the interface vanishes and the
+     window is showing raw JSON until it is restarted. Given the whole point of
+     this app is importing JSON files, that is a drop people will make. The
+     app's own drag handlers cancel the event themselves and are unaffected;
+     this only catches what would otherwise have navigated. */
+  useEffect(() => {
+    const swallow = e => e.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
   const lockVault = async () => {
     if (window.auth) await window.auth.lock();
     setReady(false);
@@ -8478,6 +8513,7 @@ function RolecraftVault() {
     setPersonas([]);
     setLore([]);
     setPrompts([]);
+    setTrash([]); // deleted records are still whole records — locking must drop them too
     setImgCache({});
     setFullCache({});
     setBlurred({});

@@ -23,7 +23,10 @@ const offlineTargets = [
   "web/js/rolecraft-web-platform.js",
 ];
 
-const NETWORK = /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|https?:\/\/(?!schemas\.|www\.w3\.org)/g;
+/* EventSource and RTCPeerConnection are here because they are the two ways left
+   to reach the network without touching fetch or XHR, and a data channel would
+   not have shown up in any of the earlier sweeps. */
+const NETWORK = /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|RTCPeerConnection|navigator\.serviceWorker|https?:\/\/(?!schemas\.|www\.w3\.org)/g;
 
 let failed = 0;
 

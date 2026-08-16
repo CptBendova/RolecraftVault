@@ -208,7 +208,11 @@
       }).then(function () { return { key: key, value: value }; });
     },
     delete: function (key) {
-      return idbDel("v:" + key).then(function () { return { key: key, deleted: true }; });
+      // gated like set: a locked vault that can still lose records is not locked
+      return loadSecurity().then(function (s) {
+        if (s && !masterKey) throw new Error("locked");
+        return idbDel("v:" + key);
+      }).then(function () { return { key: key, deleted: true }; });
     },
     list: function (prefix) {
       return dataKeys().then(function (keys) {
@@ -230,10 +234,15 @@
         if (!pw || pw.length < 8) return { ok: false, error: "Use at least 8 characters" };
         var salt = randomHex(16);
         return deriveFor(pw, salt).then(function (d) {
-          return rewrapAll(null, d.keyRaw).then(function () {
-            return saveSecurity({ salt: salt, verifier: d.verifier });
-          }).then(function () {
+          /* Security record first, then re-encrypt. Interrupted the other way
+             round — a closed tab, a crash — the values are already encrypted
+             but nothing records the salt they were encrypted under, and they
+             cannot be read again by anyone. This order leaves stragglers as
+             "raw:", which still decode and get encrypted on their next write. */
+          return saveSecurity({ salt: salt, verifier: d.verifier }).then(function () {
             return setMaster(d.keyRaw);
+          }).then(function () {
+            return rewrapAll(null, d.keyRaw);
           }).then(function () { return { ok: true }; });
         });
       });

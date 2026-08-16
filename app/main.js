@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.114";
+const FACTORY_BUILD = "1.115";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -378,9 +378,20 @@ function startTransferServer() {
       return;
     }
     if (req.method === "POST" && route === "/delta") {
+      /* The body is only a list of keys the other device wants, so it is small.
+         Buffering it unbounded lets anything on the network — it does not need
+         the pairing code, since the code is only checked after the body has
+         arrived — push gigabytes into memory and take the app down. */
+      const MAX_BODY = 4 << 20;
       const chunks = [];
-      req.on("data", d => chunks.push(d));
+      let size = 0;
+      req.on("data", d => {
+        size += d.length;
+        if (size > MAX_BODY) { res.writeHead(413); res.end("too big"); req.destroy(); return; }
+        chunks.push(d);
+      });
       req.on("end", () => {
+        if (size > MAX_BODY) return;
         try {
           const wanted = JSON.parse(decryptPayload(Buffer.concat(chunks), secret).toString("utf8"));
           if (!Array.isArray(wanted)) throw new Error("bad request");
@@ -681,7 +692,14 @@ function readValue(key) {
   return v;
 }
 function allKeys() {
-  return fs.readdirSync(dataDir).filter(f => f.endsWith(".dat")).map(f => decodeURIComponent(f.slice(0, -4)));
+  const out = [];
+  for (const f of fs.readdirSync(dataDir)) {
+    if (!f.endsWith(".dat")) continue;
+    // a stray file with a broken percent-escape would otherwise throw URIError and
+    // take out every caller: the manifest, a transfer, and re-encrypting the vault
+    try { out.push(decodeURIComponent(f.slice(0, -4))); } catch (e) {}
+  }
+  return out;
 }
 /* Re-encrypt every record when the password layer changes.
    Prepare-then-commit: every record's new-key copy is written alongside the old
@@ -736,9 +754,12 @@ function finishPendingRewrap() {
 /* ---- auth handlers ---- */
 function verifyPassword(pw) {
   const s = loadSecurity();
-  if (!s) return null;
-  const check = kdf(pw, Buffer.from(s.salt + ":chk")).toString("hex");
-  if (!crypto.timingSafeEqual(Buffer.from(check), Buffer.from(s.verifier))) return null;
+  if (!s || typeof s.salt !== "string" || typeof s.verifier !== "string") return null;
+  const check = Buffer.from(kdf(pw, Buffer.from(s.salt + ":chk")).toString("hex"));
+  const known = Buffer.from(s.verifier);
+  // timingSafeEqual throws on a length mismatch, so a corrupted security.json would
+  // crash the handler instead of simply refusing the password
+  if (check.length !== known.length || !crypto.timingSafeEqual(check, known)) return null;
   return kdf(pw, Buffer.from(s.salt + ":key"));
 }
 
@@ -903,6 +924,21 @@ function createWindow() {
   });
   win.on("close", () => saveBounds(win));
   win.webContents.setWindowOpenHandler(({ url }) => { if (url.startsWith("https://")) shell.openExternal(url); return { action: "deny" }; });
+  /* The window must never navigate anywhere but the interface. preload.js is
+     attached to whatever this window loads, so a page that got itself loaded
+     here — a dropped file, a stray link, a redirect — would be handed
+     window.storage and window.updater: the whole vault, readable, and the
+     ability to install a renderer. Only the two entry files are ever allowed,
+     and an https link is handed to the real browser instead. */
+  win.webContents.on("will-navigate", (event, url) => {
+    const allowed = [path.join(__dirname, "index.html")];
+    if (updatesDir) allowed.push(path.join(updatesDir, "current", "index.effective.html"));
+    let target = null;
+    try { target = decodeURIComponent(new URL(url).pathname).replace(/^\//, ""); } catch (e) {}
+    if (target && allowed.some(f => path.normalize(target).toLowerCase() === path.normalize(f).toLowerCase())) return;
+    event.preventDefault();
+    if (/^https:\/\//i.test(url)) shell.openExternal(url);
+  });
   win.loadFile(resolveEntryFile());
   // failsafe 1: if an active update produced a dead page, auto-revert to the factory build.
   // "Rendered something" isn't enough — a bundle stuck on its loading screen also paints
@@ -940,7 +976,9 @@ app.whenReady().then(() => {
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));
   ipcMain.handle("vault-set", (e, key, value) => { if (isLocked()) throw new Error("locked"); writeValue(key, value); return true; });
-  ipcMain.handle("vault-delete", (e, key) => { const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); return true; });
+  // deleting is as destructive as writing, so it is gated the same way — a locked
+  // vault that could still have records removed is not locked
+  ipcMain.handle("vault-delete", (e, key) => { if (isLocked()) throw new Error("locked"); const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); return true; });
   ipcMain.handle("vault-list", (e, prefix) => allKeys().filter(k => !prefix || k.startsWith(prefix)));
   setupAuthIpc();
   createWindow();
