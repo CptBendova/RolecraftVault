@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.100";
+const APP_VERSION = "1.101";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.100";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.100 — current",
+  heading: "1.101 — current",
+  notes: ["Searchable terms are now shown when you open a character, under the tags. They were being imported and saved correctly all along, but the only place they appeared was inside the editor — so after importing a character there was nowhere to see them, which looked exactly like the import having ignored them.", "The search box now actually searches them, which is the point of the field. Looking up a nickname, a title, or the name of the world a character comes from will now find them even when that word appears nowhere else. The tagline is searched too."]
+}, {
+  heading: "1.100",
   notes: ["Tags and searchable terms now import whatever shape the file writes them in. Previously only a proper list worked: a file that wrote them as one line — “yandere, age gap” — was accepted without complaint and the tags simply never appeared, which looked like the app ignoring them.", "Imported tags take CharSnap's spelling where they match, so “age gap” arrives as “Age Gap” rather than sitting beside it as a separate tag. Spare spaces are trimmed and the same tag repeated in different capitalisation is only kept once.", "Searchable terms are also picked up when a file puts them on the first variant instead of with the character, which is where some files put them.", "For the record on replacing: choosing “Overwrite existing” when importing does replace a character's tags and searchable terms outright, and clears them if the incoming file has none. “Skip” and “Import as copies” leave the original alone."]
 }, {
   heading: "1.099",
@@ -3781,6 +3784,32 @@ function CharacterPage({
     },
     title: "Show everything tagged \u201c" + t + "\u201d",
     onClick: () => onTagClick && onTagClick(t)
+  }, t))), (c.searchables || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap",
+      marginBottom: 12,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--dim)",
+      letterSpacing: ".14em",
+      textTransform: "uppercase",
+      fontWeight: 700
+    },
+    title: "Extra words this character can be found by, here and on CharSnap"
+  }, "Searchable"), c.searchables.map(t => /*#__PURE__*/React.createElement("span", {
+    key: t,
+    style: {
+      fontSize: 11.5,
+      padding: "3px 9px",
+      borderRadius: 99,
+      color: "var(--mut)",
+      border: "1px solid var(--line2)"
+    }
   }, t))), (c.lorebooks || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -8509,7 +8538,7 @@ function RolecraftVault() {
 
   /* --- derived --- */
   const allTags = [...new Set(chars.flatMap(c => c.tags || []))].sort();
-  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !charQ || (c.name + " " + (c.tags || []).join(" ") + " " + c.story + " " + c.personality).toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !charQ || (c.name + " " + (c.tags || []).join(" ") + " " + (c.searchables || []).join(" ") + " " + (c.tagline || "") + " " + c.story + " " + c.personality).toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   const recent = [...chars.map(c => ({
     ...c,
     _t: "Character"
@@ -9289,7 +9318,7 @@ function RolecraftVault() {
   }, /*#__PURE__*/React.createElement("input", {
     value: charQ,
     onChange: e => setCharQ(e.target.value),
-    placeholder: "Search names, tags, story…",
+    placeholder: "Search names, tags, terms, story…",
     style: {
       width: 240
     }
