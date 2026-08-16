@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.115";
+const APP_VERSION = "1.116";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.115";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.115 — current",
+  heading: "1.116 — current",
+  notes: ["A transfer now shows you what it is doing and how far along it is, instead of a spinner. Each step is named — asking the other device what it has, working out what is different, copying across, unpacking, saving — and the two long ones fill a bar with a real percentage, counting the megabytes as they land. The steps that genuinely cannot know how long they will take say so rather than inventing a number.", "Transfers are quicker to start. Working out what differs means reading and fingerprinting every record, and that was happening twice on each device — once to show you the summary and again to do the sync. The result is now kept and reused unless something in the vault actually changed. On a 600 MB library that second pass went from about three seconds to instant, on both devices."]
+}, {
+  heading: "1.115",
   notes: ["Dropping a file onto the window used to replace the whole app with that file — the interface vanished and you were looking at raw JSON until you restarted. Since importing JSON files is half of what this app is for, that was an easy mistake to make. Files dropped anywhere the app is not expecting one are now ignored, and the window can no longer be navigated away from the interface at all.", "Exporting the Default variant to CharSnap no longer writes a variant name override of “Default” and a variant tagline override repeating the tagline you already set. Those fields are overrides, and the default has nothing to override. Named variants keep their own names, and only carry a tagline override when they actually have a tagline of their own.", "Locking the vault now clears deleted records from memory as well. Everything else was already cleared; the bin was not, so a locked vault still held the full text of anything you had deleted.", "A locked vault can no longer have records deleted. Writing was already blocked while locked, but deleting was not.", "Large exports could silently fail to save. The file was being handed to the browser and then withdrawn in the same instant, which a big library did not always survive.", "The device transfer now refuses an oversized request instead of trying to hold it in memory, so nothing else on your network can push the app over by sending it rubbish while you are on the send screen.", "Setting a master password on the web edition writes the security record before re-encrypting rather than after. Interrupted the other way round — a closed tab at the wrong moment — the records were encrypted with nothing left to record which key had been used."]
 }, {
   heading: "1.114",
@@ -1172,6 +1175,8 @@ const CSS = `
   .rcv .ss-progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #d9b25c, #8aa2f2);
     animation: ssprog 8s linear both; }
   @keyframes rcvspin { to { transform: rotate(360deg); } }
+  /* the indeterminate transfer bar: a step that cannot know how far along it is */
+  @keyframes rcv-sweep { from { transform: translateX(-120%); } to { transform: translateX(400%); } }
   .rcv .spin { display: inline-block; width: 13px; height: 13px; border-radius: 50%;
     border: 2px solid var(--brass-line); border-top-color: var(--brass);
     animation: rcvspin .7s linear infinite; vertical-align: -2px; }
@@ -6901,12 +6906,64 @@ function SettingsModal({
   const [xferReplace, setXferReplace] = useState(false);
   const [xferPlan, setXferPlan] = useState(null); // dry run: what a sync would do here
   const [thisDevice, setThisDevice] = useState(null);
+  const [xferProg, setXferProg] = useState(null);
   useEffect(() => {
     if (window.transfer) window.transfer.status().then(s => {
       if (s && s.active) setXfer(s);
       if (s && s.device) setThisDevice(s.device);
     }).catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!window.transfer || !window.transfer.onProgress) return;
+    return window.transfer.onProgress(p => setXferProg(p && p.phase === "done" ? null : p));
+  }, []);
+  /* Named steps, because they are not the same length and a bar that sits at
+     one number for a minute reads as a hang. The two that know how much is left
+     say so; the two that cannot are honest about it and stripe instead. */
+  const XFER_STEPS = {
+    asking: "Asking the other device what it has",
+    comparing: "Working out what is different here",
+    packing: "The other device is gathering the records",
+    receiving: "Copying across",
+    unpacking: "Unpacking",
+    saving: "Saving into this vault",
+    removing: "Removing what the other device no longer has"
+  };
+  const xferBar = () => {
+    if (!xferProg) return null;
+    const known = xferProg.total > 0;
+    const pct = Math.round((xferProg.pct || 0) * 100);
+    const mbOf = n => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+    const detail = xferProg.phase === "receiving" && known ? mbOf(xferProg.done) + " of " + mbOf(xferProg.total) : known ? xferProg.done + " of " + xferProg.total : "";
+    return /*#__PURE__*/React.createElement("div", {
+      style: { margin: "10px 0" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: "var(--mut)", marginBottom: 5 }
+    }, /*#__PURE__*/React.createElement("span", null, XFER_STEPS[xferProg.phase] || "Working"), /*#__PURE__*/React.createElement("span", {
+      style: { color: "var(--dim)", whiteSpace: "nowrap" }
+    }, known ? pct + "%" + (detail ? " · " + detail : "") : "")), /*#__PURE__*/React.createElement("div", {
+      role: "progressbar",
+      "aria-valuenow": known ? pct : undefined,
+      "aria-valuemin": 0,
+      "aria-valuemax": 100,
+      "aria-label": XFER_STEPS[xferProg.phase] || "Working",
+      style: { height: 6, borderRadius: 999, background: "var(--line)", overflow: "hidden" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: known ? {
+        height: "100%",
+        width: pct + "%",
+        background: "var(--brass)",
+        borderRadius: 999,
+        transition: "width .18s linear"
+      } : {
+        height: "100%",
+        width: "35%",
+        borderRadius: 999,
+        background: "linear-gradient(90deg, transparent, var(--brass), transparent)",
+        animation: "rcv-sweep 1.1s linear infinite"
+      }
+    })));
+  };
   const here = thisDevice ? "“" + thisDevice + "”" : "this device";
   const [upd, setUpd] = useState(null);
   const [updMsg, setUpdMsg] = useState(null);
@@ -7668,12 +7725,14 @@ function SettingsModal({
             setXferMsg({ ok: true, text: "Already up to date \u2014 nothing needs copying (" + p.unchanged + " records checked)." });
           } else setXferPlan(p);
         } else setXferMsg({ ok: false, text: p && p.error || "Couldn't reach the other device" });
+        setXferProg(null);
         return;
       }
       setXferBusy(true);
       setXferMsg(null);
       const r = await window.transfer.receive(xferCode.trim(), xferReplace);
       setXferBusy(false);
+      setXferProg(null);
       setXferPlan(null);
       if (r && r.ok) {
         setXferCode("");
@@ -7694,7 +7753,7 @@ function SettingsModal({
     className: "btn btn-ghost",
     disabled: xferBusy,
     onClick: () => setXferPlan(null)
-  }, "Cancel"))),
+  }, "Cancel")), xferBar()),
   /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {

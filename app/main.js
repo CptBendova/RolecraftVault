@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.115";
+const FACTORY_BUILD = "1.116";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -215,16 +215,45 @@ const transferFilePath = () => path.join(updatesDir, "transfer.bin");
 const deltaFilePath = () => path.join(updatesDir, "delta.bin");
 
 /* A short fingerprint per record lets the two devices work out exactly which
-   records differ, so only those travel. */
-function buildManifest() {
+   records differ, so only those travel. Fingerprinting means reading and hashing
+   the whole vault, which on a library of pictures is most of the wait in a sync
+   — and it happens once to preview the sync and again to run it, on both
+   devices. So the result is cached against a cheap signature of the folder:
+   every filename with its size and modification time. Records are only ever
+   written by writeFileAtomic, which replaces the file, so a changed record
+   always moves its mtime and the cache stands down. */
+let manifestCache = null; // { sig, manifest }
+function vaultSignature() {
+  const h = crypto.createHash("sha256");
+  let names;
+  try { names = fs.readdirSync(dataDir).sort(); } catch (e) { return null; }
+  for (const f of names) {
+    if (!f.endsWith(".dat")) continue;
+    try {
+      const st = fs.statSync(path.join(dataDir, f));
+      h.update(f).update("|").update(String(st.size)).update("|").update(String(st.mtimeMs)).update("\n");
+    } catch (e) { return null; } // a file that vanished mid-scan: do not trust a cache
+  }
+  return h.digest("hex");
+}
+function buildManifest(report) {
+  const sig = vaultSignature();
+  if (sig && manifestCache && manifestCache.sig === sig) {
+    if (report) report(1, 1);
+    return manifestCache.manifest;
+  }
+  const keys = allKeys();
   const m = {};
-  for (const k of allKeys()) {
+  let i = 0;
+  for (const k of keys) {
     try {
       const v = readValue(k);
-      if (v === null || v === undefined) continue;
-      m[k] = crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 16);
+      if (v !== null && v !== undefined) m[k] = crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 16);
     } catch (e) {}
+    if (report) report(++i, keys.length);
   }
+  // only cache a scan that matches the folder it started from
+  if (sig && sig === vaultSignature()) manifestCache = { sig, manifest: m };
   return m;
 }
 /* Both sides of a transfer look identical once you are staring at a code, which
@@ -432,7 +461,7 @@ function startTransferServer() {
 /* Downloads to disk, decrypts to a plaintext temp file, authenticates the whole
    payload, and only then writes anything into the vault. Bounded memory, and a
    corrupt or wrong-code transfer can never leave the vault half-written. */
-function decryptTransferFile(encPath, plainPath, secret) {
+function decryptTransferFile(encPath, plainPath, secret, report) {
   const size = fs.statSync(encPath).size;
   const HEAD = 5 + 16 + 12;
   if (size < HEAD + 16) throw new Error("transfer file too small");
@@ -459,6 +488,7 @@ function decryptTransferFile(encPath, plainPath, secret) {
       const out = d.update(buf.slice(0, got));
       if (out.length) fs.writeSync(fdOut, out);
       pos += got;
+      if (report) report(pos - HEAD, stop - HEAD);
     }
     const fin = d.final(); // throws if the code is wrong or bytes were tampered with
     if (fin.length) fs.writeSync(fdOut, fin);
@@ -497,7 +527,7 @@ function eachTransferLine(plainPath, onLine) {
   }
 }
 
-function applyTransferPlainFile(plainPath, replace) {
+function applyTransferPlainFile(plainPath, replace, report, expected) {
   let meta = null;
   eachTransferLine(plainPath, line => {
     meta = JSON.parse(line);
@@ -517,6 +547,7 @@ function applyTransferPlainFile(plainPath, replace) {
     if (!r || typeof r.k !== "string") return;
     writeValue(r.k, r.v);
     n++;
+    if (report) report(n, expected || n);
   });
   return { count: n, at: meta.at };
 }
@@ -536,12 +567,16 @@ function httpBuffer(opts, body) {
   });
 }
 
-function httpToFile(opts, body, destPath) {
+function httpToFile(opts, body, destPath, report) {
   return new Promise((resolve, reject) => {
     try { fs.unlinkSync(destPath); } catch (e) {}
     const file = fs.createWriteStream(destPath);
     const req = http.request(opts, res => {
       if (res.statusCode !== 200) { res.resume(); file.close(); reject(new Error("status " + res.statusCode)); return; }
+      // the sender sets Content-Length, so this is a real fraction rather than a guess
+      const total = parseInt(res.headers["content-length"], 10) || 0;
+      let got = 0;
+      if (report) res.on("data", d => { got += d.length; report(got, total); });
       res.pipe(file);
       file.on("finish", () => file.close(() => resolve(destPath)));
     });
@@ -555,12 +590,27 @@ function httpToFile(opts, body, destPath) {
 /* Incremental sync: compare fingerprints, pull only what differs.
    With preview set, everything below is read-only: it reports what would change
    on THIS device and writes nothing. */
-async function receiveTransfer(code, mirror, preview) {
+async function receiveTransfer(code, mirror, preview, onProgress) {
+  /* Progress is reported in named phases rather than one number: the phases
+     take wildly different lengths depending on the vault, and a single bar that
+     stalls at 40% for a minute tells you less than a bar that says what it is
+     doing. Throttled, because a byte-level callback fires thousands of times a
+     second and every one of them crosses to the renderer. */
+  let lastSent = 0;
+  const phase = (name, done, total) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    const finished = total > 0 && done >= total;
+    if (!finished && now - lastSent < 120) return;
+    lastSent = now;
+    onProgress({ phase: name, done, total, pct: total > 0 ? Math.min(1, done / total) : 0 });
+  };
   let target;
   try { target = parseCode(code); } catch (e) { return { ok: false, error: "That code isn't valid" }; }
   const base = { host: target.ip, port: target.port, timeout: 30000 };
   let remote;
   try {
+    phase("asking", 0, 0);
     const blob = await httpBuffer(Object.assign({ path: "/manifest", method: "GET" }, base));
     remote = JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
   } catch (e) {
@@ -575,7 +625,7 @@ async function receiveTransfer(code, mirror, preview) {
     const blob = await httpBuffer(Object.assign({ path: "/whoami", method: "GET" }, base));
     them = JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
   } catch (e) {}
-  const local = buildManifest();
+  const local = buildManifest((i, n) => phase("comparing", i, n));
   const needed = [];
   let added = 0, updated = 0;
   for (const k of Object.keys(remote)) {
@@ -613,19 +663,22 @@ async function receiveTransfer(code, mirror, preview) {
     };
     try {
       const body = encryptPayload(Buffer.from(JSON.stringify(needed), "utf8"), target.secret);
+      // the other device is reading its records off disk before a byte arrives
+      phase("packing", 0, 0);
       await httpToFile(Object.assign({
         path: "/delta",
         method: "POST",
         headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length }
-      }, base), body, encPath);
+      }, base), body, encPath, (got, total) => phase("receiving", got, total));
       bytes = fs.statSync(encPath).size;
-      decryptTransferFile(encPath, plainPath, target.secret);
+      decryptTransferFile(encPath, plainPath, target.secret, (done, total) => phase("unpacking", done, total));
     } catch (e) {
       cleanup();
       return { ok: false, error: "Couldn't fetch the changes: " + e.message };
     }
     try {
-      applyTransferPlainFile(plainPath, false); // never wipes; deletions handled below
+      // never wipes; deletions handled below
+      applyTransferPlainFile(plainPath, false, (n, total) => phase("saving", n, total), needed.length);
     } catch (e) {
       cleanup();
       return { ok: false, error: "Changes arrived but couldn't be saved: " + e.message };
@@ -635,7 +688,9 @@ async function receiveTransfer(code, mirror, preview) {
   let removed = 0;
   for (const k of removable) {
     try { fs.unlinkSync(keyToFile(k)); removed++; } catch (e) {}
+    phase("removing", removed, removable.length);
   }
+  phase("done", 1, 1);
   return Object.assign({ ok: true, added, updated, removed, unchanged, bytes }, who);
 }
 
@@ -769,8 +824,10 @@ function setupAuthIpc() {
   ipcMain.handle("transfer-status", () => transferState
     ? { active: true, code: transferState.code, minutesLeft: Math.max(0, Math.round((transferState.expiresAt - Date.now()) / 60000)), device: deviceName() }
     : { active: false, device: deviceName() });
-  ipcMain.handle("transfer-receive", (e, code, replace) => receiveTransfer(code, replace, false));
-  ipcMain.handle("transfer-preview", (e, code, replace) => receiveTransfer(code, replace, true));
+  // progress goes back to the window that asked, so a closed window cannot be sent to
+  const progressTo = e => p => { try { if (!e.sender.isDestroyed()) e.sender.send("transfer-progress", p); } catch (err) {} };
+  ipcMain.handle("transfer-receive", (e, code, replace) => receiveTransfer(code, replace, false, progressTo(e)));
+  ipcMain.handle("transfer-preview", (e, code, replace) => receiveTransfer(code, replace, true, progressTo(e)));
   ipcMain.handle("updates-status", () => {
     const act = activeUpdate();
     return { build: FACTORY_BUILD, active: act ? act.version : null, notes: act ? act.notes : "" };

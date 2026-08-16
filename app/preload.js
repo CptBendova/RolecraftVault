@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("transfer", {
   receive: (code, replace) => ipcRenderer.invoke("transfer-receive", code, replace),
   // read-only: reports what a sync would do to this device, changes nothing
   preview: (code, replace) => ipcRenderer.invoke("transfer-preview", code, replace),
+  /* Progress ticks while a preview or a sync is running. Returns the
+     unsubscribe, and only the payload is passed on — never the IPC event, which
+     would hand the renderer a way back into the bridge. */
+  onProgress: (cb) => {
+    const h = (_e, payload) => { try { cb(payload); } catch (err) {} };
+    ipcRenderer.on("transfer-progress", h);
+    return () => ipcRenderer.removeListener("transfer-progress", h);
+  },
 });
 contextBridge.exposeInMainWorld("updater", {
   status: () => ipcRenderer.invoke("updates-status"),
