@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.093";
+const APP_VERSION = "1.094";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.093";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.093 — current",
+  heading: "1.094 — current",
+  notes: ["Restoring an earlier version keeps your custom section order. Restoring used to give every section a new internal id while keeping the old ordering, so the order pointed at nothing and custom sections dropped to the bottom of the page.", "A failed save now says so. If writing to storage failed, the app still reported “Character saved” and carried on as though nothing had happened — the change was simply lost. Failures are now reported, and success is only claimed once the write has actually gone through.", "A failed read no longer looks like an empty vault. A storage error used to be indistinguishable from having no data, so the library appeared empty and the next save would write that emptiness over the top.", "Characters saved before galleries existed no longer break the page they appear on.", "Pictures assigned to a variant that a restore removed are visible again, instead of staying in the vault with nothing showing them."]
+}, {
+  heading: "1.093",
   notes: ["Reinstalling the app now actually replaces the interface. An installed patch kept overriding the newly installed one, so a fresh install could still show the old interface — including a missing version history. Patches now record which build they were applied to and step aside once the app itself is updated.", "Settings are in a more sensible order: appearance and layout first, then security, then updates and version history, with backups and device transfer at the bottom."]
 }, {
   heading: "1.092",
@@ -37,20 +40,32 @@ const CHANGELOG = [{
 }];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+/* A key that was never written is not an error, and the two platforms disagree
+   about how to say so: the web storage throws "key not found", the desktop one
+   returns null. Everything else is a real failure and must propagate. Reporting
+   a failed read as "no data" is how a transient error used to turn into an empty
+   library, which the next save then wrote over the top of the real one. */
+const isMissingKey = e => /not found/i.test(e && e.message || "");
 async function sGet(key) {
   try {
     const r = await window.storage.get(key);
     return r ? r.value : null;
-  } catch {
-    return null;
+  } catch (e) {
+    if (isMissingKey(e)) return null;
+    console.error("read failed", key, e);
+    throw e;
   }
 }
+/* Throws on failure rather than returning null. Callers announce success on the
+   line after `await sSet(...)`, so swallowing the error here made the app claim
+   it had saved when nothing was written. Anything not caught locally reaches the
+   unhandledrejection handler installed with the toaster. */
 async function sSet(key, value) {
   try {
     return await window.storage.set(key, value);
   } catch (e) {
     console.error("save failed", key, e);
-    return null;
+    throw e;
   }
 }
 async function sList() {
@@ -3252,7 +3267,7 @@ function CharacterPage({
     (c.variants || []).forEach(v => {
       if (v.profileImg) push(v.profileImg, "Portrait \u00b7 " + (v.name || "Variant"), metaOf(v.profileImg, v.id));
     });
-    c.gallery.forEach((g, i) => push(g.imgId, g.caption || "Image " + (i + 1), {
+    (c.gallery || []).forEach((g, i) => push(g.imgId, g.caption || "Image " + (i + 1), {
       renamable: true,
       movable: true,
       caption: g.caption || "",
@@ -3262,7 +3277,7 @@ function CharacterPage({
     return out;
   })();
   useEffect(() => {
-    [c.profileImg, ...c.gallery.map(g => g.imgId)].filter(Boolean).forEach(loadImage);
+    [c.profileImg, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(loadImage);
     (c.variants || []).forEach(v => v.profileImg && loadImage(v.profileImg));
     requestFull(c.profileImg);
   }, [c]);
@@ -3277,14 +3292,19 @@ function CharacterPage({
   let profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
   const details = [["Age", c.age], ["Gender", c.gender], ["Pronouns", c.pronouns], ["Bucket", c.bucket]].filter(x => x[1]);
   const [activeVar, setActiveVar] = useState(null); // variant id or null = Default
-  // images with no variantId are shared (shown everywhere); tagged ones only appear under their variant
-  const visGallery = c.gallery.map((g, oi) => ({ g, oi })).filter(x => {
+  const variants = c.variants || [];
+  /* Images with no variantId are shared (shown everywhere); tagged ones only appear
+     under their variant. A tag naming a variant that no longer exists — a restore
+     can remove one, and rule 2 forbids a restore from editing the gallery — would
+     otherwise match nothing and the picture would silently stop rendering. Treat
+     those as shared so the image stays reachable without rewriting its record. */
+  const liveVid = id => id === DEFAULT_VID || variants.some(v => v.id === id);
+  const visGallery = (c.gallery || []).map((g, oi) => ({ g, oi })).filter(x => {
     const vid = (x.g.variantId || "").trim();
-    if (!vid) return true; // untagged = shared by every variant
+    if (!vid || !liveVid(vid)) return true; // untagged, or orphaned by a restore = shared
     if (vid === DEFAULT_VID) return activeVar === null;
     return vid === activeVar;
   });
-  const variants = c.variants || [];
   const av = activeVar !== null ? variants.find(v => v.id === activeVar) : null;
   activeProfileId = (av && av.profileImg) || c.profileImg;
   profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
@@ -3361,7 +3381,7 @@ function CharacterPage({
     setOverIdx(null);
     onReorder(keys);
   };
-  const hasAside = c.gallery.length > 0 || !!c.profileImg || !!c.banner;
+  const hasAside = (c.gallery || []).length > 0 || !!c.profileImg || !!c.banner;
   useEffect(() => {
     if (c.banner) {
       loadImage(c.banner);
@@ -3593,7 +3613,7 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.play,
     size: 13
-  }), " Slideshow")), (c.gallery.length > 0 || c.profileImg) && /*#__PURE__*/React.createElement("button", {
+  }), " Slideshow")), ((c.gallery || []).length > 0 || c.profileImg) && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onDownloadImages
   }, /*#__PURE__*/React.createElement("span", {
@@ -3763,7 +3783,7 @@ function CharacterPage({
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
-  }, "Gallery · ", c.gallery.length), /*#__PURE__*/React.createElement("button", {
+  }, "Gallery · ", (c.gallery || []).length), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     style: {
       padding: "5px 10px",
@@ -3810,7 +3830,7 @@ function CharacterPage({
     onDrop: e => {
       e.preventDefault();
       if (railDrag !== null && railDrag !== i) {
-        const next = c.gallery.slice();
+        const next = (c.gallery || []).slice();
         const [m] = next.splice(railDrag, 1);
         next.splice(i, 0, m);
         onReorderImages(next);
@@ -3852,14 +3872,14 @@ function CharacterPage({
     variantOptions: (c.variants || []).map(v => ({ id: v.id, name: v.name || "Variant" })),
     onSetVariant: onSetVariant,
     onRename: (imgId, text) => {
-      const idx = c.gallery.findIndex(g => g.imgId === imgId);
+      const idx = (c.gallery || []).findIndex(g => g.imgId === imgId);
       if (idx >= 0) onCaption(idx, text);
     },
     onMoveImage: (fromId, toId) => {
-      const from = c.gallery.findIndex(g => g.imgId === fromId),
-        to = c.gallery.findIndex(g => g.imgId === toId);
+      const from = (c.gallery || []).findIndex(g => g.imgId === fromId),
+        to = (c.gallery || []).findIndex(g => g.imgId === toId);
       if (from < 0 || to < 0) return;
-      const next = c.gallery.slice();
+      const next = (c.gallery || []).slice();
       const [m] = next.splice(from, 1);
       next.splice(to, 0, m);
       onReorderImages(next);
@@ -3876,7 +3896,7 @@ function CharacterPage({
     blurred: blurred,
     onClose: () => setSs(false)
   }), lb !== null && /*#__PURE__*/React.createElement(Lightbox, {
-    items: c.gallery,
+    items: c.gallery || [], // the lightbox maps over this
     index: lb.index,
     imgCache: imgCache,
     fullCache: fullCache,
@@ -3887,7 +3907,7 @@ function CharacterPage({
     onClose: () => setLb(null),
     onNav: d => setLb(p => ({
       ...p,
-      index: (p.index + d + c.gallery.length) % c.gallery.length
+      index: (p.index + d + (c.gallery || []).length) % (c.gallery || []).length
     })),
     onSetProfile: imgId => {
       onSetProfile(imgId);
@@ -3895,10 +3915,10 @@ function CharacterPage({
     },
     onCaption: onCaption,
     onRemove: onDeleteImages ? i => {
-      const removedId = c.gallery[i] && c.gallery[i].imgId;
+      const removedId = (c.gallery || [])[i] && (c.gallery || [])[i].imgId;
       onDeleteImages(removedId ? [removedId] : []);
       setLb(p => {
-        const remaining = c.gallery.length - 1;
+        const remaining = (c.gallery || []).length - 1;
         if (remaining <= 0) return null;
         return {
           ...p,
@@ -4714,6 +4734,7 @@ function snapshotChar(c, label) {
     bucket: c.bucket || "",
     lorebooks: (c.lorebooks || []).slice(),
     sections: (c.sections || []).map(s => ({
+      id: s.id, // kept so a restore can still resolve sectionOrder's "sec:<id>" keys
       title: s.title || "",
       content: s.content || ""
     })),
@@ -4731,16 +4752,31 @@ function pushHistory(c, label) {
 }
 function applySnapshot(c, snap) {
   // restores written content only; profileImg, banner and gallery are deliberately left as they are
+  const snapSections = snap.sections || [];
+  /* sectionOrder addresses sections as "sec:<id>". Restoring used to mint fresh ids
+     while copying sectionOrder through untouched, so every key was stale on arrival
+     and custom sections silently sank to the bottom of the reading order. Reuse the
+     recorded ids so the order still resolves. Snapshots taken before ids were stored
+     cannot be reconciled at all, so their order is dropped — falling back to the
+     default beats an order that points at nothing. */
+  const haveIds = snapSections.every(s => s && s.id);
+  const sections = snapSections.map(s => ({
+    id: haveIds ? s.id : uid(),
+    title: s.title || "",
+    content: s.content || ""
+  }));
+  const live = new Set(sections.map(s => "sec:" + s.id));
+  const isSectionKey = k => String(k).indexOf("sec:") === 0;
+  // also drops keys for sections deleted after the order was last set
+  const order = haveIds && Array.isArray(snap.sectionOrder)
+    ? snap.sectionOrder.filter(k => !isSectionKey(k) || live.has(k))
+    : null;
   return Object.assign({}, c, snap.fields, {
     tags: (snap.tags || []).slice(),
     bucket: snap.bucket || "",
     lorebooks: (snap.lorebooks || []).slice(),
-    sections: (snap.sections || []).map(s => ({
-      id: uid(),
-      title: s.title || "",
-      content: s.content || ""
-    })),
-    sectionOrder: snap.sectionOrder || null,
+    sections,
+    sectionOrder: order && order.length ? order : null,
     variants: (snap.variants || []).map(v => Object.assign({}, v, {
       id: v.id || uid()
     }))
@@ -4788,7 +4824,7 @@ function CharacterEditor({
   }, []);
   const setAdvOpen = updater => setAdvOpenRaw(prev => {
     const next = typeof updater === "function" ? updater(prev) : updater;
-    sSet("ui:advopen", next ? "1" : "0");
+    sSet("ui:advopen", next ? "1" : "0").catch(() => {}); // cosmetic; not worth a banner
     return next;
   });
   const [vIdx, setVIdx] = useState(-1); // -1 = Default (base fields), otherwise index into c.variants
@@ -4899,7 +4935,7 @@ function CharacterEditor({
   };
   useEffect(() => {
     if (c.profileImg) loadImage(c.profileImg);
-    c.gallery.forEach(g => loadImage(g.imgId));
+    (c.gallery || []).forEach(g => loadImage(g.imgId));
   }, []);
   const uploadBanner = async files => {
     if (!files || !files[0]) return;
@@ -4970,7 +5006,7 @@ function CharacterEditor({
     }
     setC(p => ({
       ...p,
-      gallery: [...p.gallery, ...added]
+      gallery: [...(p.gallery || []), ...added]
     }));
     const vName = vIdx >= 0 && variants[vIdx] ? variants[vIdx].name || "variant" : "Default";
     toast(added.length + (added.length === 1 ? " image added to \u201c" : " images added to \u201c") + vName + "\u201d");
@@ -5634,7 +5670,7 @@ function CharacterEditor({
       uploadGallery(e.target.files);
       e.target.value = "";
     }
-  })), c.gallery.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  })), (c.gallery || []).length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px dashed var(--line2)",
       borderRadius: 10,
@@ -5649,7 +5685,7 @@ function CharacterEditor({
       gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
       gap: 12
     }
-  }, c.gallery.map((g, i) => /*#__PURE__*/React.createElement("button", {
+  }, (c.gallery || []).map((g, i) => /*#__PURE__*/React.createElement("button", {
     key: g.imgId,
     onClick: () => setLightbox(i),
     "aria-label": "Open image " + (i + 1),
@@ -5733,7 +5769,7 @@ function CharacterEditor({
     onRestore: restoreVersion,
     onClose: () => setShowHistory(false)
   }), lightbox !== null && /*#__PURE__*/React.createElement(Lightbox, {
-    items: c.gallery,
+    items: c.gallery || [], // the lightbox maps over this
     index: lightbox,
     imgCache: imgCache,
     fullCache: fullCache,
@@ -5741,17 +5777,17 @@ function CharacterEditor({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     onClose: () => setLightbox(null),
-    onNav: d => setLightbox(i => (i + d + c.gallery.length) % c.gallery.length),
+    onNav: d => setLightbox(i => (i + d + (c.gallery || []).length) % (c.gallery || []).length),
     onSetProfile: imgId => {
       set("profileImg", imgId);
       toast("Portrait updated");
     },
-    onCaption: (i, cap) => set("gallery", c.gallery.map((g, j) => j === i ? {
+    onCaption: (i, cap) => set("gallery", (c.gallery || []).map((g, j) => j === i ? {
       ...g,
       caption: cap
     } : g)),
     onRemove: i => {
-      const next = c.gallery.filter((_, j) => j !== i);
+      const next = (c.gallery || []).filter((_, j) => j !== i);
       set("gallery", next);
       if (next.length === 0) setLightbox(null);else setLightbox(Math.min(i, next.length - 1));
     }
@@ -6930,7 +6966,7 @@ function RolecraftVault() {
       next = next.map(c => {
         const it = byId.get(c.id);
         if (!it) return c;
-        [c.profileImg, c.banner, ...c.gallery.map(g => g.imgId)].filter(Boolean).forEach(id => {
+        [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
           sDel("img:" + id);
           sDel("th:" + id);
         });
@@ -6989,7 +7025,7 @@ function RolecraftVault() {
   const bulkDeleteChars = async ids => {
     const idSet = new Set(ids);
     const going = chars.filter(c => idSet.has(c.id));
-    going.forEach(c => [c.profileImg, c.banner, ...c.gallery.map(g => g.imgId)].filter(Boolean).forEach(id => {
+    going.forEach(c => [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
       sDel("img:" + id);
       sDel("th:" + id);
     }));
@@ -7126,12 +7162,28 @@ function RolecraftVault() {
   }, [authState.checked, authState.locked]);
   const setSort = v => {
     setSortRaw(v);
-    sSet("ui:charsort", v);
+    sSet("ui:charsort", v).catch(() => {}); // cosmetic; not worth a banner
   };
   const toast = useCallback(m => {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 2400);
   }, []);
+
+  /* Last line of defence for a failed write. sSet throws, which stops the caller
+     before it announces success, but most callers have nowhere sensible to report
+     it — so anything that gets away is surfaced here rather than vanishing into
+     the console. Silence after a failed save is the one outcome worth ruling out. */
+  useEffect(() => {
+    const onReject = e => {
+      const err = e && e.reason;
+      const msg = err && err.message || String(err || "");
+      if (/locked/i.test(msg)) toast("The vault is locked — nothing was saved");
+      else toast("Couldn't save — your last change may not be stored");
+      console.error("unhandled rejection", err);
+    };
+    window.addEventListener("unhandledrejection", onReject);
+    return () => window.removeEventListener("unhandledrejection", onReject);
+  }, [toast]);
 
   /* --- auth status --- */
   const refreshAuth = useCallback(async () => {
@@ -7216,7 +7268,7 @@ function RolecraftVault() {
     if (!ready) return;
     chars.forEach(c => {
       if (c.profileImg) loadImage(c.profileImg);
-      c.gallery.forEach(g => loadImage(g.imgId));
+      (c.gallery || []).forEach(g => loadImage(g.imgId));
     });
     personas.forEach(p => {
       if (p.avatar) loadImage(p.avatar);
@@ -7251,7 +7303,7 @@ function RolecraftVault() {
         const ids = new Set();
         chars.forEach(c => {
           if (c.profileImg) ids.add(c.profileImg);
-          c.gallery.forEach(g => ids.add(g.imgId));
+          (c.gallery || []).forEach(g => ids.add(g.imgId));
         });
         personas.forEach(p => {
           if (p.avatar) ids.add(p.avatar);
@@ -7421,7 +7473,7 @@ function RolecraftVault() {
   }, [authState.checked, authState.locked]);
   const setDashOrder = arr => {
     setDashOrderRaw(arr);
-    sSet("ui:dashorder", JSON.stringify(arr));
+    sSet("ui:dashorder", JSON.stringify(arr)).catch(() => {}); // cosmetic; not worth a banner
   };
   const dashOrderChanged = JSON.stringify(dashOrder) !== JSON.stringify(DASH_KEYS);
   const resetDashLayout = async () => {
@@ -7620,7 +7672,7 @@ function RolecraftVault() {
           ...p2,
           [imgId]: v
         }));
-      });
+      }).catch(() => {}); // a picture that will not load shows as blank, not as a save failure
       return prev;
     });
   }, []);
@@ -7634,7 +7686,7 @@ function RolecraftVault() {
           ...p,
           [imgId]: v
         }));
-      });
+      }).catch(() => {}); // as above
       return prev;
     });
   }, []);
@@ -7666,7 +7718,7 @@ function RolecraftVault() {
     const next = chars.filter(x => x.id !== c.id);
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    const imgIds = [c.profileImg, c.banner, ...c.gallery.map(g => g.imgId)].filter(Boolean);
+    const imgIds = [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean);
     imgIds.forEach(id => {
       sDel("img:" + id);
       sDel("th:" + id);
@@ -7863,7 +7915,7 @@ function RolecraftVault() {
     const images = {},
       thumbs = {};
     const ids = [];
-    for (const c of charList || []) ids.push(c.profileImg, c.banner, ...c.gallery.map(g => g.imgId));
+    for (const c of charList || []) ids.push(c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId));
     for (const p of personaList || []) ids.push(p.avatar, ...(p.gallery || []).map(g => g.imgId));
     for (const id of ids.filter(Boolean)) {
       images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
@@ -7886,7 +7938,10 @@ function RolecraftVault() {
     if (scope === undefined || scope === "all") return c;
     const keep = g => {
       const vid = (g.variantId || "").trim();
-      return !vid || (scope !== null && vid === scope);
+      // a tag whose variant no longer exists counts as shared, as in the viewer,
+      // so an orphaned image is not quietly dropped from every scoped export
+      const orphan = vid && vid !== DEFAULT_VID && !(c.variants || []).some(v => v.id === vid);
+      return !vid || orphan || (scope !== null && vid === scope);
     };
     if (scope === null) return {
       ...c,
@@ -8036,7 +8091,7 @@ function RolecraftVault() {
     toast("Preparing backup…");
     const images = {};
     const imgIds = [];
-    for (const c of chars) imgIds.push(c.profileImg, c.banner, ...c.gallery.map(g => g.imgId));
+    for (const c of chars) imgIds.push(c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId));
     for (const p of personas) imgIds.push(p.avatar, ...(p.gallery || []).map(g => g.imgId));
     const thumbs = {};
     Object.values(bucketMeta).forEach(m => {
@@ -8340,7 +8395,7 @@ function RolecraftVault() {
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;
     const wall = [];
-    chars.forEach(c => c.gallery.forEach(g => wall.push({
+    chars.forEach(c => (c.gallery || []).forEach(g => wall.push({
       imgId: g.imgId,
       label: c.name || "Untitled",
       kind: "character",
@@ -8595,7 +8650,7 @@ function RolecraftVault() {
           fontSize: 12,
           color: "var(--dim)"
         }
-      }, "Updated ", timeAgo(spotlight.updatedAt), spotlight.gallery.length > 0 ? " \u00b7 " + spotlight.gallery.length + (spotlight.gallery.length === 1 ? " gallery image" : " gallery images") : "")))))) : null,
+      }, "Updated ", timeAgo(spotlight.updatedAt), (spotlight.gallery || []).length > 0 ? " \u00b7 " + (spotlight.gallery || []).length + ((spotlight.gallery || []).length === 1 ? " gallery image" : " gallery images") : "")))))) : null,
       quick: dashSection("quick", "Start from anywhere", /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
         style: {
           display: "grid",
@@ -9410,7 +9465,7 @@ function RolecraftVault() {
       gap: 8,
       flexWrap: "wrap"
     }
-  }, c.gallery.length > 0 && /*#__PURE__*/React.createElement("span", {
+  }, (c.gallery || []).length > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       display: "inline-flex",
       gap: 4,
@@ -9419,7 +9474,7 @@ function RolecraftVault() {
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.img,
     size: 11
-  }), c.gallery.length), (c.tagline || (c.tags || []).join(" | ")) && /*#__PURE__*/React.createElement("span", {
+  }), (c.gallery || []).length), (c.tagline || (c.tags || []).join(" | ")) && /*#__PURE__*/React.createElement("span", {
     style: {
       color: "var(--brass)",
       whiteSpace: "nowrap",
@@ -9881,7 +9936,7 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement(Ic, {
       d: icons.img,
       size: 11
-    }), p.gallery.length)))))));
+    }), (p.gallery || []).length)))))));
   })(), view === "lorebooks" && (() => {
     const books = {};
     lore.forEach(e => {
@@ -10985,7 +11040,7 @@ function RolecraftVault() {
         setCharQ(t);
         toast("Showing everything tagged \u201c" + t + "\u201d");
       },
-      onStats: () => openRecordStats(vc.name || "Untitled", textOfChar(vc), [vc.profileImg, vc.banner, ...vc.gallery.map(g => g.imgId)]),
+      onStats: () => openRecordStats(vc.name || "Untitled", textOfChar(vc), [vc.profileImg, vc.banner, ...(vc.gallery || []).map(g => g.imgId)]),
       onClose: () => setViewCharId(null),
       onEdit: () => {
         setEditingChar(vc);
@@ -11012,7 +11067,7 @@ function RolecraftVault() {
       }),
       onCaption: (idx, text) => persistChar({
         ...vc,
-        gallery: vc.gallery.map((g, j) => j === idx ? {
+        gallery: (vc.gallery || []).map((g, j) => j === idx ? {
           ...g,
           caption: text
         } : g)
@@ -11025,7 +11080,7 @@ function RolecraftVault() {
         });
         const patch = {
           ...vc,
-          gallery: vc.gallery.filter(g => !idSet.has(g.imgId)),
+          gallery: (vc.gallery || []).filter(g => !idSet.has(g.imgId)),
           updatedAt: Date.now()
         };
         if (idSet.has(vc.profileImg)) patch.profileImg = null;
@@ -11037,7 +11092,7 @@ function RolecraftVault() {
         const n = (name || "").trim();
         if (!n) return;
         const known = (vc.albums || []).slice();
-        const exists = known.indexOf(n) >= 0 || vc.gallery.some(g => (g.album || "").trim() === n);
+        const exists = known.indexOf(n) >= 0 || (vc.gallery || []).some(g => (g.album || "").trim() === n);
         if (exists) {
           toast("That album already exists");
           return;
@@ -11048,8 +11103,8 @@ function RolecraftVault() {
       },
       onSetVariant: async (imgIds, variantId) => {
         const idSet = new Set(imgIds);
-        const gallery = vc.gallery.map(g => idSet.has(g.imgId) ? { ...g, variantId: variantId } : g);
-        const galleryIds = new Set(vc.gallery.map(g => g.imgId));
+        const gallery = (vc.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, variantId: variantId } : g);
+        const galleryIds = new Set((vc.gallery || []).map(g => g.imgId));
         const imgMeta = { ...(vc.imgMeta || {}) };
         imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
           imgMeta[id] = { ...(imgMeta[id] || {}), variantId: variantId };
@@ -11062,8 +11117,8 @@ function RolecraftVault() {
       },
       onSetAlbum: async (imgIds, albumName) => {
         const idSet = new Set(imgIds);
-        const gallery = vc.gallery.map(g => idSet.has(g.imgId) ? { ...g, album: albumName } : g);
-        const galleryIds = new Set(vc.gallery.map(g => g.imgId));
+        const gallery = (vc.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, album: albumName } : g);
+        const galleryIds = new Set((vc.gallery || []).map(g => g.imgId));
         const imgMeta = { ...(vc.imgMeta || {}) };
         imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
           imgMeta[id] = { ...(imgMeta[id] || {}), album: albumName };
