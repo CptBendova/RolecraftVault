@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.109";
+const APP_VERSION = "1.110";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.109";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.109 — current",
+  heading: "1.110 — current",
+  notes: ["A character with more than five variants now uses a dropdown instead of a chip for each one, on both the character page and the editor. Past a handful the row of chips became a wall that buried everything under it. There is also a quiet note of how many you have, since CharSnap only takes the first five.", "New “Sample JSON” button beside “Update from JSON”. It downloads a blank file showing every field the update accepts, with a note at the top explaining it — fill in the bits you want changed and leave the rest empty.", "The “Update from JSON” button now says which formats it accepts, and if a file will not load the message names them instead of just refusing.", "Attaching lorebooks to a character uses a dropdown once you have more than a handful, instead of a wall of chips. The ones already attached stay above it, still one click to remove. Books that actually have entries are listed first, so empty and half-named ones stop crowding out the real ones. With only a few books it stays as chips, which read better."]
+}, {
+  heading: "1.109",
   notes: ["Writing is no longer thrown away by a stray click. Clicking outside a lore entry or prompt while writing one closed it instantly and lost everything typed. It now asks first, and only when you have actually changed something — Escape asks too, and closing an untouched entry still just closes.", "The theme button now says which theme you are using — “Theme · Dark” — instead of naming the one it would switch to. Reading it as the current theme was the obvious mistake, and it was easy to think you were on the CharSnap theme when you were on the light one.", "The CharSnap theme's main buttons are outlined gold on a dark fill, matching how CharSnap actually draws them, rather than a solid gold slab."]
 }, {
   heading: "1.108",
@@ -257,6 +260,31 @@ function compressImage(file, maxDim = 1000, quality = 0.85) {
     reader.readAsDataURL(file);
   });
 }
+/* A fill-in-the-blanks template for "Update from JSON". Deliberately the shape
+   CharSnap documents — the app reads that, its own export, and Tavern cards, and
+   this is the one worth handing someone who asks what to write. Unknown keys are
+   ignored on import, so the note travels with the file harmlessly. */
+const SAMPLE_CHARACTER_JSON = {
+  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
+  name: "",
+  gender: "",
+  tagline: "",
+  tags: [],
+  searchables: [],
+  variants: [{
+    variant_name: "Default",
+    variant_tagline: "",
+    age: "",
+    personality: "",
+    description: "",
+    first_message: "",
+    scenario: "",
+    example_message: "",
+    creator_comment: "",
+    system_prompt: "",
+    always_active_system_prompt: ""
+  }]
+};
 function downloadJSON(obj, filename) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], {
     type: "application/json"
@@ -1758,7 +1786,14 @@ function ChipsPicker({
   }, emptyHint || "Nothing to pick from yet.");
   const needle = q.trim().toLowerCase();
   const attached = options.filter(o => cur.includes(o.value));
-  const rest = options.filter(o => !cur.includes(o.value) && (!needle || String(o.label).toLowerCase().includes(needle)));
+  /* Books with entries first, then alphabetically. A vault accumulates empty and
+     half-named books, and those were crowding out the ones worth attaching. */
+  const entriesOf = o => {
+    const m = /·\s*(\d+)\s*$/.exec(String(o.label));
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  const rest = options.filter(o => !cur.includes(o.value) && (!needle || String(o.label).toLowerCase().includes(needle)))
+    .sort((a, b) => (entriesOf(b) - entriesOf(a)) || String(a.label).localeCompare(String(b.label)));
   const chip = (o, on) => /*#__PURE__*/React.createElement("button", {
     key: o.value,
     className: "chip",
@@ -1786,16 +1821,29 @@ function ChipsPicker({
       flexWrap: "wrap",
       marginBottom: 8
     }
-  }, attached.map(o => chip(o, true))), many && /*#__PURE__*/React.createElement("input", {
-    value: q,
-    onChange: e => setQ(e.target.value),
-    placeholder: "Filter " + options.length + " lorebooks\u2026",
+  }, attached.map(o => chip(o, true))),
+  /* Past a handful, a wall of chips is unreadable \u2014 and a vault collects empty and
+     half-named books that crowd out the real ones. Attached books stay above as
+     chips so removing is still one click; the rest go in a dropdown, which browsers
+     let you type to search. */
+  many && /*#__PURE__*/React.createElement("select", {
+    value: "",
+    "aria-label": "Attach a lorebook",
+    onChange: e => {
+      const v = e.target.value;
+      if (v) onChange([...cur, v]);
+    },
     style: {
       width: "100%",
       marginBottom: 8
     }
-  }), /*#__PURE__*/React.createElement("div", {
-    className: many ? "scrollbody" : undefined,
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, rest.length ? "Attach a lorebook\u2026 (" + rest.length + " to choose from)" : "Every lorebook is attached"), rest.map(o => /*#__PURE__*/React.createElement("option", {
+    key: o.value,
+    value: o.value
+  }, o.label))), !many && /*#__PURE__*/React.createElement("div", {
+    className: undefined,
     style: {
       display: "flex",
       gap: 7,
@@ -3820,7 +3868,23 @@ function CharacterPage({
       textTransform: "uppercase",
       fontWeight: 700
     }
-  }, "Variant"), /*#__PURE__*/React.createElement("button", {
+  }, "Variant"), // a chip each past a handful buries the rest of the page, as in the editor
+  variants.length > 5 ? /*#__PURE__*/React.createElement("select", {
+    value: activeVar === null ? "" : activeVar,
+    onChange: e => setActiveVar(e.target.value || null),
+    "aria-label": "Variant being shown",
+    style: {
+      width: "auto",
+      minWidth: 190,
+      padding: "5px 8px",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Default"), variants.map((v, i) => /*#__PURE__*/React.createElement("option", {
+    key: v.id,
+    value: v.id
+  }, v.name || "Variant " + (i + 2)))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     className: "chip" + (activeVar === null ? " on" : ""),
     style: {
       cursor: "pointer"
@@ -3833,7 +3897,7 @@ function CharacterPage({
       cursor: "pointer"
     },
     onClick: () => setActiveVar(activeVar === v.id ? null : v.id)
-  }, v.name || "Variant " + (i + 2)))), details.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, v.name || "Variant " + (i + 2))))), details.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 16,
@@ -5236,12 +5300,12 @@ function CharacterEditor({
       const parsed = JSON.parse(await f.text());
       const results = normalizeCharacterImport(parsed);
       if (!results.length) {
-        toast("No character found in that file");
+        toast("No character found in that file. Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.");
         return;
       }
       setJsonIncoming(results[0].char);
     } catch (e) {
-      toast("Couldn't read that JSON file");
+      toast("Couldn't read that JSON file. Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.");
     }
   };
   const applyJsonUpdate = mode => {
@@ -5687,7 +5751,25 @@ function CharacterEditor({
     style: {
       marginRight: 6
     }
-  }, "Variant"), /*#__PURE__*/React.createElement("button", {
+  }, "Variant"), /* A chip each is fine for a handful and unusable for thirty — past
+     that the strip becomes a wall that buries the rest of the row, so it turns
+     into a single dropdown instead. */
+  variants.length > 5 ? /*#__PURE__*/React.createElement("select", {
+    value: String(vIdx),
+    onChange: e => setVIdx(parseInt(e.target.value, 10)),
+    "aria-label": "Variant being edited",
+    style: {
+      width: "auto",
+      minWidth: 190,
+      padding: "5px 8px",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "-1"
+  }, "Default"), variants.map((v, i) => /*#__PURE__*/React.createElement("option", {
+    key: v.id,
+    value: String(i)
+  }, v.name || "Variant " + (i + 2)))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     className: "chip" + (vIdx === -1 ? " on" : ""),
     style: {
       cursor: "pointer"
@@ -5700,7 +5782,13 @@ function CharacterEditor({
       cursor: "pointer"
     },
     onClick: () => setVIdx(i)
-  }, v.name || "Variant " + (i + 2))), /*#__PURE__*/React.createElement("button", {
+  }, v.name || "Variant " + (i + 2)))), variants.length > 4 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--dim)"
+    },
+    title: "CharSnap imports the first five variants and ignores the rest"
+  }, variants.length + 1 + " variants · CharSnap takes 5"), /*#__PURE__*/React.createElement("button", {
     className: "chip",
     style: {
       cursor: "pointer",
@@ -5713,6 +5801,7 @@ function CharacterEditor({
       padding: "4px 10px",
       fontSize: 12.5
     },
+    title: "Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.",
     onClick: () => jsonRef.current && jsonRef.current.click()
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -5724,6 +5813,14 @@ function CharacterEditor({
     d: icons.up || icons.down,
     size: 12
   }), " Update from JSON")), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12.5
+    },
+    title: "Downloads a blank file showing every field this accepts",
+    onClick: () => downloadJSON(SAMPLE_CHARACTER_JSON, "rolecraft-character-template.json")
+  }, "Sample JSON"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     style: {
       padding: "4px 10px",
