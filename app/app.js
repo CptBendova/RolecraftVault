@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.112";
+const APP_VERSION = "1.113";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,8 +25,8 @@ const APP_VERSION = "1.112";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.112 — current",
-  notes: ["Deleting a character or persona no longer destroys it. It goes to a bin for 30 days — pictures and all — and there is a “Recently deleted” list in Settings to put it back, or to remove it for good if you would rather. Anything still in the bin after 30 days is cleared automatically. Lorebook and prompt entries are unchanged for now: those still delete outright.", "New “Export text only” on a single character and on a persona, alongside the existing whole-library one. Personas had no export of their own at all before this; they now have both.", "The tick box under “Receive from another device” was being stretched to the full width of the panel, which is why it sat oddly away from its label. Tick boxes are now the size they should be."]
+  heading: "1.113 — current",
+  notes: ["Deleting a character or persona no longer destroys it. It goes to a bin for 30 days — pictures and all — and there is a “Recently deleted” list in Settings to put it back, or to remove it for good if you would rather. Anything still in the bin after 30 days is cleared automatically. Lorebook and prompt entries are unchanged for now: those still delete outright.", "That “Recently deleted” list folds away, the way version history does, and stays folded until you open it. A month of deletions could otherwise fill Settings and push everything under it off the screen. The heading says how many are waiting, so you can see there is something in there without opening it.", "New “Export text only” on a single character and on a persona, alongside the existing whole-library one. Personas had no export of their own at all before this; they now have both.", "The tick box under “Receive from another device” was being stretched to the full width of the panel, which is why it sat oddly away from its label. Tick boxes are now the size they should be."]
 }, {
   heading: "1.111",
   notes: ["Attaching lorebooks to a character uses a dropdown once you have more than a handful, instead of a wall of chips. The ones already attached stay above it, still one click to remove. Books that actually have entries are listed first, so empty and half-named ones stop crowding out the real ones. With only a few books it stays as chips, which read better."]
@@ -6841,6 +6841,9 @@ function SettingsModal({
   // version history is collapsed by default — it is reference material, not
   // something to scroll past every time Settings is opened
   const [histOpen, setHistOpen] = useState(false);
+  // the bin is collapsed too — with 30 days of deletions it would otherwise
+  // push everything below it off the screen
+  const [trashOpen, setTrashOpen] = useState(false);
   const [openRel, setOpenRel] = useState(0);
   const desktop = !!window.auth;
   const web = typeof window !== "undefined" && window.vaultPlatform === "web";
@@ -7208,14 +7211,44 @@ function SettingsModal({
       fontWeight: 700,
       marginBottom: 4
     }
-  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setTrashOpen(o => !o),
+    "aria-expanded": trashOpen,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
+      font: "inherit",
+      color: "var(--text)",
+      textAlign: "left"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      color: "var(--mut)",
+      transform: trashOpen ? "rotate(90deg)" : "none",
+      transition: "transform .12s"
+    }
+  }, "▸"), /*#__PURE__*/React.createElement("span", null, "Recently deleted"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 400,
+      fontSize: 12,
+      color: "var(--dim)"
+    }
+  }, (trash || []).length === 0 ? "empty" : (trash.length === 1 ? "1 item" : trash.length + " items") + " waiting"))), trashOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--mut)",
       lineHeight: 1.55,
-      marginBottom: 10
+      margin: "10px 0"
     }
-  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."), (trash || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."), trashOpen && (trash || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "scrollbody",
     style: {
       maxHeight: 220,
