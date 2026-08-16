@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.096";
+const APP_VERSION = "1.097";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.096";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.096 — current",
+  heading: "1.097 — current",
+  notes: ["The tag box now suggests CharSnap's tags as you type — all 622 of them, with the ones already in your vault offered first.", "Picking one stores it exactly as CharSnap spells it, so “age gap” becomes “Age Gap” and “adhd” becomes “ADHD”. Your own tags still behave as before. The same tag can no longer be added twice in different capitalisation.", "Exporting for CharSnap now warns you first if a character carries a tag CharSnap does not use, and names it, so you can fix it instead of finding out when the tag quietly vanishes on their end. It is only ever a warning — the export always goes ahead if you want it to.", "Characters have a new “Searchable terms” field, under Tags — nicknames, titles, the series they are from, anything someone might look them up by. It exports to CharSnap, comes back on import, is kept in every export the app makes, and is saved in version history like the rest of the writing. Capitalisation is left exactly as you type it."]
+}, {
+  heading: "1.096",
   notes: ["Exporting a character and importing it back keeps the gallery as you arranged it. Album names, which album each picture sits in, and which variant a picture belongs to were all discarded on import, so a round trip flattened the whole gallery into one unsorted pile.", "Custom section order now survives an import as well, not just a restore.", "A blurred banner stays blurred when exported.", "A character exported with “Export JSON” can now be imported straight into CharSnap — the file carries what CharSnap needs alongside the vault's own copy, so one file works in both places. For uploading to CharSnap, “Export for CharSnap” is still the better button: CharSnap does not read pictures out of a JSON file at all, so the plain export just carries them for nothing (kilobytes versus megabytes). Upload your images on CharSnap after importing.", "Importing a character from CharSnap keeps their age. CharSnap stores age on the variant rather than with the character, so it was being dropped every time.", "CharSnap variant files can be imported on their own. They arrive named after the variant instead of as “Imported character”.", "Characters exported for CharSnap now carry every field CharSnap's own import template lists."]
 }, {
   heading: "1.094",
@@ -41,6 +44,112 @@ const CHANGELOG = [{
   reconstructed: true,
   notes: ["Lorebook entries gained real type and trigger fields. Entries that stored these as a “— Type/Triggers” line of text are converted on first launch.", "Character sections such as scenario, first message, example dialogue, creator notes and system prompts became first-class fields rather than free-form sections, and are lifted across automatically.", "Portrait thumbnails were regenerated at 1000px from the original images, replacing softer earlier ones.", "Characters gained variants, buckets, galleries with albums, and per-image blurring.", "Personas, lorebooks and a prompt vault were added alongside characters.", "Import support for CharSnap, Chub lorebooks, Tavern v1 and v2 character cards, and multi-character bot packs.", "Encrypted local storage with a master password, a quick-unlock PIN, and opt-in LAN transfer between two devices.", "Signed in-place updates, with automatic revert if an update misbehaves.", "Light and CharSnap themes, adjustable reading text size, a reorderable dashboard, and a stats screen."]
 }];
+
+/* CharSnap's published tag vocabulary, used to suggest tags while typing and to
+   warn before exporting a tag CharSnap will not recognise. Recovered from the tag
+   list PDF, so treat it as a good copy rather than an authoritative feed: an
+   unknown tag is only ever a warning, never a block. Casing is CharSnap's own and
+   matters on export. */
+const CHARSNAP_TAGS = [
+  "#Christmas2025", "#Halloween2025", "#SecretSanta2025", "#Valentines2026", "Abducted",
+  "Abuse", "Abusive", "Academia", "Academic", "Addiction", "ADHD", "Adoptive Family",
+  "Adventure", "Age Gap", "Aggressive", "Alien", "Alpha", "Alternate Greeting",
+  "Alternate Universe", "American", "Amnesia", "Anal", "Androgynous", "Android", "Angel",
+  "Angst", "Anime/Manga", "Antagonist", "Anthropomorphic", "Antihero", "Anxiety", "AnyPOV",
+  "Apocalypse", "Aquatic", "Arabic", "Aromantic", "Arranged Marriage", "Art", "Artist",
+  "Asexual", "Asian", "Attentive", "Australian", "Autistic", "Baby", "Bad Boy", "Badass",
+  "Band", "BDSM", "Bear", "Best Friends", "Beta", "Betrayal", "Big Ass", "Big Breasts",
+  "Big Dick", "Biker", "Bilingual", "Bimbo", "BIPOC", "Bipolar", "Bird", "Bisexual",
+  "Bishounen", "Blood Play", "Blood/Gore", "Body Horror", "Body Modification", "Bodyguard",
+  "Books/Light Novels", "Boss", "Bottom", "Brat", "Brazilian", "Breakup", "Breeding",
+  "British", "Bug", "Bully", "Bunny", "Butch", "Butler", "Cafe", "Camping", "Canadian",
+  "Cannibalism", "Canon Character", "Canon Compliant", "Canon Divergent", "Captivity",
+  "Caring", "Casual Sex", "Cat", "Centaur", "CEO", "Chat Images", "Cheating/N", "Cheetah",
+  "Chinese", "Christmas", "Chubby", "Clingy", "Clown", "Clumsy", "CNC/DubCon/NonCon",
+  "Cockwarming", "Cocky", "Codependency", "Cold", "Collab", "Comedy", "Comfort", "Comics",
+  "Complicated Relationship", "Content Creator", "Cosplay", "Cow", "Cowboy", "Coworker",
+  "Cozy", "Creepy", "Criminal", "Crossdressing", "Crush", "Cryptid", "Cuckolding", "Cult",
+  "Cumflation", "Cute", "Cybernetic", "Cyberpunk", "Daddy Issues", "Dancer", "Dark",
+  "Dark Skin", "Darudere", "Date", "DC", "Dead Dove", "Death", "Deity", "Demihuman",
+  "Demisexual", "Demon", "Dense", "Depression", "Deredere", "Detective", "DILF",
+  "Disability", "Divorced", "Dog", "Domestic", "Dominant", "Double penetration", "Dragon",
+  "Drama", "Dramatic", "Drug/Alcohol Abuse", "Dungeons & Dragons", "Dysfunctional Family",
+  "Dystopia", "Easter", "Eccentric", "Edging", "Effeminate", "Egg Laying", "Elder",
+  "Eldritch", "Elf", "Emo", "Emotional Abuse", "Emotionally Attached",
+  "Emotionally Complex", "Emotionally Dependent", "Emotionally Unavailable", "Enemies",
+  "Enemies-to-Lovers", "English", "Entitled", "Espionage", "Established Friendship",
+  "Established Relationship", "Established Relationship Variant", "Event", "Evil",
+  "Exhausted", "Exhibitionism", "Experiment", "Extrovert", "Fae", "Fake Relationship",
+  "Fallen Angel", "Family Dynamics", "Fantasy", "Fantasy Racism", "Farmer", "Feet",
+  "Female", "Female Variant", "Femboy", "Feminine", "FemPO", "FemPOV", "Feral",
+  "Feudal Japan", "Finnish", "First Responder", "Flirty", "Fluff", "Foodplay", "Forbidden",
+  "Forced Proximity", "Found Family", "Fox", "Free Use", "French", "Frenemies",
+  "Friend's Relationship", "Friends", "Frog", "Furry", "Futanari", "Futuristic",
+  "Gambling", "Gamer", "Gangbang", "Gay", "Genderbend", "Genderfluid", "Genius", "Gentle",
+  "German", "Giant", "Gift", "GILF", "Glasses", "Goat", "Goblin", "Gold Digger", "Good",
+  "Goth", "Graphic Violence", "Greek", "Green Flag", "Grumpy", "Guard", "Guilty",
+  "Gunplay", "Gyaru", "Hacker", "Halloween", "Hanahaki", "Happy", "Harem", "Harpy",
+  "Heaven", "Hell", "Hero", "Heterosexual", "Hijab", "Himbo", "Hispanic", "Historical Era",
+  "Homeless", "Honest", "Horny", "Horror", "Horse", "Human", "Humiliation", "Hungarian",
+  "Hunter", "Hurt/Comfort", "Hybrid", "Hyena", "Idiot", "Immortal", "Imp", "In-Law",
+  "Incel", "Indian", "Indifferent", "Indigenous", "Indonesian", "Inexperienced",
+  "Insecure", "Intellectual", "Intersex", "Introvert", "Irish", "Isekai", "Italian",
+  "Jamaican", "Japan", "Japanese", "Jealousy", "K", "Kemonomimi", "Killer", "Kind",
+  "Kitsune", "Knife Play", "Knight", "Korean", "Kuudere", "Lactation", "Lamia",
+  "Law Enforcement", "Lawyer", "Lazy", "Lesbian", "LGBTQ", "Lizard", "Lonely", "Loser",
+  "Mafia", "Magic", "Maid", "Male", "Male Variant", "MalePO", "MalePOV", "Manipulation",
+  "Marriage", "Married", "Marvel", "Masked", "Mean", "Medical", "Medieval",
+  "Mental Health", "Mentally Ill", "Merfolk", "Meter System", "Middle Aged",
+  "Middle eastern", "Milestone", "MILF", "Military", "Mimic", "Mind Control", "Minotaur",
+  "Misunderstood", "MLM", "Modern", "Mommy Issues", "Monster", "Monster Fucking",
+  "Monstrous", "Monthly", "Mouse", "Movies", "MPreg", "Multilingual",
+  "Multiple Characters", "Multiple Personality", "Muscular", "Music", "Mystery",
+  "Mythology", "Naga", "Nature", "Necromancy", "Needy", "Nerdy", "Nervous",
+  "Neurodivergent", "New Relationship", "Nihilism", "No Magic", "Noble", "Noir",
+  "Nonbinary", "Nonchalant", "Nonenglish Dialogue", "Nonhuman", "Nordic", "NSFL", "NSFW",
+  "Object", "Objectfication", "Obsessive", "Occult", "OCD", "Office", "Ogre", "Omega",
+  "Omegaverse", "Omorashi", "Open Relationship", "Optimistic", "Oral", "Orc",
+  "Original Character", "Original World", "Orynthia collab", "Otaku", "Oviposition",
+  "Past", "Past Abuse", "Past Death", "Past Relationship", "Past Suicide", "Pathetic",
+  "Patient", "Peasant", "Pegging", "Pervert", "Pet", "Pet Play", "Petty", "Phoenix",
+  "Pining", "Pirate", "Plants", "Platonic", "Playful", "Polish", "Polite", "Polyamory",
+  "Poor", "Popular", "Possession", "Possessive", "Post Canon", "Post-apocalypse",
+  "Power Dynamics", "Praise", "Pregnancy", "Primal Play", "Prison", "Privileged",
+  "Promiscuous", "Protective", "Psychic", "Psychopath", "PTSD", "Punk", "Queer", "Raccoon",
+  "Realistic", "Rebellious", "Red Flag", "Red Panda", "Redemption", "Reformed",
+  "Reincarnation", "Religion", "Revenge", "Reverse Isekai", "Rich", "Rival", "Robot",
+  "Romance", "Romani", "Rough Sex", "Royalty", "RPG", "Rude", "Rural", "Russian",
+  "Ruthless", "Sassy", "Satire", "Satyr", "Savior Complex", "Scalie", "Scarred", "Scat",
+  "Sci-fi", "Scientist", "Scottish", "SCP", "Secret", "Secret Relationship", "Self-harm",
+  "Servant", "Sex Work", "Sexist", "Sexual Slavery", "SFW", "Shapeshifter",
+  "Shared Living", "Shark", "Sheep", "Shop", "Short", "Shy", "Sickness", "Siren",
+  "Size Difference", "Skeleton", "Slavery", "Slavic", "Slice of Fucked-Up Life",
+  "Slice of Life", "Slime", "Slow Burn", "Slut", "Small Breasts", "Smart", "Smoker",
+  "Smut", "Snake", "Sociopathic", "Soft", "Soldier", "Somnophilia", "Soulmates", "Space",
+  "Spanish", "Spider", "Spirit", "Spiritual", "Sports", "Stalker", "Stealth", "Steampunk",
+  "Stepfamily", "Stockholm", "Stoic", "Stoner", "Stranger", "Strangers to Lovers",
+  "Strict", "Strong", "Submissive", "Suburban", "Sugar Relationship", "Suicidal", "Summer",
+  "Summon", "Superhero", "Superhuman", "Supernatural", "Supervillain", "Surfer",
+  "Survival", "Swedish", "Switch", "T", "Tall", "Tanned", "Tattoos", "Tease", "Tentacles",
+  "Theatre", "Theme", "Themes", "Therapist", "Thicc", "Third Wheel", "Time Manipulation",
+  "Tomboy", "Torture", "Touch Averse", "Touch Starved", "Toxic", "TR", "Traditional",
+  "Transgender", "TransPOV", "Trapping", "Trauma", "Trust Issues", "Tsundere", "TTG",
+  "Twink", "Twins", "Twunk", "Tyrant", "Ukrainian", "Undead", "Underworld", "Unemployed",
+  "Unestablished Relationship", "Unhappy Relationship", "Unicorn", "Unrequited", "Urban",
+  "User Role", "Utility", "V Shows", "V Variant", "Valentine", "Vampire", "Vanilla",
+  "Variants", "Victorian Era", "Video Games", "Vietnamese", "Vigilante", "Vikings",
+  "Village", "Villain", "Virgin", "Voodoo", "Vore", "Voyeurism", "War", "Watersports",
+  "Webtoon/Manwha", "Weeb", "Weird", "Weird Dick", "Welsh", "Wendigo", "Werewolf",
+  "Western", "Wholesome", "Wild", "Winter", "Wips it out", "WLW", "Wolf", "Workplace",
+  "Wuxia/Xianxia", "Yakuza", "Yandere", "Yellow Flag", "Zombie"
+];
+const CHARSNAP_TAG_BY_KEY = (function () {
+  const m = {};
+  for (const t of CHARSNAP_TAGS) m[t.toLowerCase()] = t;
+  return m;
+})();
+// the tag as CharSnap spells it, or null when it is not one of theirs
+const charSnapTag = t => CHARSNAP_TAG_BY_KEY[String(t || "").trim().toLowerCase()] || null;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 /* A key that was never written is not an error, and the two platforms disagree
@@ -298,6 +407,7 @@ function normalizeCharacterImport(obj) {
         gender: raw.gender || "",
         pronouns: raw.pronouns || "",
         tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+        searchables: Array.isArray(raw.searchables) ? raw.searchables.map(String).filter(Boolean) : [],
         story: raw.story || raw.backstory || raw.description || "",
         personality: raw.personality || "",
         tagline: raw.tagline || "",
@@ -396,6 +506,7 @@ function normalizeCharacterImport(obj) {
     results.push(fresh({
       name: S(d.name || d.variant_name),
       tags: Array.isArray(d.tags) ? d.tags : null,
+      searchables: Array.isArray(d.searchables) ? d.searchables : null,
       sections,
       age: ageOf(d) || ageOf(firstV),
       gender: d.gender,
@@ -632,7 +743,7 @@ function charToCharSnap(c, scope) {
     gender: gender,
     tagline: scopedV && (scopedV.tagline || "").trim() ? scopedV.tagline : tagline,
     tags: (c.tags || []).slice(),
-    searchables: [],
+    searchables: (c.searchables || []).slice(),
     nsfw: false,
     nsfw_picture: false,
     variants: variants
@@ -1231,13 +1342,20 @@ function TagInput({
   tags,
   onChange,
   placeholder,
-  suggestions
+  suggestions,
+  preserveCase // searchable terms are names and phrases, so their capitalisation is kept
 }) {
   const [draft, setDraft] = useState("");
   const listId = useRef("tags-" + Math.random().toString(36).slice(2, 8)).current;
   const add = () => {
-    const t = draft.trim().toLowerCase();
-    if (t && !tags.includes(t)) onChange([...tags, t]);
+    const raw = draft.trim();
+    if (!raw) return setDraft("");
+    /* Vault tags stay lowercase as they always have, but CharSnap's casing is
+       part of the tag ("ADHD", "WLW", "Age Gap") and it is what gets exported, so
+       one of theirs is stored exactly as they spell it. Matching is
+       case-insensitive both ways, so "adhd" cannot end up alongside "ADHD". */
+    const t = preserveCase ? raw : (charSnapTag(raw) || raw.toLowerCase());
+    if (!tags.some(x => x.toLowerCase() === t.toLowerCase())) onChange([...tags, t]);
     setDraft("");
   };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -1258,7 +1376,7 @@ function TagInput({
     }
   }), suggestions && suggestions.length > 0 && /*#__PURE__*/React.createElement("datalist", {
     id: listId
-  }, suggestions.filter(s => !tags.includes(s)).map(s => /*#__PURE__*/React.createElement("option", {
+  }, suggestions.filter(s => !tags.some(x => x.toLowerCase() === s.toLowerCase())).map(s => /*#__PURE__*/React.createElement("option", {
     key: s,
     value: s
   }))), /*#__PURE__*/React.createElement("button", {
@@ -4775,6 +4893,7 @@ function snapshotChar(c, label) {
     label: label || "Edit",
     fields: Object.fromEntries(VERSION_BASE_KEYS.map(k => [k, c[k] || ""])),
     tags: (c.tags || []).slice(),
+    searchables: (c.searchables || []).slice(),
     bucket: c.bucket || "",
     lorebooks: (c.lorebooks || []).slice(),
     sections: (c.sections || []).map(s => ({
@@ -4817,6 +4936,7 @@ function applySnapshot(c, snap) {
     : null;
   return Object.assign({}, c, snap.fields, {
     tags: (snap.tags || []).slice(),
+    searchables: (snap.searchables || []).slice(),
     bucket: snap.bucket || "",
     lorebooks: (snap.lorebooks || []).slice(),
     sections,
@@ -5303,7 +5423,18 @@ function CharacterEditor({
     tags: c.tags,
     onChange: t => set("tags", t),
     placeholder: "fantasy, villain, sci-fi…",
-    suggestions: allTags
+    // tags already in the vault first, then the rest of CharSnap's vocabulary
+    suggestions: allTags.concat(CHARSNAP_TAGS.filter(t => !allTags.some(a => a.toLowerCase() === t.toLowerCase())))
+  }), /*#__PURE__*/React.createElement("label", {
+    className: "lbl",
+    style: {
+      marginTop: 14
+    }
+  }, "Searchable terms — other words people might look this character up by on CharSnap"), /*#__PURE__*/React.createElement(TagInput, {
+    tags: c.searchables || [],
+    onChange: t => set("searchables", t),
+    placeholder: "nicknames, titles, the series they're from…",
+    preserveCase: true
   }), /*#__PURE__*/React.createElement("label", {
     className: "lbl",
     style: {
@@ -7843,10 +7974,21 @@ function RolecraftVault() {
 
   /* --- backup --- */
   const [exportConfirm, setExportConfirm] = useState(null); // { what, fn }
-  const askExport = (what, fn) => setExportConfirm({
+  const askExport = (what, fn, warning) => setExportConfirm({
     what,
-    fn
+    fn,
+    warning
   });
+  /* Tags CharSnap does not know are dropped silently at their end, so say so
+     while the export can still be cancelled. Never blocks: the list is recovered
+     from their published PDF, not a live feed, so it can be out of date. */
+  const unknownTagWarning = c => {
+    const bad = (c.tags || []).filter(t => String(t).trim() && !charSnapTag(t));
+    if (!bad.length) return null;
+    return "CharSnap will not recognise " + (bad.length === 1 ? "this tag" : "these " + bad.length + " tags") +
+      ", and will drop " + (bad.length === 1 ? "it" : "them") + " on import: " + bad.join(", ") +
+      ". Everything else exports normally.";
+  };
   const [jsonImportType, setJsonImportType] = useState(null);
   const jsonImportRef = useRef(null);
   const triggerJsonImport = type => {
@@ -11099,8 +11241,8 @@ function RolecraftVault() {
       },
       onDownloadImages: () => askExport("this character's images", () => downloadImagesZip([vc], [], sanitizeName(vc.name) + "-images.zip")),
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
-      onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)),
-      onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope)),
+      onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope), unknownTagWarning(vc)),
+      onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
         return persistChar({
@@ -11459,7 +11601,18 @@ function RolecraftVault() {
     style: {
       color: "var(--text)"
     }
-  }, " not encrypted"), ": anyone who gets hold of the file can open and read it. Save it somewhere you trust, and delete copies you no longer need."), /*#__PURE__*/React.createElement("div", {
+  }, " not encrypted"), ": anyone who gets hold of the file can open and read it. Save it somewhere you trust, and delete copies you no longer need."), exportConfirm.warning && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      lineHeight: 1.6,
+      color: "var(--text)",
+      background: "var(--brass-soft)",
+      border: "1px solid var(--brass-line)",
+      borderRadius: 10,
+      padding: "10px 12px",
+      marginBottom: 16
+    }
+  }, exportConfirm.warning), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10
