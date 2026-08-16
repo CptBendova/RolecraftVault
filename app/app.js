@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.102";
+const APP_VERSION = "1.103";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.102";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.102 — current",
+  heading: "1.103 — current",
+  notes: ["Tags and searchable terms on the character page now show the first ten with a “+more” button for the rest, instead of filling the screen. A well-tagged character was pushing its own portrait, buttons and writing well below the fold. Click the button to see them all, and again to fold them away.", "The creator memo has moved up into that space, so a character page now reads the way the dashboard spotlight does: portrait, name, tagline, then the memo, with the tags, terms and lorebooks underneath it. Long memos are trimmed with a “Read the rest” link. It no longer appears further down the page as well — it is only shown once."]
+}, {
+  heading: "1.102",
   notes: ["“Update from JSON” now brings the searchable terms across. It never touched them at all, so updating a character from a file full of terms left whatever handful was already there — which is why only a few showed up no matter what the file contained.", "It also no longer piles tags up. Tags used to be merged with the ones already on the character, so a tag removed from the file could never be got rid of here; the file's list now replaces what is there. A file that carries no tags or terms leaves both alone."]
 }, {
   heading: "1.101",
@@ -3517,6 +3520,24 @@ function CharacterPage({
   let profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
   const details = [["Age", c.age], ["Gender", c.gender], ["Pronouns", c.pronouns], ["Bucket", c.bucket]].filter(x => x[1]);
   const [activeVar, setActiveVar] = useState(null); // variant id or null = Default
+  /* A well-tagged character can carry dozens of each of these, which pushed the
+     writing off the screen entirely. Show a first row's worth and keep the rest
+     behind a count. */
+  const CHIP_PREVIEW = 10;
+  const MEMO_PREVIEW = 320; // characters shown before "Read the rest"
+  const [tagsAll, setTagsAll] = useState(false);
+  const [termsAll, setTermsAll] = useState(false);
+  const [memoAll, setMemoAll] = useState(false);
+  const moreChip = (n, onClick, label) => /*#__PURE__*/React.createElement("button", {
+    className: "chip",
+    style: {
+      cursor: "pointer",
+      background: "none",
+      color: "var(--dim)",
+      borderStyle: "dashed"
+    },
+    onClick: onClick
+  }, label || "+" + n + " more");
   const variants = c.variants || [];
   /* Images with no variantId are shared (shown everywhere); tagged ones only appear
      under their variant. A tag naming a variant that no longer exists — a restore
@@ -3534,6 +3555,7 @@ function CharacterPage({
   activeProfileId = (av && av.profileImg) || c.profileImg;
   profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
   const F = k => av && (av[k] || "").trim() ? av[k] : c[k] || ""; // variant field with Default fallback
+  const memo = (F("creatorMemo") || "").trim(); // shown in the header, not with the prose
   const blocks = [{
     key: "story",
     title: "Backstory",
@@ -3562,10 +3584,6 @@ function CharacterPage({
     key: "aasp",
     title: "Always-active system prompt",
     body: F("alwaysActiveSystemPrompt")
-  }, {
-    key: "creatorMemo",
-    title: "Creator memo",
-    body: F("creatorMemo")
   }, ...c.sections.map(s => ({
     key: "sec:" + s.id,
     title: s.title || "Untitled section",
@@ -3772,14 +3790,50 @@ function CharacterPage({
     style: {
       color: "var(--dim)"
     }
-  }, k, ":"), " ", v))), (c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, k, ":"), " ", v))), memo && /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid var(--line)",
+      background: "var(--panel)",
+      borderRadius: 12,
+      padding: "12px 14px",
+      marginBottom: 16,
+      maxWidth: 760
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--dim)",
+      letterSpacing: ".14em",
+      textTransform: "uppercase",
+      fontWeight: 700,
+      marginBottom: 6
+    }
+  }, "Creator memo"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: "var(--mut)",
+      lineHeight: 1.6,
+      whiteSpace: "pre-wrap"
+    }
+  }, memoAll || memo.length <= MEMO_PREVIEW ? memo : memo.slice(0, MEMO_PREVIEW).replace(/\s+\S*$/, "") + "…"), memo.length > MEMO_PREVIEW && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setMemoAll(v => !v),
+    style: {
+      marginTop: 8,
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
+      color: "var(--blue)",
+      fontSize: 12.5
+    }
+  }, memoAll ? "Show less" : "Read the rest")), (c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
       flexWrap: "wrap",
       marginBottom: 10
     }
-  }, c.tags.map(t => /*#__PURE__*/React.createElement("button", {
+  }, (tagsAll ? c.tags : c.tags.slice(0, CHIP_PREVIEW)).map(t => /*#__PURE__*/React.createElement("button", {
     key: t,
     className: "chip",
     style: {
@@ -3787,7 +3841,7 @@ function CharacterPage({
     },
     title: "Show everything tagged \u201c" + t + "\u201d",
     onClick: () => onTagClick && onTagClick(t)
-  }, t))), (c.searchables || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, t)), c.tags.length > CHIP_PREVIEW && moreChip(c.tags.length - CHIP_PREVIEW, () => setTagsAll(v => !v), tagsAll ? "Show fewer" : null)), (c.searchables || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -3804,7 +3858,7 @@ function CharacterPage({
       fontWeight: 700
     },
     title: "Extra words this character can be found by, here and on CharSnap"
-  }, "Searchable"), c.searchables.map(t => /*#__PURE__*/React.createElement("span", {
+  }, "Searchable"), (termsAll ? c.searchables : c.searchables.slice(0, CHIP_PREVIEW)).map(t => /*#__PURE__*/React.createElement("span", {
     key: t,
     style: {
       fontSize: 11.5,
@@ -3813,7 +3867,7 @@ function CharacterPage({
       color: "var(--mut)",
       border: "1px solid var(--line2)"
     }
-  }, t))), (c.lorebooks || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, t)), c.searchables.length > CHIP_PREVIEW && moreChip(c.searchables.length - CHIP_PREVIEW, () => setTermsAll(v => !v), termsAll ? "Show fewer" : null)), (c.lorebooks || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 7,
