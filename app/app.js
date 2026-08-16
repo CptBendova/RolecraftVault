@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.094";
+const APP_VERSION = "1.095";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.094";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.094 — current",
+  heading: "1.095 — current",
+  notes: ["Exporting a character and importing it back keeps the gallery as you arranged it. Album names, which album each picture sits in, and which variant a picture belongs to were all discarded on import, so a round trip flattened the whole gallery into one unsorted pile.", "Custom section order now survives an import as well, not just a restore.", "A blurred banner stays blurred when exported.", "A character exported with “Export JSON” can now be imported straight into CharSnap — the file carries what CharSnap needs alongside the vault's own copy, so one file works in both places. “Export for CharSnap” is still there when you want a small file with no pictures in it."]
+}, {
+  heading: "1.094",
   notes: ["Restoring an earlier version keeps your custom section order. Restoring used to give every section a new internal id while keeping the old ordering, so the order pointed at nothing and custom sections dropped to the bottom of the page.", "A failed save now says so. If writing to storage failed, the app still reported “Character saved” and carried on as though nothing had happened — the change was simply lost. Failures are now reported, and success is only claimed once the write has actually gone through.", "A failed read no longer looks like an empty vault. A storage error used to be indistinguishable from having no data, so the library appeared empty and the next save would write that emptiness over the top.", "Characters saved before galleries existed no longer break the page they appear on.", "Pictures assigned to a variant that a restore removed are visible again, instead of staying in the vault with nothing showing them."]
 }, {
   heading: "1.093",
@@ -245,12 +248,24 @@ function normalizeCharacterImport(obj) {
       if (!map[oldId]) map[oldId] = uid();
       return map[oldId];
     };
+    /* album and variantId carry the gallery's organisation. Rebuilding entries as
+       just {imgId, caption} silently flattened it, so exporting and reimporting a
+       character lost every album assignment and variant-image binding. */
     const gallery = (raw.gallery || []).map(g => ({
       imgId: remap(g.imgId),
-      caption: g.caption || ""
+      caption: g.caption || "",
+      album: g.album || "",
+      variantId: g.variantId || ""
     })).filter(g => g.imgId);
     const profileImg = remap(raw.profileImg);
     const banner = remap(raw.banner);
+    // imgMeta carries album/variant for images that are not gallery entries
+    // (portraits, banner); its keys are image ids and need the same remapping.
+    // Only ids the import actually brought across are kept.
+    const imgMeta = {};
+    for (const [oldId, meta] of Object.entries(raw.imgMeta || {})) {
+      if (map[oldId] && meta) imgMeta[map[oldId]] = { ...meta };
+    }
     const outImages = {},
       outThumbs = {},
       outBlur = [];
@@ -259,6 +274,22 @@ function normalizeCharacterImport(obj) {
       if (thumbs[oldId]) outThumbs[newId] = thumbs[oldId];
       if (blurredList.indexOf(oldId) >= 0) outBlur.push(newId);
     }
+    /* Sections get fresh ids so an import cannot collide with an existing record,
+       which leaves sectionOrder's "sec:<id>" keys addressing the old ones. Remap
+       them; carrying the order through untouched sank custom sections to the
+       bottom, the same way restoring a version used to. */
+    const secMap = {};
+    const sections = (raw.sections || []).map(s => {
+      const id = uid();
+      if (s.id) secMap["sec:" + s.id] = "sec:" + id;
+      return { id, title: s.title || "", content: s.content || s.body || "" };
+    }).filter(s => s.content);
+    const liveSec = new Set(sections.map(s => "sec:" + s.id));
+    const remapped = Array.isArray(raw.sectionOrder)
+      ? raw.sectionOrder.map(k => secMap[k] || k)
+        .filter(k => String(k).indexOf("sec:") !== 0 || liveSec.has(k))
+      : null;
+    const sectionOrder = remapped && remapped.length ? remapped : null;
     return {
       char: {
         id: uid(),
@@ -282,15 +313,13 @@ function normalizeCharacterImport(obj) {
         })) : [],
         lorebooks: Array.isArray(raw.lorebooks) ? raw.lorebooks.filter(x => typeof x === "string") : [],
         bucket: raw.bucket || "",
-        sections: (raw.sections || []).map(s => ({
-          id: uid(),
-          title: s.title || "",
-          content: s.content || s.body || ""
-        })).filter(s => s.content),
+        sections: sections,
         profileImg,
         banner,
         gallery,
-        sectionOrder: raw.sectionOrder || null,
+        albums: Array.isArray(raw.albums) ? raw.albums.filter(a => typeof a === "string") : [],
+        imgMeta,
+        sectionOrder: sectionOrder,
         createdAt: Date.now(),
         updatedAt: Date.now()
       },
@@ -7974,11 +8003,19 @@ function RolecraftVault() {
       images,
       thumbs
     } = await collectImagesFor([sc], []);
-    const ids = [sc.profileImg, ...(sc.gallery || []).map(g => g.imgId)].filter(Boolean);
+    // banner belongs here too — leaving it out meant a blurred banner came back unblurred
+    const ids = [sc.profileImg, sc.banner, ...(sc.gallery || []).map(g => g.imgId)].filter(Boolean);
+    /* One file, two readers. CharSnap looks for name/gender/tagline/variants at the
+       top level and ignores what it does not recognise; this app keys off `app` and
+       reads `char`, so the full-fidelity record rides along underneath without
+       either side seeing the other's fields. The dedicated "Export for CharSnap"
+       button still exists for a small file with no image payload. */
+    const forCharSnap = charToCharSnap(c, scope).main;
     downloadJSON({
+      ...forCharSnap,
       app: "rolecraft-vault",
       type: "character",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       scope: label || "all variants",
       char: sc,
