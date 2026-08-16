@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.097";
+const APP_VERSION = "1.098";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.097";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.097 — current",
+  heading: "1.098 — current",
+  notes: ["New “Export text only” button on the Characters screen: every character as plain text with no pictures at all. A library that runs to megabytes as a normal export comes out a few kilobytes this way — small enough to read, paste somewhere, or hand to an AI to go over.", "Any lorebooks your characters are linked to travel in that same file, so their wording can be checked against the lore without juggling two exports. Lorebooks nothing points at are left out.", "Lorebooks have the same button when you open one. Both files import straight back into the vault, so text can go out and come back freely — there are simply no pictures to bring with it.", "Exporting a character with “Export JSON” no longer nags about CharSnap tags. That check now only appears where it belongs, on “Export for CharSnap”."]
+}, {
+  heading: "1.097",
   notes: ["The tag box now suggests CharSnap's tags as you type — all 622 of them, with the ones already in your vault offered first.", "Picking one stores it exactly as CharSnap spells it, so “age gap” becomes “Age Gap” and “adhd” becomes “ADHD”. Your own tags still behave as before. The same tag can no longer be added twice in different capitalisation.", "Exporting for CharSnap now warns you first if a character carries a tag CharSnap does not use, and names it, so you can fix it instead of finding out when the tag quietly vanishes on their end. It is only ever a warning — the export always goes ahead if you want it to.", "Characters have a new “Searchable terms” field, under Tags — nicknames, titles, the series they are from, anything someone might look them up by. It exports to CharSnap, comes back on import, is kept in every export the app makes, and is saved in version history like the rest of the writing. Capitalisation is left exactly as you type it."]
 }, {
   heading: "1.096",
@@ -3071,6 +3074,7 @@ function LorebookPage({
   onRename,
   onDeleteBook,
   onExportBook,
+  onExportBookText,
   onExportCharSnap,
   onStats
 }) {
@@ -3208,7 +3212,11 @@ function LorebookPage({
   }, "Rename ", bookNoun), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onExportBook
-  }, "Export JSON"), onExportCharSnap && /*#__PURE__*/React.createElement("button", {
+  }, "Export JSON"), onExportBookText && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    title: "This " + bookNoun + " as text, with no pictures — small enough to read or paste elsewhere.",
+    onClick: onExportBookText
+  }, "Export text only"), onExportCharSnap && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onExportCharSnap
   }, "Export for CharSnap"), onStats && /*#__PURE__*/React.createElement("button", {
@@ -8199,6 +8207,39 @@ function RolecraftVault() {
     }, "rolecraft-characters.json");
     toast("Characters exported");
   };
+  /* Text-only exports: the same records with everything image-shaped removed, so
+     the file is small enough to read, paste into something else, or hand to an AI.
+     "Text only" already means exactly this elsewhere in the app — rule 2 defines
+     version history and JSON updates the same way — so an import of one of these
+     brings the writing across and simply has no pictures to bring with it.
+     history goes too: it is undo, not content, and it dwarfs everything else. */
+  const textOnlyChar = c => {
+    const out = { ...c };
+    ["profileImg", "banner", "gallery", "albums", "imgMeta", "history"].forEach(k => delete out[k]);
+    return out;
+  };
+  const textOnlyLore = e => {
+    const out = { ...e };
+    delete out.images;
+    return out;
+  };
+  const exportCharsTextJson = async () => {
+    // the books these characters point at travel with them, so their wording can be
+    // checked against the lore without needing a second file
+    const linked = new Set();
+    chars.forEach(c => (c.lorebooks || []).forEach(w => linked.add(String(w).trim())));
+    const books = lore.filter(e => linked.has(String(e.world || "").trim()));
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "characters",
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      textOnly: true,
+      chars: chars.map(textOnlyChar),
+      lore: books.map(textOnlyLore)
+    }, "rolecraft-characters-text.json");
+    toast("Characters exported as text" + (books.length ? " with " + books.length + " linked lore " + (books.length === 1 ? "entry" : "entries") : ""));
+  };
   const exportPersonasJson = async () => {
     const {
       images,
@@ -9181,6 +9222,13 @@ function RolecraftVault() {
     },
     onClick: () => askExport("your characters (including images)", exportCharsJson)
   }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      flexShrink: 0
+    },
+    title: "Every character as text, with no pictures — small enough to read or paste elsewhere. Linked lore travels with it.",
+    onClick: () => askExport("your characters as text, with no pictures", exportCharsTextJson)
+  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     style: {
       flexShrink: 0
@@ -10777,6 +10825,17 @@ function RolecraftVault() {
           blurred: Object.keys(blurred).filter(id => entries.some(e => (e.images || []).some(im => im.imgId === id)))
         }, sanitizeName(viewLoreBook || "unfiled") + "-lorebook.json");
         toast("Lorebook exported");
+      }),
+      onExportBookText: () => askExport("this lorebook as text, with no pictures", () => {
+        downloadJSON({
+          app: "rolecraft-vault",
+          type: "lore",
+          version: 4,
+          exportedAt: new Date().toISOString(),
+          textOnly: true,
+          lore: entries.map(textOnlyLore)
+        }, sanitizeName(viewLoreBook || "unfiled") + "-lorebook-text.json");
+        toast("Lorebook exported as text");
       })
     });
   })(), viewLoreEntryId && lore.find(e => e.id === viewLoreEntryId) && (() => {
@@ -11241,7 +11300,7 @@ function RolecraftVault() {
       },
       onDownloadImages: () => askExport("this character's images", () => downloadImagesZip([vc], [], sanitizeName(vc.name) + "-images.zip")),
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
-      onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope), unknownTagWarning(vc)),
+      onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)), // no tag warning: this export is not necessarily bound for CharSnap
       onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
