@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.095";
+const APP_VERSION = "1.096";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,8 +25,8 @@ const APP_VERSION = "1.095";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.095 — current",
-  notes: ["Exporting a character and importing it back keeps the gallery as you arranged it. Album names, which album each picture sits in, and which variant a picture belongs to were all discarded on import, so a round trip flattened the whole gallery into one unsorted pile.", "Custom section order now survives an import as well, not just a restore.", "A blurred banner stays blurred when exported.", "A character exported with “Export JSON” can now be imported straight into CharSnap — the file carries what CharSnap needs alongside the vault's own copy, so one file works in both places. “Export for CharSnap” is still there when you want a small file with no pictures in it."]
+  heading: "1.096 — current",
+  notes: ["Exporting a character and importing it back keeps the gallery as you arranged it. Album names, which album each picture sits in, and which variant a picture belongs to were all discarded on import, so a round trip flattened the whole gallery into one unsorted pile.", "Custom section order now survives an import as well, not just a restore.", "A blurred banner stays blurred when exported.", "A character exported with “Export JSON” can now be imported straight into CharSnap — the file carries what CharSnap needs alongside the vault's own copy, so one file works in both places. For uploading to CharSnap, “Export for CharSnap” is still the better button: CharSnap does not read pictures out of a JSON file at all, so the plain export just carries them for nothing (kilobytes versus megabytes). Upload your images on CharSnap after importing.", "Importing a character from CharSnap keeps their age. CharSnap stores age on the variant rather than with the character, so it was being dropped every time.", "CharSnap variant files can be imported on their own. They arrive named after the variant instead of as “Imported character”.", "Characters exported for CharSnap now carry every field CharSnap's own import template lists."]
 }, {
   heading: "1.094",
   notes: ["Restoring an earlier version keeps your custom section order. Restoring used to give every section a new internal id while keeping the old ordering, so the order pointed at nothing and custom sections dropped to the bottom of the page.", "A failed save now says so. If writing to storage failed, the app still reported “Character saved” and carried on as though nothing had happened — the change was simply lost. Failures are now reported, and success is only claimed once the write has actually gone through.", "A failed read no longer looks like an empty vault. A storage error used to be indistinguishable from having no data, so the library appeared empty and the next save would write that emptiness over the top.", "Characters saved before galleries existed no longer break the page they appear on.", "Pictures assigned to a variant that a restore removed are visible again, instead of staying in the vault with nothing showing them."]
@@ -386,11 +386,18 @@ function normalizeCharacterImport(obj) {
         ...contentOf(v)
       }));
     }
+    /* CharSnap keeps age on the variant, not at the top level — its own
+       Full-Character template has no top-level age at all — so reading only d.age
+       dropped it on every import. A variant-only file is the bare variant object,
+       which has no name either; fall back to variant_name so it does not land as
+       "Imported character". */
+    const firstV = Array.isArray(d.variants) && d.variants[0] || null;
+    const ageOf = x => x && x.age != null && String(x.age).trim() ? String(x.age) : "";
     results.push(fresh({
-      name: S(d.name),
+      name: S(d.name || d.variant_name),
       tags: Array.isArray(d.tags) ? d.tags : null,
       sections,
-      age: d.age == null ? "" : String(d.age),
+      age: ageOf(d) || ageOf(firstV),
       gender: d.gender,
       pronouns: d.pronouns,
       ...base,
@@ -615,13 +622,21 @@ function charToCharSnap(c, scope) {
     }, v.story || baseDescription, v.name || "Variant " + (i + 2), v.tagline || tagline));
   });
   const scopedV = scopeAll || scope === null ? null : (c.variants || []).find(v => v.id === scope);
+  /* Key order and set follow CharSnap's own "Full-Character" import template.
+     tags/searchables go out even when empty, as the template does. This app has
+     no NSFW flag, so those two are emitted false — the same result as omitting
+     them, but explicit and matching the documented shape. If a character is adult,
+     mark it on CharSnap after importing. */
   const main = {
     name: c.name || "Untitled",
     gender: gender,
     tagline: scopedV && (scopedV.tagline || "").trim() ? scopedV.tagline : tagline,
+    tags: (c.tags || []).slice(),
+    searchables: [],
+    nsfw: false,
+    nsfw_picture: false,
     variants: variants
   };
-  if ((c.tags || []).length) main.tags = c.tags.slice();
   return {
     main,
     variantFiles: []
