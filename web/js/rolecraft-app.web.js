@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.104";
+const APP_VERSION = "1.105";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.104";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.104 — current",
+  heading: "1.105 — current",
+  notes: ["Exporting a persona and importing it back keeps its albums. Album names and which album each picture sat in were discarded on the way in, so a round trip left the gallery as one unsorted pile — the same fault characters had, which was fixed for them but never for personas."]
+}, {
+  heading: "1.104",
   notes: ["The portrait stays at the top of the character page. It was pinned to the bottom of the header, so a long creator memo pushed it right down the screen, away from the name it belongs to.", "A long creator memo now scrolls inside its own box instead of being cut short behind a link. The page keeps its shape no matter how much you have written."]
 }, {
   heading: "1.103",
@@ -597,10 +600,20 @@ function normalizePersonaImport(obj) {
       return map[oldId];
     };
     const avatar = remap(raw.avatar);
+    /* album carries the gallery's organisation, exactly as it does for characters.
+       Rebuilding entries as just {imgId, caption} and dropping albums[] flattened
+       it, so exporting a persona and importing it back lost every album. Personas
+       have no variants, so there is no variantId to carry here. */
     const gallery = (raw.gallery || []).map(g => ({
       imgId: remap(g.imgId),
-      caption: g.caption || ""
+      caption: g.caption || "",
+      album: g.album || ""
     })).filter(g => g.imgId);
+    // keep album names the persona knows about even when nothing is filed under them yet
+    const named = Array.isArray(raw.albums) ? raw.albums.map(String).filter(Boolean) : [];
+    const used = gallery.map(g => g.album).filter(Boolean);
+    const albums = [];
+    for (const a of [...named, ...used]) if (albums.indexOf(a) < 0) albums.push(a);
     return {
       persona: {
         id: uid(),
@@ -610,6 +623,7 @@ function normalizePersonaImport(obj) {
         description: raw.description || raw.personality || "",
         avatar,
         gallery,
+        albums,
         createdAt: Date.now(),
         updatedAt: Date.now()
       },
