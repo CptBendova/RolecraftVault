@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.105";
+const APP_VERSION = "1.106";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.105";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.105 — current",
+  heading: "1.106 — current",
+  notes: ["Markdown works in the creator memo again. Moving the memo to the top of the character page in 1.103 accidentally started showing it as raw text, so headings, bold and links appeared as asterisks and hashes. It renders properly again, and still scrolls.", "The small grey labels — SEARCHABLE, LOREBOOKS, CREATOR MEMO, and the age and gender line — were too faint to read in every theme, and nearly invisible in the light one. All three themes have been measured against the accessibility standard for text contrast and now pass. The light theme's gold and red text were slightly too faint as well and have been deepened."]
+}, {
+  heading: "1.105",
   notes: ["Exporting a persona and importing it back keeps its albums. Album names and which album each picture sat in were discarded on the way in, so a round trip left the gallery as one unsorted pile — the same fault characters had, which was fixed for them but never for personas."]
 }, {
   heading: "1.104",
@@ -848,7 +851,7 @@ const CSS = `
   .rcv {
     --ink: #0a0e1c; --ink2: #0e1426; --panel: #121a30; --panel2: #17203a;
     --line: rgba(150,166,214,.14); --line2: rgba(150,166,214,.26);
-    --text: #e7ebf7; --mut: #8d97b8; --dim: #5c6688;
+    --text: #e7ebf7; --mut: #8d97b8; --dim: #8088a2; /* AA on panel2, was #5c6688 at 2.85:1 */
     --brass: #d9b25c; --brass-soft: rgba(217,178,92,.14); --brass-line: rgba(217,178,92,.35);
     --blue: #8aa2f2; --blue-deep: #4a63c8; --danger: #e07a7a;
     --danger-soft: rgba(224,122,122,.12); --danger-line: rgba(224,122,122,.3);
@@ -866,9 +869,9 @@ const CSS = `
   .rcv.light {
     --ink: #f1f2f7; --ink2: #e9ebf3; --panel: #ffffff; --panel2: #f5f6fb;
     --line: rgba(28,40,80,.13); --line2: rgba(28,40,80,.26);
-    --text: #1a2135; --mut: #59637f; --dim: #99a0b8;
-    --brass: #9a721f; --brass-soft: rgba(154,114,31,.1); --brass-line: rgba(154,114,31,.35);
-    --blue: #3f57c0; --blue-deep: #3a51b0; --danger: #c25555;
+    --text: #1a2135; --mut: #59637f; --dim: #6a6e7f; /* AA on ink, was #99a0b8 at 2.33:1 */
+    --brass: #8c681c; --brass-soft: rgba(154,114,31,.1); --brass-line: rgba(154,114,31,.35); /* AA, was #9a721f at 3.91:1 */
+    --blue: #3f57c0; --blue-deep: #3a51b0; --danger: #b44f4f; /* AA, was #c25555 at 3.98:1 */
     --danger-soft: rgba(194,85,85,.09); --danger-line: rgba(194,85,85,.3);
     --chip-bg: rgba(63,87,192,.08); --chip-line: rgba(63,87,192,.28);
     --nav-hov: rgba(63,87,192,.06); --nav-act: rgba(63,87,192,.1);
@@ -881,7 +884,7 @@ const CSS = `
   .rcv.charsnap {
     --ink: #0a0a0c; --ink2: #0e0e11; --panel: #151517; --panel2: #1b1b1f;
     --line: rgba(255,255,255,.09); --line2: rgba(255,255,255,.18);
-    --text: #ededf0; --mut: #a0a1aa; --dim: #6b6c76;
+    --text: #ededf0; --mut: #a0a1aa; --dim: #83848c; /* AA on panel2, was #6b6c76 at 3.30:1 */
     --brass: #f0c239; --brass-soft: rgba(240,194,57,.12); --brass-line: rgba(240,194,57,.45);
     --blue: #3fd6d6; --blue-deep: #1fa8a8; --danger: #e07a7a;
     --danger-soft: rgba(224,122,122,.12); --danger-line: rgba(224,122,122,.3);
@@ -3830,12 +3833,16 @@ function CharacterPage({
       fontSize: 13.5,
       color: "var(--mut)",
       lineHeight: 1.6,
-      whiteSpace: "pre-wrap",
       // a long memo scrolls inside its own box rather than pushing the page around
       maxHeight: MEMO_MAX_H,
       overflowY: "auto"
     }
-  }, memo)), (c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    // through MDText like every other block: memos are written with headings,
+    // bold and links, and rendering them raw was a regression when the memo
+    // moved out of the prose column
+  }, /*#__PURE__*/React.createElement(MDText, {
+    text: memo
+  }))),(c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
