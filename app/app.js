@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.111";
+const APP_VERSION = "1.112";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.111";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.111 — current",
+  heading: "1.112 — current",
+  notes: ["Deleting a character or persona no longer destroys it. It goes to a bin for 30 days — pictures and all — and there is a “Recently deleted” list in Settings to put it back, or to remove it for good if you would rather. Anything still in the bin after 30 days is cleared automatically. Lorebook and prompt entries are unchanged for now: those still delete outright.", "New “Export text only” on a single character and on a persona, alongside the existing whole-library one. Personas had no export of their own at all before this; they now have both.", "The tick box under “Receive from another device” was being stretched to the full width of the panel, which is why it sat oddly away from its label. Tick boxes are now the size they should be."]
+}, {
+  heading: "1.111",
   notes: ["Attaching lorebooks to a character uses a dropdown once you have more than a handful, instead of a wall of chips. The ones already attached stay above it, still one click to remove. Books that actually have entries are listed first, so empty and half-named ones stop crowding out the real ones. With only a few books it stays as chips, which read better."]
 }, {
   heading: "1.110",
@@ -948,10 +951,17 @@ const CSS = `
   .rcv .serif { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
   .rcv .eyebrow { font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--brass); font-weight: 700; }
   .rcv button { font: inherit; cursor: pointer; border: none; }
-  .rcv input, .rcv textarea, .rcv select {
+  /* Checkboxes and radios are excluded: the shared rule stretched them to full
+     width with text-field padding, which is why they floated oddly beside their
+     labels instead of sitting next to them. */
+  .rcv input:not([type="checkbox"]):not([type="radio"]), .rcv textarea, .rcv select {
     font: inherit; color: var(--text); background: var(--field);
     border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; width: 100%;
     outline: none; transition: border-color .15s;
+  }
+  .rcv input[type="checkbox"], .rcv input[type="radio"] {
+    width: 16px; height: 16px; flex: 0 0 auto; margin: 0; padding: 0;
+    accent-color: var(--blue); cursor: pointer;
   }
   .rcv input:focus, .rcv textarea:focus, .rcv select:focus { border-color: var(--blue-deep); }
   .rcv textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
@@ -3571,6 +3581,7 @@ function CharacterPage({
   onDownloadImages,
   onDownloadSelected,
   onExportJson,
+  onExportText,
   onExportCharSnap,
   onOpenLorebook,
   onTagClick,
@@ -4056,7 +4067,11 @@ function CharacterPage({
     className: "btn btn-ghost",
     onClick: () => onExportJson(activeVar),
     title: "Exports only what you're viewing right now"
-  }, "Export JSON \u00b7 " + (av ? av.name || "Variant" : "Default")), /*#__PURE__*/React.createElement("button", {
+  }, "Export JSON \u00b7 " + (av ? av.name || "Variant" : "Default")), onExportText && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => onExportText(activeVar),
+    title: "Just the writing, no pictures \u2014 small enough to read or paste elsewhere"
+  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => onExportCharSnap(activeVar),
     title: "Exports only what you're viewing right now"
@@ -4359,6 +4374,8 @@ function CharacterPage({
 /* ---------- persona page (view mode) ---------- */
 function PersonaPage({
   persona: p,
+  onExportJson,
+  onExportText,
   imgCache,
   fullCache,
   loadImage,
@@ -4654,7 +4671,14 @@ function PersonaPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 13
-  }), " Download images")), /*#__PURE__*/React.createElement("button", {
+  }), " Download images")), onExportJson && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onExportJson
+  }, "Export JSON"), onExportText && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onExportText,
+    title: "Just the writing, no pictures — small enough to read or paste elsewhere"
+  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onStats
   }, /*#__PURE__*/React.createElement("span", {
@@ -5495,7 +5519,7 @@ function CharacterEditor({
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
-  }, confirmDel ? "Click again to delete forever" : "Delete"), /*#__PURE__*/React.createElement("button", {
+  }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -6233,7 +6257,7 @@ function CharacterEditor({
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
-  }, confirmDel ? "Click again to delete forever" : "Delete"), /*#__PURE__*/React.createElement("button", {
+  }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -6781,6 +6805,9 @@ function SettingsModal({
   setTextSize,
   contrast,
   setContrast,
+  trash,
+  onRestoreTrash,
+  onEmptyTrash,
   authState,
   refreshAuth
 }) {
@@ -7174,6 +7201,70 @@ function SettingsModal({
         });
       }
     }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.55,
+      marginBottom: 10
+    }
+  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."), (trash || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "scrollbody",
+    style: {
+      maxHeight: 220,
+      overflowY: "auto",
+      marginBottom: 6
+    }
+  }, trash.map(t => {
+    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.tid,
+      style: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "8px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 150
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 600
+      }
+    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--dim)"
+      }
+    }, (t.type === "character" ? "Character" : "Persona") + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: {
+        padding: "5px 10px",
+        fontSize: 12.5
+      },
+      onClick: () => onRestoreTrash && onRestoreTrash(t)
+    }, "Restore"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: {
+        padding: "5px 10px",
+        fontSize: 12.5,
+        color: "var(--danger)",
+        borderColor: "var(--danger-line)"
+      },
+      onClick: () => onEmptyTrash && onEmptyTrash(t)
+    }, "Delete now"));
   })), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
@@ -7831,6 +7922,7 @@ function RolecraftVault() {
         const blurList = parse(await sGet("blurset"), "blurset", []);
         const ts = await sGet("ui:textsize");
         const ctr = await sGet("ui:contrast");
+        const trashRaw = parse(await sGet("trash:all"), "trash:all", []);
         if (damaged.length) {
           setLoadError(damaged);
           return; // nothing is loaded, so nothing can be written back over it
@@ -7845,6 +7937,7 @@ function RolecraftVault() {
         setPBucketMeta(pbucketM); // always set: a stale one would survive a lock
         setTextSize(ts || "medium");
         setContrast(ctr || "normal");
+        setTrash(Array.isArray(trashRaw) ? trashRaw : []);
         const blObj = {};
         blurList.forEach(id => blObj[id] = true);
         setBlurred(blObj);
@@ -8147,6 +8240,7 @@ function RolecraftVault() {
   };
   const [textSize, setTextSize] = useState("medium"); // reading size for prose: small | medium | large
   const [contrast, setContrast] = useState("normal"); // text contrast boost: normal | high | max
+  const [trash, setTrash] = useState([]); // [{tid, type, record, deletedAt}] — restorable deletes
   const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : "14.5px";
   const applyTextSize = async s => {
     setTextSize(s);
@@ -8315,18 +8409,75 @@ function RolecraftVault() {
     setEditingChar(null);
     toast("Character saved");
   };
+  /* Deleting moves the record to the bin instead of destroying it, and deliberately
+     leaves its pictures in storage — a restore that came back without the artwork
+     would not be a restore. The pictures are only removed when the entry is emptied
+     from the bin, by hand or by the 30-day sweep. */
+  const TRASH_DAYS = 30;
+  const imageIdsOf = (type, r) => {
+    if (type === "character") return [r.profileImg, r.banner, ...(r.gallery || []).map(g => g.imgId), ...(r.variants || []).map(v => v.profileImg)].filter(Boolean);
+    if (type === "persona") return [r.avatar, ...(r.gallery || []).map(g => g.imgId)].filter(Boolean);
+    return (r.images || []).map(im => im.imgId).filter(Boolean);
+  };
+  const sendToTrash = async (type, record) => {
+    const entry = { tid: uid(), type, record, deletedAt: Date.now() };
+    const next = [entry, ...trash];
+    setTrash(next);
+    await sSet("trash:all", JSON.stringify(next));
+  };
+  const purgeTrashEntry = async entry => {
+    imageIdsOf(entry.type, entry.record).forEach(id => {
+      sDel("img:" + id);
+      sDel("th:" + id);
+    });
+  };
+  const restoreFromTrash = async entry => {
+    const rest = trash.filter(t => t.tid !== entry.tid);
+    if (entry.type === "character") {
+      // a fresh id, in case something else has taken the old one since
+      const rec = chars.some(x => x.id === entry.record.id) ? { ...entry.record, id: uid() } : entry.record;
+      const next = [...chars, rec];
+      setChars(next);
+      await sSet("chars:all", JSON.stringify(next));
+    } else {
+      const rec = personas.some(x => x.id === entry.record.id) ? { ...entry.record, id: uid() } : entry.record;
+      const next = [...personas, rec];
+      setPersonas(next);
+      await sSet("personas:all", JSON.stringify(next));
+    }
+    setTrash(rest);
+    await sSet("trash:all", JSON.stringify(rest));
+    toast((entry.record.name || "Record") + " restored");
+  };
+  const emptyFromTrash = async entry => {
+    await purgeTrashEntry(entry);
+    const rest = trash.filter(t => t.tid !== entry.tid);
+    setTrash(rest);
+    await sSet("trash:all", JSON.stringify(rest));
+    toast("Deleted for good");
+  };
+  /* Sweep anything past its 30 days, once the vault is open. Runs off the stored
+     timestamp rather than a timer, so it catches up however long the app was shut. */
+  useEffect(() => {
+    if (!ready || !trash.length) return;
+    const cutoff = Date.now() - TRASH_DAYS * 864e5;
+    const stale = trash.filter(t => (t.deletedAt || 0) < cutoff);
+    if (!stale.length) return;
+    (async () => {
+      for (const e of stale) await purgeTrashEntry(e);
+      const rest = trash.filter(t => (t.deletedAt || 0) >= cutoff);
+      setTrash(rest);
+      await sSet("trash:all", JSON.stringify(rest));
+    })();
+  }, [ready, trash]);
   const deleteChar = async c => {
     const next = chars.filter(x => x.id !== c.id);
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    const imgIds = [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean);
-    imgIds.forEach(id => {
-      sDel("img:" + id);
-      sDel("th:" + id);
-    });
+    await sendToTrash("character", c);
     setEditingChar(null);
     setViewCharId(null);
-    toast("Character deleted");
+    toast("Character moved to the bin — restore it from Settings within " + TRASH_DAYS + " days");
   };
 
   /* --- simple collection CRUD --- */
@@ -8384,10 +8535,7 @@ function RolecraftVault() {
       setViewLoreEntryId(null);
     }
     if (type === "persona") {
-      [r.avatar, ...(r.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
-        sDel("img:" + id);
-        sDel("th:" + id);
-      });
+      await sendToTrash("persona", r); // keeps its pictures until the bin is emptied
       setViewPersonaId(null);
     }
     const col = collections[type];
@@ -8672,6 +8820,61 @@ function RolecraftVault() {
       lore: books.map(textOnlyLore)
     }, "rolecraft-characters-text.json");
     toast("Characters exported as text" + (books.length ? " with " + books.length + " linked lore " + (books.length === 1 ? "entry" : "entries") : ""));
+  };
+  const textOnlyPersona = p => {
+    const out = { ...p };
+    ["avatar", "gallery", "albums", "imgMeta"].forEach(k => delete out[k]);
+    return out;
+  };
+  // the books a record points at travel with it, so its wording can be checked
+  // against the lore from the one file
+  const linkedBooks = rec => {
+    const linked = new Set((rec.lorebooks || []).map(w => String(w).trim()));
+    return lore.filter(e => linked.has(String(e.world || "").trim())).map(textOnlyLore);
+  };
+  const exportCharTextJson = async (c, scope) => {
+    const sc = scopedChar(c, scope);
+    const label = scopeLabel(c, scope);
+    delete sc.__scopeName;
+    const books = linkedBooks(sc);
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "character",
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      scope: label || "all variants",
+      textOnly: true,
+      char: textOnlyChar(sc),
+      lore: books
+    }, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + "-text.json");
+    toast("Exported as text" + (label ? " — " + label + " only" : ""));
+  };
+  const exportPersonaJson = async p => {
+    const { images, thumbs } = await collectImagesFor([], [p]);
+    const ids = [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean);
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "persona",
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      persona: p,
+      images,
+      thumbs,
+      blurred: ids.filter(id => blurred[id])
+    }, sanitizeName(p.name) + ".json");
+    toast("Persona exported");
+  };
+  const exportPersonaTextJson = async p => {
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "persona",
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      textOnly: true,
+      persona: textOnlyPersona(p),
+      lore: linkedBooks(p)
+    }, sanitizeName(p.name) + "-text.json");
+    toast("Persona exported as text");
   };
   const exportPersonasJson = async () => {
     const {
@@ -11055,6 +11258,8 @@ function RolecraftVault() {
           : touched + (touched === 1 ? " image removed from its album" : " images removed from their albums"));
       },
       onDownloadImages: () => askExport("this persona's images", () => downloadImagesZip([], [vp], sanitizeName(vp.name) + "-images.zip")),
+      onExportJson: () => askExport("this persona (including images)", () => exportPersonaJson(vp)),
+      onExportText: () => askExport("this persona as text, with no pictures", () => exportPersonaTextJson(vp)),
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vp.name) + "-" + sanitizeName(albumName || "selected") + ".zip"))
     });
   })(), personaGrid && /*#__PURE__*/React.createElement(ImageGridView, {
@@ -11739,6 +11944,7 @@ function RolecraftVault() {
       onDownloadImages: () => askExport("this character's images", () => downloadImagesZip([vc], [], sanitizeName(vc.name) + "-images.zip")),
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
       onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)), // no tag warning: this export is not necessarily bound for CharSnap
+      onExportText: scope => askExport("this character as text, with no pictures", () => exportCharTextJson(vc, scope)),
       onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
@@ -12027,6 +12233,9 @@ function RolecraftVault() {
     setTextSize: applyTextSize,
     contrast: contrast,
     setContrast: applyContrast,
+    trash: trash,
+    onRestoreTrash: restoreFromTrash,
+    onEmptyTrash: emptyFromTrash,
     onExport: () => askExport("a full vault backup", exportAll),
     onImport: importAll,
     toast: toast,
