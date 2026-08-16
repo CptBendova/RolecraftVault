@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.103";
+const APP_VERSION = "1.104";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.103";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.103 — current",
+  heading: "1.104 — current",
+  notes: ["The portrait stays at the top of the character page. It was pinned to the bottom of the header, so a long creator memo pushed it right down the screen, away from the name it belongs to.", "A long creator memo now scrolls inside its own box instead of being cut short behind a link. The page keeps its shape no matter how much you have written."]
+}, {
+  heading: "1.103",
   notes: ["Tags and searchable terms on the character page now show the first ten with a “+more” button for the rest, instead of filling the screen. A well-tagged character was pushing its own portrait, buttons and writing well below the fold. Click the button to see them all, and again to fold them away.", "The creator memo has moved up into that space, so a character page now reads the way the dashboard spotlight does: portrait, name, tagline, then the memo, with the tags, terms and lorebooks underneath it. Long memos are trimmed with a “Read the rest” link. It no longer appears further down the page as well — it is only shown once."]
 }, {
   heading: "1.102",
@@ -3524,10 +3527,9 @@ function CharacterPage({
      writing off the screen entirely. Show a first row's worth and keep the rest
      behind a count. */
   const CHIP_PREVIEW = 10;
-  const MEMO_PREVIEW = 320; // characters shown before "Read the rest"
+  const MEMO_MAX_H = 260; // the memo scrolls past this rather than growing the page
   const [tagsAll, setTagsAll] = useState(false);
   const [termsAll, setTermsAll] = useState(false);
-  const [memoAll, setMemoAll] = useState(false);
   const moreChip = (n, onClick, label) => /*#__PURE__*/React.createElement("button", {
     className: "chip",
     style: {
@@ -3682,7 +3684,7 @@ function CharacterPage({
       display: "flex",
       gap: 32,
       flexWrap: "wrap",
-      alignItems: "flex-end"
+      alignItems: "flex-start" // portrait stays put while the memo grows the column beside it
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "tile",
@@ -3809,24 +3811,17 @@ function CharacterPage({
       marginBottom: 6
     }
   }, "Creator memo"), /*#__PURE__*/React.createElement("div", {
+    className: "scrollbody",
     style: {
       fontSize: 13.5,
       color: "var(--mut)",
       lineHeight: 1.6,
-      whiteSpace: "pre-wrap"
+      whiteSpace: "pre-wrap",
+      // a long memo scrolls inside its own box rather than pushing the page around
+      maxHeight: MEMO_MAX_H,
+      overflowY: "auto"
     }
-  }, memoAll || memo.length <= MEMO_PREVIEW ? memo : memo.slice(0, MEMO_PREVIEW).replace(/\s+\S*$/, "") + "…"), memo.length > MEMO_PREVIEW && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setMemoAll(v => !v),
-    style: {
-      marginTop: 8,
-      background: "none",
-      border: 0,
-      padding: 0,
-      cursor: "pointer",
-      color: "var(--blue)",
-      fontSize: 12.5
-    }
-  }, memoAll ? "Show less" : "Read the rest")), (c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, memo)), (c.tags || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
