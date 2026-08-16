@@ -2,10 +2,10 @@
 !define APP_NAME "Rolecraft Vault"
 !define APP_EXE "Rolecraft Vault.exe"
 !define COMPANY "Rolecraft"
-!define VERSION "1.0.0"
+!define VERSION "1.092"
 
 Name "${APP_NAME}"
-OutFile "..\Rolecraft-Vault-Setup-1.0.exe"
+OutFile "..\dist\Rolecraft-Vault-Setup-${VERSION}.exe"
 InstallDir "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey HKCU "Software\${APP_NAME}" "InstallDir"
 RequestExecutionLevel admin

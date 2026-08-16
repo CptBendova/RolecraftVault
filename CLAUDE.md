@@ -103,15 +103,46 @@ always_active_system_prompt, creator_comment, variant_name, variant_tagline`.
 Emitting the 16-key export shape fails validation. Lorebook import uses the Chub
 structure plus CharSnap's own fields, and every entry needs ≥1 trigger.
 
+## Versioning
+
+The displayed version is a flat number — **1.092** — not semver. It lived in five
+places that had drifted to three different values, so it now has one owner:
+
+```bash
+npm run set-version 1.092    # rewrites all four display sites at once
+```
+
+That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
+`app/package.json`, and `!define VERSION` in `build/installer.nsi`. Never edit
+those by hand.
+
+The **root `package.json` keeps its own semver** (`1.9.3`) and is intentionally
+left alone: npm requires valid semver there, and `1.092` is not. Nothing
+user-facing reads it — it only names the npm scripts. This is safe because the
+update system never compares versions: `main.js` treats `pkg.version` purely as a
+display string, so a `.rcvup` installs regardless of what came before.
+
+Add a `CHANGELOG` entry in `app/app.js` for anything users would notice. Entries
+before 1.092 are reconstructed from the code, not a real record — the UI says so,
+and that label should stay.
+
 ## Ship procedure
 
 ```bash
+npm run set-version 1.092           # keep every version site in step first
 npm run check                       # syntax + no-network sweep
 npm start                           # launch and actually click the thing
 npm run build:web                   # regenerate the web bundle from app/app.js
-npm run sign 1.9.3 "what changed"   # -> dist/Rolecraft-update-1.9.3.rcvup
+npm run sign 1.092 "what changed"   # -> dist/Rolecraft-update-1.092.rcvup
 npm run build:installer             # only when app/main.js|preload.js|index.html changed
 ```
+
+`build:installer` needs a staged Electron build at `dist/Rolecraft Vault/`, which
+is gitignored and therefore missing on a fresh clone. To rebuild it: copy
+`node_modules/electron/dist` there, rename `electron.exe` to
+`Rolecraft Vault.exe`, delete `resources/default_app.asar`, and copy `app/` into
+`resources/app/`. It also needs NSIS (`winget install NSIS.NSIS`); winget does not
+put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 
 ## Testing notes
 

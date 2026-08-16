@@ -11,6 +11,28 @@ const {
    Design: deep-ink archive, serif display, brass accents.
    ============================================================ */
 
+/* Single source of truth for the displayed version. Do not hand-edit: run
+   `npm run set-version <v>`, which rewrites this line, app/package.json,
+   FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
+const APP_VERSION = "1.092";
+
+/* Version history shown in Settings.
+   Only the 1.092 entry is a real record. Everything before it was reconstructed
+   by reading the code — this project kept no changelog and has a single commit,
+   so earlier releases left no notes behind. The reconstructed entries are
+   anchored on the one-time migrations still present in this file (thumbver,
+   charfields, lorefields), which are hard evidence that those changes happened,
+   in that order. Their version numbers are genuinely unknown, so none are
+   claimed. The UI labels this section as reconstructed; keep that label. */
+const CHANGELOG = [{
+  heading: "1.092 — current",
+  notes: ["Records are now written to a temporary file and swapped into place, so a crash or power cut mid-save can no longer leave a half-written vault.", "Setting, changing or removing the master password is all-or-nothing. A record that cannot be read aborts the whole operation with nothing altered, and an interruption part-way through is finished automatically on the next launch.", "If saved data cannot be read, the vault now says so and stays closed instead of opening empty — which previously risked the next save writing over everything that was still intact.", "The auto-revert failsafe no longer mistakes an update stuck on the loading screen for a working one, and allows more time for large vaults to open.", "The version number is now the same everywhere — the app, the installer and the update package had drifted to three different values."]
+}, {
+  heading: "Before 1.092",
+  reconstructed: true,
+  notes: ["Lorebook entries gained real type and trigger fields. Entries that stored these as a “— Type/Triggers” line of text are converted on first launch.", "Character sections such as scenario, first message, example dialogue, creator notes and system prompts became first-class fields rather than free-form sections, and are lifted across automatically.", "Portrait thumbnails were regenerated at 1000px from the original images, replacing softer earlier ones.", "Characters gained variants, buckets, galleries with albums, and per-image blurring.", "Personas, lorebooks and a prompt vault were added alongside characters.", "Import support for CharSnap, Chub lorebooks, Tavern v1 and v2 character cards, and multi-character bot packs.", "Encrypted local storage with a master password, a quick-unlock PIN, and opt-in LAN transfer between two devices.", "Signed in-place updates, with automatic revert if an update misbehaves.", "Light and CharSnap themes, adjustable reading text size, a reorderable dashboard, and a stats screen."]
+}];
+
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 async function sGet(key) {
   try {
@@ -6733,11 +6755,56 @@ function SettingsModal({
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "Version history"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      marginBottom: 10
+    }
+  }, "What has changed in Rolecraft Vault."), CHANGELOG.map((rel, ri) => /*#__PURE__*/React.createElement("div", {
+    key: ri,
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "var(--brass)",
+      marginBottom: rel.reconstructed ? 4 : 6
+    }
+  }, rel.heading), rel.reconstructed && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--dim)",
+      marginBottom: 6,
+      lineHeight: 1.5
+    }
+  }, "No release notes were kept for these, so the list below was pieced together from the code. The order is right, but the version numbers they shipped under are unknown."), /*#__PURE__*/React.createElement("ul", {
+    style: {
+      margin: 0,
+      paddingLeft: 18,
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.6
+    }
+  }, rel.notes.map((n, ni) => /*#__PURE__*/React.createElement("li", {
+    key: ni,
+    style: {
+      marginBottom: 4
+    }
+  }, n))))), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 12,
       color: "var(--dim)",
       lineHeight: 1.6
     }
-  }, "Rolecraft Vault v1.0 · Everything stays on this device. Nothing is uploaded anywhere.")));
+  }, "Rolecraft Vault v" + APP_VERSION + " · Everything stays on this device. Nothing is uploaded anywhere.")));
 }
 
 /* ---------- main app ---------- */
@@ -6758,6 +6825,7 @@ const blankChar = () => ({
 });
 function RolecraftVault() {
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState(null); // [damaged keys] — the vault refused to open
   const [authState, setAuthState] = useState({
     passwordSet: false,
     pinSet: false,
@@ -7037,35 +7105,55 @@ function RolecraftVault() {
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
     (async () => {
-      const [c, p, l, pr] = await Promise.all([sGet("chars:all"), sGet("personas:all"), sGet("lore:all"), sGet("prompts:all")]);
-      const charList = c ? JSON.parse(c) : [];
-      const personaList = p ? JSON.parse(p) : [];
-      setChars(charList);
-      setPersonas(personaList);
-      setLore(l ? JSON.parse(l) : []);
-      setPrompts(pr ? JSON.parse(pr) : []);
-      const bm = await sGet("buckets:meta");
-      setBucketMeta(bm ? JSON.parse(bm) : {});
-      const lm = await sGet("lore:meta");
-      setLoreMeta(lm ? JSON.parse(lm) : {});
-      const pm = await sGet("prompts:meta");
-      setPromptMeta(pm ? JSON.parse(pm) : {});
+      /* A record that won't parse must never quietly become an empty list: the app
+         would open looking wiped, and the next save would write that emptiness back
+         over the real data. Collect the damage instead and refuse to open. */
+      const damaged = [];
+      const parse = (raw, key, fallback) => {
+        if (!raw) return fallback;
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          damaged.push(key);
+          return fallback;
+        }
+      };
       try {
-        const pbm = await sGet("pbuckets:meta");
-        if (pbm) setPBucketMeta(JSON.parse(pbm));
-      } catch (e) {}
-      try {
+        const [c, p, l, pr] = await Promise.all([sGet("chars:all"), sGet("personas:all"), sGet("lore:all"), sGet("prompts:all")]);
+        const charList = parse(c, "chars:all", []);
+        const personaList = parse(p, "personas:all", []);
+        const loreList = parse(l, "lore:all", []);
+        const promptList = parse(pr, "prompts:all", []);
+        const bucketM = parse(await sGet("buckets:meta"), "buckets:meta", {});
+        const loreM = parse(await sGet("lore:meta"), "lore:meta", {});
+        const promptM = parse(await sGet("prompts:meta"), "prompts:meta", {});
+        const pbucketM = parse(await sGet("pbuckets:meta"), "pbuckets:meta", {});
+        const blurList = parse(await sGet("blurset"), "blurset", []);
         const ts = await sGet("ui:textsize");
-        if (ts) setTextSize(ts);
-      } catch (e) {}
-      const bl = await sGet("blurset");
-      const blObj = {};
-      (bl ? JSON.parse(bl) : []).forEach(id => blObj[id] = true);
-      setBlurred(blObj);
-      setReady(true);
-      charList.forEach(ch => {
-        if (ch.profileImg) loadImage(ch.profileImg);
-      });
+        if (damaged.length) {
+          setLoadError(damaged);
+          return; // nothing is loaded, so nothing can be written back over it
+        }
+        setChars(charList);
+        setPersonas(personaList);
+        setLore(loreList);
+        setPrompts(promptList);
+        setBucketMeta(bucketM);
+        setLoreMeta(loreM);
+        setPromptMeta(promptM);
+        setPBucketMeta(pbucketM); // always set: a stale one would survive a lock
+        setTextSize(ts || "medium");
+        const blObj = {};
+        blurList.forEach(id => blObj[id] = true);
+        setBlurred(blObj);
+        setLoadError(null);
+        setReady(true);
+        charList.forEach(ch => {
+          if (ch.profileImg) loadImage(ch.profileImg);
+        });
+      } catch (e) {
+        setLoadError([]); // storage itself failed; damaged list is unknown
+      }
     })();
   }, [authState.checked, authState.locked]);
 
@@ -8011,6 +8099,7 @@ function RolecraftVault() {
   const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "");
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-rcv-state": "locked",
     style: {
       "--prose-size": proseSizePx
     }
@@ -8021,8 +8110,54 @@ function RolecraftVault() {
       locked: false
     }))
   }));
+  if (loadError) return /*#__PURE__*/React.createElement("div", {
+    className: rootClass,
+    "data-rcv-state": "error",
+    style: {
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 32,
+      boxSizing: "border-box" // .rcv itself is content-box; padding would add to its 100vh
+    }
+  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 560,
+      border: "1px solid var(--danger-line)",
+      background: "var(--danger-soft)",
+      borderRadius: 14,
+      padding: "22px 24px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--danger)",
+      fontSize: 17,
+      fontWeight: 600,
+      marginBottom: 10
+    }
+  }, "The vault didn't open cleanly"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--text)",
+      lineHeight: 1.55,
+      marginBottom: loadError.length ? 14 : 0
+    }
+  }, loadError.length ? "Some of your saved records couldn't be read, so nothing has been loaded. Your files have not been changed — the vault stays closed on purpose, because opening it half-empty would let the next save overwrite what's still there." : "Storage couldn't be reached, so nothing has been loaded. Your files have not been changed."), loadError.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--mut)",
+      fontSize: 13,
+      fontFamily: "ui-monospace, Consolas, monospace",
+      lineHeight: 1.7
+    }
+  }, loadError.join("\n")) : null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--mut)",
+      fontSize: 13,
+      marginTop: 16,
+      lineHeight: 1.6
+    }
+  }, "Restore your most recent export, or reopen the app to try again. Don't add or edit anything until it opens normally.")));
   if (!authState.checked || !ready) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-rcv-state": "loading",
     style: {
       alignItems: "center",
       justifyContent: "center"
@@ -8034,6 +8169,7 @@ function RolecraftVault() {
   }, "Opening the vault…"));
   return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-rcv-state": "ready",
     style: {
       "--prose-size": proseSizePx
     }

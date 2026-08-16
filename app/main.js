@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
-let dataDir, boundsFile, securityFile;
+let dataDir, boundsFile, securityFile, rewrapFile;
 let masterKey = null; // Buffer(32) in memory only while unlocked
 
 const ITER = 210000;
@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "2026.07.05";
+const FACTORY_BUILD = "1.092";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -584,14 +584,22 @@ function aesDecrypt(b64, key) {
 /* ---- storage layer: [password AES] then [DPAPI safeStorage] ---- */
 const keyToFile = (key) => path.join(dataDir, encodeURIComponent(key) + ".dat");
 
-function writeValue(key, value) {
-  let v = String(value);
-  if (masterKey) v = "pwd:" + aesEncrypt(v, masterKey);
-  else v = "raw:" + v;
-  let payload = safeStorage.isEncryptionAvailable()
+function encodeValue(value, key) {
+  const v = key ? "pwd:" + aesEncrypt(String(value), key) : "raw:" + String(value);
+  return safeStorage.isEncryptionAvailable()
     ? "enc:" + safeStorage.encryptString(v).toString("base64")
     : "pln:" + v;
-  fs.writeFileSync(keyToFile(key), payload, "utf8");
+}
+/* Write to a sibling temp file and rename over the target. A crash or power cut
+   mid-write then leaves the previous record intact instead of a truncated one —
+   chars:all holds every character in a single file, so a half-write is fatal. */
+function writeFileAtomic(file, payload) {
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, payload, "utf8");
+  fs.renameSync(tmp, file);
+}
+function writeValue(key, value) {
+  writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
 }
 function readValue(key) {
   const f = keyToFile(key);
@@ -611,15 +619,54 @@ function readValue(key) {
 function allKeys() {
   return fs.readdirSync(dataDir).filter(f => f.endsWith(".dat")).map(f => decodeURIComponent(f.slice(0, -4)));
 }
-/* re-encrypt every record when the password layer changes */
-function rewrapAll(oldKeyBuf, newKeyBuf) {
-  for (const k of allKeys()) {
-    const saved = masterKey; masterKey = oldKeyBuf;
-    const plain = readValue(k);
-    masterKey = newKeyBuf;
-    if (plain !== null) writeValue(k, plain);
+/* Re-encrypt every record when the password layer changes.
+   Prepare-then-commit: every record's new-key copy is written alongside the old
+   one as .rewrap first, and nothing is swapped in until all of them exist. A bad
+   record therefore aborts with the vault completely untouched, instead of leaving
+   half of it encrypted under a key that security.json no longer describes. */
+const rewrapPath = (key) => keyToFile(key) + ".rewrap";
+
+function rewrapAll(oldKeyBuf, newKeyBuf, newSecurity) {
+  const prepared = [];
+  const saved = masterKey;
+  masterKey = oldKeyBuf;
+  try {
+    for (const k of allKeys()) {
+      const plain = readValue(k);
+      if (plain === null) continue;
+      fs.writeFileSync(rewrapPath(k), encodeValue(plain, newKeyBuf), "utf8");
+      prepared.push(k);
+    }
+  } catch (e) {
+    for (const k of prepared) { try { fs.unlinkSync(rewrapPath(k)); } catch (e2) {} }
+    throw e;
+  } finally {
     masterKey = saved;
   }
+  // Past this line the journal makes the swap inevitable: every record already has
+  // a finished new-key copy, so an interrupted run can always be completed forward.
+  fs.writeFileSync(rewrapFile, JSON.stringify({ security: newSecurity || null }), "utf8");
+  for (const k of prepared) fs.renameSync(rewrapPath(k), keyToFile(k));
+  saveSecurity(newSecurity || null);
+  try { fs.unlinkSync(rewrapFile); } catch (e) {}
+}
+
+/* Run at startup. With a journal, finish the swap; without one, the .rewrap files
+   are leftovers from a run that aborted before committing, so discard them. */
+function finishPendingRewrap() {
+  let journal = null;
+  try { journal = JSON.parse(fs.readFileSync(rewrapFile, "utf8")); } catch (e) { journal = null; }
+  let pending = [];
+  try { pending = fs.readdirSync(dataDir).filter(f => f.endsWith(".rewrap")); } catch (e) {}
+  if (!journal) {
+    for (const f of pending) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) {} }
+    return;
+  }
+  for (const f of pending) {
+    try { fs.renameSync(path.join(dataDir, f), path.join(dataDir, f.slice(0, -".rewrap".length))); } catch (e) {}
+  }
+  saveSecurity(journal.security);
+  try { fs.unlinkSync(rewrapFile); } catch (e) {}
 }
 
 /* ---- auth handlers ---- */
@@ -669,14 +716,19 @@ function setupAuthIpc() {
     return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: isLocked() };
   });
 
+  // rewrapAll writes security.json itself, as the last step of an all-or-nothing swap
+  const rewrapFailed = (err) => ({
+    ok: false,
+    error: "Couldn't re-encrypt the vault: " + err.message + ". Nothing was changed.",
+  });
+
   ipcMain.handle("auth-set-password", (e, pw) => {
     if (passwordSet()) return { ok: false, error: "Password already set" };
     if (!pw || pw.length < 8) return { ok: false, error: "Use at least 8 characters" };
     const salt = crypto.randomBytes(16).toString("hex");
     const key = kdf(pw, Buffer.from(salt + ":key"));
     const verifier = kdf(pw, Buffer.from(salt + ":chk")).toString("hex");
-    rewrapAll(null, key);
-    saveSecurity({ salt, verifier });
+    try { rewrapAll(null, key, { salt, verifier }); } catch (err) { return rewrapFailed(err); }
     masterKey = key;
     return { ok: true };
   });
@@ -688,8 +740,8 @@ function setupAuthIpc() {
     const salt = crypto.randomBytes(16).toString("hex");
     const key = kdf(newPw, Buffer.from(salt + ":key"));
     const verifier = kdf(newPw, Buffer.from(salt + ":chk")).toString("hex");
-    rewrapAll(oldKey, key);
-    saveSecurity({ salt, verifier }); // PIN is invalidated on password change
+    // the new security record carries no pinBlob, so the PIN is invalidated
+    try { rewrapAll(oldKey, key, { salt, verifier }); } catch (err) { return rewrapFailed(err); }
     masterKey = key;
     return { ok: true };
   });
@@ -697,8 +749,7 @@ function setupAuthIpc() {
   ipcMain.handle("auth-remove-password", (e, pw) => {
     const key = verifyPassword(pw);
     if (!key) return { ok: false, error: "Password is incorrect" };
-    rewrapAll(key, null);
-    saveSecurity(null);
+    try { rewrapAll(key, null, null); } catch (err) { return rewrapFailed(err); }
     masterKey = null;
     return { ok: true };
   });
@@ -787,17 +838,26 @@ function createWindow() {
   win.on("close", () => saveBounds(win));
   win.webContents.setWindowOpenHandler(({ url }) => { if (url.startsWith("https://")) shell.openExternal(url); return { action: "deny" }; });
   win.loadFile(resolveEntryFile());
-  // failsafe 1: if an active update produced a dead page, auto-revert to the factory build
+  // failsafe 1: if an active update produced a dead page, auto-revert to the factory build.
+  // "Rendered something" isn't enough — a bundle stuck on its loading screen also paints
+  // .rcv — so wait for a root that reports a state other than "loading". Bundles predating
+  // that attribute report no state at all and are treated as alive. Polls rather than
+  // checking once, because a large vault legitimately takes a while to open.
   win.webContents.on("did-finish-load", () => {
     if (!activeUpdate()) return;
-    setTimeout(() => {
+    const probeJs = "(function(){var e=document.querySelector('.rcv');" +
+      "return e?(e.getAttribute('data-rcv-state')||'ready'):null})()";
+    const deadline = Date.now() + 20000;
+    const probe = () => {
       if (win.isDestroyed()) return;
-      win.webContents.executeJavaScript("!!document.querySelector('.rcv')", true).then(ok => {
-        if (ok || win.isDestroyed()) return;
+      win.webContents.executeJavaScript(probeJs, true).then(state => {
+        if (win.isDestroyed() || (state && state !== "loading")) return;
+        if (Date.now() < deadline) { setTimeout(probe, 1000); return; }
         revertUpdateToFactory();
         win.loadFile(path.join(__dirname, "index.html"));
       }).catch(() => {});
-    }, 3000);
+    };
+    setTimeout(probe, 3000);
   });
 }
 
@@ -806,9 +866,11 @@ app.whenReady().then(() => {
   dataDir = path.join(app.getPath("userData"), "vault");
   boundsFile = path.join(app.getPath("userData"), "window.json");
   securityFile = path.join(app.getPath("userData"), "security.json");
+  rewrapFile = path.join(app.getPath("userData"), "rewrap.json");
   updatesDir = path.join(app.getPath("userData"), "updates");
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(updatesDir, { recursive: true });
+  finishPendingRewrap();
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));
   ipcMain.handle("vault-set", (e, key, value) => { if (isLocked()) throw new Error("locked"); writeValue(key, value); return true; });

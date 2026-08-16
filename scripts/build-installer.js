@@ -25,10 +25,19 @@ for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json"
 }
 console.log("Synced app/ into the packaged build.");
 
+// winget's NSIS does not put makensis on PATH, so prefer the usual install spots
+// and fall back to a bare PATH lookup only if neither is there.
+const makensis = [
+  path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "NSIS", "makensis.exe"),
+  path.join(process.env.ProgramFiles || "C:\\Program Files", "NSIS", "makensis.exe"),
+].find(p => fs.existsSync(p)) || "makensis";
+
+// the display version (app/package.json), not the npm semver in the root package.json
+const version = require(path.join(root, "app", "package.json")).version;
 try {
-  execFileSync("makensis", ["-V2", nsi], { stdio: "inherit", cwd: root });
+  execFileSync(makensis, ["-V2", nsi], { stdio: "inherit", cwd: root });
 } catch (e) {
   console.error("\nmakensis failed or is not installed (winget install NSIS.NSIS).");
   process.exit(1);
 }
-console.log("Installer written to " + path.join(root, "Rolecraft-Vault-Setup-1.0.exe"));
+console.log("Installer written to " + path.join(root, "dist", `Rolecraft-Vault-Setup-${version}.exe`));
