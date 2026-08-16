@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.110";
+const APP_VERSION = "1.111";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,8 +25,11 @@ const APP_VERSION = "1.110";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.110 — current",
-  notes: ["A character with more than five variants now uses a dropdown instead of a chip for each one, on both the character page and the editor. Past a handful the row of chips became a wall that buried everything under it. There is also a quiet note of how many you have, since CharSnap only takes the first five.", "New “Sample JSON” button beside “Update from JSON”. It downloads a blank file showing every field the update accepts, with a note at the top explaining it — fill in the bits you want changed and leave the rest empty.", "The “Update from JSON” button now says which formats it accepts, and if a file will not load the message names them instead of just refusing.", "Attaching lorebooks to a character uses a dropdown once you have more than a handful, instead of a wall of chips. The ones already attached stay above it, still one click to remove. Books that actually have entries are listed first, so empty and half-named ones stop crowding out the real ones. With only a few books it stays as chips, which read better."]
+  heading: "1.111 — current",
+  notes: ["Attaching lorebooks to a character uses a dropdown once you have more than a handful, instead of a wall of chips. The ones already attached stay above it, still one click to remove. Books that actually have entries are listed first, so empty and half-named ones stop crowding out the real ones. With only a few books it stays as chips, which read better."]
+}, {
+  heading: "1.110",
+  notes: ["A character with more than five variants now uses a dropdown instead of a chip for each one, on both the character page and the editor. Past a handful the row of chips became a wall that buried everything under it. There is also a quiet note of how many you have, since CharSnap only takes the first five.", "New “Sample JSON” button beside “Update from JSON”. It downloads a blank file showing every field the update accepts, with a note at the top explaining it — fill in the bits you want changed and leave the rest empty.", "The “Update from JSON” button now says which formats it accepts, and if a file will not load the message names them instead of just refusing."]
 }, {
   heading: "1.109",
   notes: ["Writing is no longer thrown away by a stray click. Clicking outside a lore entry or prompt while writing one closed it instantly and lost everything typed. It now asks first, and only when you have actually changed something — Escape asks too, and closing an untouched entry still just closes.", "The theme button now says which theme you are using — “Theme · Dark” — instead of naming the one it would switch to. Reading it as the current theme was the obvious mistake, and it was easy to think you were on the CharSnap theme when you were on the light one.", "The CharSnap theme's main buttons are outlined gold on a dark fill, matching how CharSnap actually draws them, rather than a solid gold slab."]
