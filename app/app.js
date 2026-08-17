@@ -26,7 +26,8 @@ const APP_VERSION = "1.117";
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
   heading: "1.117 — current",
-  notes: ["If you made the window short — or zoomed in, which comes to the same thing — the bottom of the menu went off the end of the screen with no way to reach it. Settings is the last item in that menu, so backups, transfer, updates and the bin all became unreachable until the window was made taller again. The menu now scrolls when it runs out of room.", "Between roughly 760 and 1020 pixels wide the menu shrinks to icons, and those icons had no names at all — nothing on hover, and nothing for a screen reader to read out. Every one of them now says what it is.", "The little cross for removing a tag was eleven pixels square and sat right beside the next one. The cross looks the same, but there is now a proper target around it."]
+  notes: ["On a 2K or 4K screen the pages no longer come apart. Nothing was broken exactly, but with nothing holding the width, a heading would sit against the far left edge while the four counts belonging to it were flung three thousand pixels away to the right, and the buttons on the dashboard stretched to nearly nine hundred pixels each. Every page now keeps to one column of a sensible width and sits in the middle of the screen — the same width the character and lorebook pages already used. Nothing changes below about 1900 pixels wide.",
+  "If you made the window short — or zoomed in, which comes to the same thing — the bottom of the menu went off the end of the screen with no way to reach it. Settings is the last item in that menu, so backups, transfer, updates and the bin all became unreachable until the window was made taller again. The menu now scrolls when it runs out of room.", "Between roughly 760 and 1020 pixels wide the menu shrinks to icons, and those icons had no names at all — nothing on hover, and nothing for a screen reader to read out. Every one of them now says what it is.", "The little cross for removing a tag was eleven pixels square and sat right beside the next one. The cross looks the same, but there is now a proper target around it."]
 }, {
   heading: "1.116",
   notes: ["A transfer now shows you what it is doing and how far along it is, instead of a spinner. Each step is named — asking the other device what it has, working out what is different, copying across, unpacking, saving — and the two long ones fill a bar with a real percentage, counting the megabytes as they land. The steps that genuinely cannot know how long they will take say so rather than inventing a number.", "Transfers are quicker to start. Working out what differs means reading and fingerprinting every record, and that was happening twice on each device — once to show you the summary and again to do the sync. The result is now kept and reused unless something in the vault actually changed. On a 600 MB library that second pass went from about three seconds to instant, on both devices."]
@@ -1053,6 +1054,17 @@ const CSS = `
     background: transparent; color: var(--mut); font-size: 14px; font-weight: 500; text-align: left; transition: background .12s, color .12s; }
   .rcv .navitem:hover { color: var(--text); background: var(--nav-hov); }
   .rcv .navitem.active { color: var(--text); background: var(--nav-act); box-shadow: inset 3px 0 0 var(--brass); }
+  /* On a 2K or 4K screen nothing broke, but the page stopped holding together:
+     the dashboard heading sat on the far left with its four counts flung to the
+     far right, three thousand pixels away, and the quick-start cards stretched
+     to nearly nine hundred pixels each. Capped to the same 1560 the character
+     and lorebook pages already use, and centred, so every screen reads as one
+     column at any size. Only the main column is capped — the class is reused by
+     smaller scrollers inside panels, which must keep their own width.
+     The explicit width matters: auto margins on a flex item cancel the stretch
+     it would otherwise get, and without it the column sizes to its content and
+     spills past a narrow screen. */
+  .rcv > .scrollbody { width: 100%; max-width: 1628px; margin-left: auto; margin-right: auto; }
   .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
