@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.125";
+const APP_VERSION = "1.126";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.125";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.125 — current",
+  heading: "1.126 — current",
+  notes: ["An album could be made but never got rid of. Once created it sat in the bar above your pictures for the life of the vault, so a typo or a change of mind was permanent — while buckets and lorebooks have always been deletable. Open an album and there is now a “Delete album” beside the rest. It asks twice, and it lets the pictures out rather than taking them with it: they stay exactly where they were, just unfiled.", "A persona's portrait could not be put in an album. Selecting it and choosing an album said it was impossible, while doing the same thing to a character's portrait worked — the persona side was only looking at the gallery. It works the same way on both now.", "Searching characters folded the word “undefined” into what it looked through for any character missing a story or personality, so typing that word matched them. Every other search in the app already guarded against this."]
+}, {
+  heading: "1.125",
   notes: ["Renaming a lorebook quietly detached it from everyone. Characters and personas attach a book by its name, and renaming moved the entries and the cover but left every record still pointing at the old name — so the book you had carefully attached to eight characters was attached to none of them, while the link stayed on the page looking fine and opening nothing. The records now follow the rename, and it tells you how many did.", "Deleting a bucket left its cover picture behind in the vault forever, with nothing pointing at it, carried along in every backup from then on. Deleting a lorebook has always cleared its cover; buckets now do the same, for both characters and personas.", "Deleting a persona said “Deleted”, exactly as deleting a lore entry does — but a persona goes to the bin for thirty days and a lore entry does not. It now says so, so you know it can be brought back.", "Deleting a lore entry or a prompt left its pictures on the blur list, the same tidying that landed for characters last time."]
 }, {
   heading: "1.124",
@@ -2723,6 +2726,7 @@ function ImageGridView({
   onDeleteSelected,
   onSetAlbum,
   onCreateAlbum,
+  onDeleteAlbum,
   albums,
   variantOptions,
   onSetVariant,
@@ -2733,6 +2737,10 @@ function ImageGridView({
   const [vFilter, setVFilter] = useState(null); // null = every variant
   const [album, setAlbum] = useState(null); // null = all albums
   const [albumDraft, setAlbumDraft] = useState("");
+  const [confirmAlbumDel, setConfirmAlbumDel] = useState(false);
+  useEffect(() => {
+    setConfirmAlbumDel(false); // an armed delete must not follow you to another album
+  }, [album]);
   const [confirmDel, setConfirmDel] = useState(false);
   const [lb, setLb] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -3090,7 +3098,25 @@ function ImageGridView({
       onSetAlbum(selectedItems().map(it => it.imgId), "");
       setSel({});
     }
-  }, "Remove from album")))), /*#__PURE__*/React.createElement("div", {
+  }, "Remove from album"), /* An album could be made but never got rid of. Once
+     created it sat in this bar for the life of the vault, so a typo or a change
+     of mind was permanent — while buckets and lorebooks have always been
+     deletable. Only offered while looking inside one, and it lets the pictures
+     out rather than taking them with it. */
+  album && onDeleteAlbum && /*#__PURE__*/React.createElement("button", {
+    className: confirmAlbumDel ? "btn btn-danger" : "btn btn-ghost",
+    title: "Removes the album. The pictures in it stay, unfiled.",
+    onClick: () => {
+      if (!confirmAlbumDel) {
+        setConfirmAlbumDel(true);
+        return;
+      }
+      onDeleteAlbum(album);
+      setConfirmAlbumDel(false);
+      setAlbum(null);
+      setSel({});
+    }
+  }, confirmAlbumDel ? "Click again — “" + album + "” goes, pictures stay" : "Delete album")))), /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: 1560,
       margin: "0 auto",
@@ -3946,6 +3972,7 @@ function CharacterPage({
   onDeleteImages,
   onSetAlbum,
   onCreateAlbum,
+  onDeleteAlbum,
   onSetVariant,
   onReorder,
   onReorderImages,
@@ -4688,6 +4715,7 @@ function CharacterPage({
     onDeleteSelected: onDeleteImages,
     onSetAlbum: onSetAlbum,
     onCreateAlbum: onCreateAlbum,
+    onDeleteAlbum: onDeleteAlbum,
     albums: c.albums || [],
     variantOptions: (c.variants || []).map(v => ({ id: v.id, name: v.name || "Variant" })),
     onSetVariant: onSetVariant,
@@ -4769,6 +4797,7 @@ function PersonaPage({
   onDeleteImages,
   onSetAlbum,
   onCreateAlbum,
+  onDeleteAlbum,
   onReorder,
   onReorderImages,
   onDownloadImages,
@@ -5289,6 +5318,7 @@ function PersonaPage({
     onDeleteSelected: onDeleteImages,
     onSetAlbum: onSetAlbum,
     onCreateAlbum: onCreateAlbum,
+    onDeleteAlbum: onDeleteAlbum,
     albums: p.albums || [],
     onRename: (imgId, text) => {
       const idx = gallery.findIndex(g => g.imgId === imgId);
@@ -9798,7 +9828,10 @@ function RolecraftVault() {
 
   /* --- derived --- */
   const allTags = [...new Set(chars.flatMap(c => c.tags || []))].sort();
-  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !charQ || (c.name + " " + (c.tags || []).join(" ") + " " + (c.searchables || []).join(" ") + " " + (c.tagline || "") + " " + c.story + " " + c.personality).toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter))/* Every other list guards its fields; this one concatenated name, story and
+   personality raw, so a character missing any of them had the literal word
+   "undefined" folded into what gets searched — and typing it matched them. */
+.filter(c => !charQ || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   const recent = [...chars.map(c => ({
     ...c,
     _t: "Character"
@@ -12050,15 +12083,31 @@ function RolecraftVault() {
         await persistPersona({ ...vp, albums: known, updatedAt: Date.now() });
         toast("Album \u201c" + n + "\u201d created \u2014 tick images and add them any time");
       },
+      onDeleteAlbum: async name => {
+        const gallery = (vp.gallery || []).map(g => (g.album || "") === name ? { ...g, album: "" } : g);
+        const imgMeta = { ...(vp.imgMeta || {}) };
+        Object.keys(imgMeta).forEach(id => {
+          if (imgMeta[id] && imgMeta[id].album === name) imgMeta[id] = { ...imgMeta[id], album: "" };
+        });
+        await persistPersona({ ...vp, gallery, imgMeta, albums: (vp.albums || []).filter(a => a !== name), updatedAt: Date.now() });
+        toast("Album “" + name + "” removed — its pictures are still here");
+      },
       onSetAlbum: async (imgIds, albumName) => {
         const idSet = new Set(imgIds);
         const gallery = (vp.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, album: albumName } : g);
-        const touched = (vp.gallery || []).filter(g => idSet.has(g.imgId)).length;
+        /* A character's portrait can be filed in an album because the character
+           side records it in imgMeta; the persona side only looked at the
+           gallery, so the same action on a persona said it was impossible. */
+        const galleryIds = new Set((vp.gallery || []).map(g => g.imgId));
+        const imgMeta = { ...(vp.imgMeta || {}) };
+        imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
+          imgMeta[id] = { ...(imgMeta[id] || {}), album: albumName };
+        });
+        const touched = imgIds.length;
         const known = (vp.albums || []).slice();
         if (albumName && known.indexOf(albumName) < 0) known.push(albumName);
-        await persistPersona({ ...vp, gallery, albums: known, updatedAt: Date.now() });
+        await persistPersona({ ...vp, gallery, imgMeta, albums: known, updatedAt: Date.now() });
         if (!touched) {
-          toast("Portraits can't be put in albums");
           return;
         }
         toast(albumName ? touched + (touched === 1 ? " image added to " : " images added to ") + "\u201c" + albumName + "\u201d"
@@ -12813,6 +12862,15 @@ function RolecraftVault() {
         const vName = variantId === DEFAULT_VID ? "Default" : variantId ? ((vc.variants || []).find(v => v.id === variantId) || {}).name || "that variant" : "";
         toast(variantId ? touched + (touched === 1 ? " image assigned to " : " images assigned to ") + "\u201c" + vName + "\u201d"
           : touched + (touched === 1 ? " image is now shared across variants" : " images are now shared across variants"));
+      },
+      onDeleteAlbum: async name => {
+        const gallery = (vc.gallery || []).map(g => (g.album || "") === name ? { ...g, album: "" } : g);
+        const imgMeta = { ...(vc.imgMeta || {}) };
+        Object.keys(imgMeta).forEach(id => {
+          if (imgMeta[id] && imgMeta[id].album === name) imgMeta[id] = { ...imgMeta[id], album: "" };
+        });
+        await persistChar({ ...vc, gallery, imgMeta, albums: (vc.albums || []).filter(a => a !== name), updatedAt: Date.now() });
+        toast("Album “" + name + "” removed — its pictures are still here");
       },
       onSetAlbum: async (imgIds, albumName) => {
         const idSet = new Set(imgIds);
