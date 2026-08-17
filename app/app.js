@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.120";
+const APP_VERSION = "1.121";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.120";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.120 — current",
+  heading: "1.121 — current",
+  notes: ["Importing a persona was only reading back part of it. Its tagline, its bucket, the lorebooks attached to it, and every section it had were all dropped on the way in — so exporting a persona and importing it somewhere else quietly gave you a poorer persona than the one that left, with the extra writing simply gone. All of it now comes back, sections in the order you had them.", "This affected files only. Personas moved between computers over Wi‑Fi were never touched by it, and nothing already in your vault was changed — but a persona you imported from a file before this will be missing whatever it had, and the file you imported it from still has it. Importing that file again now brings the rest across."]
+}, {
+  heading: "1.120",
   notes: ["Stats on a character or persona now show what it costs in tokens, split into permanent and temporary the same way CharSnap splits them. Permanent — description, personality and the two system prompts — is in the conversation for every single reply, so it is the number worth keeping down. Temporary — first message, scenario and example messages — goes in at the start and may be trimmed once the chat gets long. Each is broken down line by line with a character count beside it, so you can see which field is the expensive one.", "The count is for the version you are looking at, not all of them added together, because only one variant is ever in play at a time. Switch to another variant and press Stats again to see what that one costs. Custom sections are counted inside the description, because that is where they end up when the character reaches CharSnap — and prompt overrides are left out of the totals, since those are counted against their own separate allowance. If you have any, the note at the bottom says what they come to.", "Tokens are an estimate at roughly four characters each, which is the same rule of thumb CharSnap quotes. Every model counts slightly differently, so treat it as a close guide rather than an exact figure."]
 }, {
   heading: "1.119",
@@ -702,16 +705,44 @@ function normalizePersonaImport(obj) {
     const used = gallery.map(g => g.album).filter(Boolean);
     const albums = [];
     for (const a of [...named, ...used]) if (albums.indexOf(a) < 0) albums.push(a);
+    /* A persona is not just a name and a description. It has a tagline, a bucket,
+       the lorebooks it lives in, and sections of its own — and none of them were
+       being read back, so exporting a persona and importing it again quietly
+       returned a poorer persona than the one that left. Handled the same way the
+       character import handles them, including fresh section ids and the
+       sectionOrder keys that address them. */
+    const secMap = {};
+    const sections = (raw.sections || []).map(s => {
+      const id = uid();
+      if (s.id) secMap["sec:" + s.id] = "sec:" + id;
+      return { id, title: s.title || "", content: s.content || s.body || "" };
+    }).filter(s => s.content);
+    const liveSec = new Set(sections.map(s => "sec:" + s.id));
+    const remappedOrder = Array.isArray(raw.sectionOrder)
+      ? raw.sectionOrder.map(k => secMap[k] || k).filter(k => String(k).indexOf("sec:") !== 0 || liveSec.has(k))
+      : null;
+    // imgMeta keys are image ids, so they need the same remapping; only ids the
+    // import actually brought across are kept
+    const imgMeta = {};
+    for (const [oldId, meta] of Object.entries(raw.imgMeta || {})) {
+      if (map[oldId] && meta) imgMeta[map[oldId]] = { ...meta };
+    }
     return {
       persona: {
         id: uid(),
         name: raw.name || "Imported persona",
+        tagline: raw.tagline || "",
         role: raw.role || "",
         pronouns: raw.pronouns || "",
+        bucket: raw.bucket || "",
+        lorebooks: Array.isArray(raw.lorebooks) ? raw.lorebooks.filter(x => typeof x === "string") : [],
         description: raw.description || raw.personality || "",
         avatar,
         gallery,
         albums,
+        imgMeta,
+        sections,
+        sectionOrder: remappedOrder && remappedOrder.length ? remappedOrder : null,
         createdAt: Date.now(),
         updatedAt: Date.now()
       },
