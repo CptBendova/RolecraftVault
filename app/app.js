@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.126";
+const APP_VERSION = "1.127";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.126";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.126 — current",
+  heading: "1.127 — current",
+  notes: ["A picture that failed to save appeared on screen as though it had worked. It was being shown before it was written, so if the vault could not keep it — a full disk, or a browser storage limit on the web version — you saw it sitting there quite happily, and only found out it was never there after restarting. Pictures are now written first and shown second, so what you see is what was actually kept.", "When a picture could not be saved, the app said “Couldn't read those images”. That sends you off checking the file when the real problem is that there is no room left. It now says which of the two went wrong, and if you added several it says how many were added and how many were not, rather than reporting only the failure or only the success.", "Removing a picture from a lore entry or a prompt left its name on the blur list — the last two places still doing that."]
+}, {
+  heading: "1.126",
   notes: ["An album could be made but never got rid of. Once created it sat in the bar above your pictures for the life of the vault, so a typo or a change of mind was permanent — while buckets and lorebooks have always been deletable. Open an album and there is now a “Delete album” beside the rest. It asks twice, and it lets the pictures out rather than taking them with it: they stay exactly where they were, just unfiled.", "A persona's portrait could not be put in an album. Selecting it and choosing an album said it was impossible, while doing the same thing to a character's portrait worked — the persona side was only looking at the gallery. It works the same way on both now.", "Searching characters folded the word “undefined” into what it looked through for any character missing a story or personality, so typing that word matched them. Every other search in the app already guarded against this."]
 }, {
   heading: "1.125",
@@ -9070,7 +9073,14 @@ function RolecraftVault() {
       return prev;
     });
   }, []);
+  /* Write first, show second. Filling the caches up front meant a picture that
+     failed to save — a full disk, a browser storage limit — appeared on screen
+     as though it had worked, and only revealed itself as missing after a
+     restart. sSet was fixed to throw for exactly this reason; doing the display
+     before the write put the same lie back one level up. */
   const saveImage = useCallback(async (imgId, dataUrl, thumb) => {
+    await sSet("img:" + imgId, dataUrl);
+    if (thumb) await sSet("th:" + imgId, thumb);
     setImgCache(p => ({
       ...p,
       [imgId]: thumb || dataUrl
@@ -9079,9 +9089,17 @@ function RolecraftVault() {
       ...p,
       [imgId]: dataUrl
     }));
-    await sSet("img:" + imgId, dataUrl);
-    if (thumb) await sSet("th:" + imgId, thumb);
   }, []);
+  /* Read failures and save failures need different words: one means check the
+     file, the other means the vault could not keep it. Saying "couldn't read
+     those images" when the disk is full sends you looking in the wrong place. */
+  const imageAddResult = (added, unreadable, unsaved) => {
+    const bits = [];
+    if (added) bits.push(added + (added === 1 ? " image added" : " images added"));
+    if (unreadable) bits.push(unreadable + " couldn't be read");
+    if (unsaved) bits.push(unsaved + " couldn't be saved — the vault may be out of room");
+    return bits.join(" · ") || "Nothing was added";
+  };
 
   /* --- character CRUD --- */
   const persistChar = async c => {
@@ -12030,28 +12048,35 @@ function RolecraftVault() {
       },
       onAddImages: async files => {
         const added = [];
+        let unreadable = 0,
+          unsaved = 0;
         for (const f of Array.from(files)) {
+          let orig;
           try {
-            const orig = await fileToDataUrl(f);
-            const thumb = await makeThumb(orig).catch(() => null);
-            const imgId = uid();
+            orig = await fileToDataUrl(f);
+          } catch (e) {
+            unreadable++;
+            continue;
+          }
+          const thumb = await makeThumb(orig).catch(() => null);
+          const imgId = uid();
+          try {
             await saveImage(imgId, orig, thumb);
-            added.push({
-              imgId,
-              caption: ""
-            });
-          } catch (e) {}
+          } catch (e) {
+            unsaved++;
+            continue;
+          }
+          added.push({
+            imgId,
+            caption: ""
+          });
         }
-        if (!added.length) {
-          toast("Couldn't read those images");
-          return;
-        }
-        await persistPersona({
+        if (added.length) await persistPersona({
           ...vp,
           gallery: [...(vp.gallery || []), ...added],
           updatedAt: Date.now()
         });
-        toast(added.length + (added.length === 1 ? " image added" : " images added"));
+        toast(imageAddResult(added.length, unreadable, unsaved));
       },
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
@@ -12331,31 +12356,39 @@ function RolecraftVault() {
       },
       onAddImages: async files => {
         const added = [];
+        let unreadable = 0,
+          unsaved = 0;
         for (const f of Array.from(files)) {
+          let orig;
           try {
-            const orig = await fileToDataUrl(f);
-            const thumb = await makeThumb(orig).catch(() => null);
-            const imgId = uid();
+            orig = await fileToDataUrl(f);
+          } catch (e) {
+            unreadable++;
+            continue;
+          }
+          const thumb = await makeThumb(orig).catch(() => null);
+          const imgId = uid();
+          try {
             await saveImage(imgId, orig, thumb);
-            added.push({
-              imgId
-            });
-          } catch (e) {}
+          } catch (e) {
+            unsaved++;
+            continue;
+          }
+          added.push({
+            imgId
+          });
         }
-        if (!added.length) {
-          toast("Couldn't read those images");
-          return;
-        }
-        await persistLore(lore.map(e => e.id === ve.id ? {
+        if (added.length) await persistLore(lore.map(e => e.id === ve.id ? {
           ...e,
           images: [...(e.images || []), ...added],
           updatedAt: Date.now()
         } : e));
-        toast(added.length + (added.length === 1 ? " image added" : " images added"));
+        toast(imageAddResult(added.length, unreadable, unsaved));
       },
       onRemoveImage: async idx => {
         const im = (ve.images || [])[idx];
         if (im) {
+          forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
           sDel("img:" + im.imgId);
           sDel("th:" + im.imgId);
         }
@@ -12529,31 +12562,39 @@ function RolecraftVault() {
       },
       onAddImages: async files => {
         const added = [];
+        let unreadable = 0,
+          unsaved = 0;
         for (const f of Array.from(files)) {
+          let orig;
           try {
-            const orig = await fileToDataUrl(f);
-            const thumb = await makeThumb(orig).catch(() => null);
-            const imgId = uid();
+            orig = await fileToDataUrl(f);
+          } catch (e) {
+            unreadable++;
+            continue;
+          }
+          const thumb = await makeThumb(orig).catch(() => null);
+          const imgId = uid();
+          try {
             await saveImage(imgId, orig, thumb);
-            added.push({
-              imgId
-            });
-          } catch (e) {}
+          } catch (e) {
+            unsaved++;
+            continue;
+          }
+          added.push({
+            imgId
+          });
         }
-        if (!added.length) {
-          toast("Couldn't read those images");
-          return;
-        }
-        await persistPrompts(prompts.map(p => p.id === ve.id ? {
+        if (added.length) await persistPrompts(prompts.map(p => p.id === ve.id ? {
           ...p,
           images: [...(p.images || []), ...added],
           updatedAt: Date.now()
         } : p));
-        toast(added.length + (added.length === 1 ? " image added" : " images added"));
+        toast(imageAddResult(added.length, unreadable, unsaved));
       },
       onRemoveImage: async idx => {
         const im = (ve.images || [])[idx];
         if (im) {
+          forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
           sDel("img:" + im.imgId);
           sDel("th:" + im.imgId);
         }
