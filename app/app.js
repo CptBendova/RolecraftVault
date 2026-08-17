@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.119";
+const APP_VERSION = "1.120";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.119";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.119 — current",
+  heading: "1.120 — current",
+  notes: ["Stats on a character or persona now show what it costs in tokens, split into permanent and temporary the same way CharSnap splits them. Permanent — description, personality and the two system prompts — is in the conversation for every single reply, so it is the number worth keeping down. Temporary — first message, scenario and example messages — goes in at the start and may be trimmed once the chat gets long. Each is broken down line by line with a character count beside it, so you can see which field is the expensive one.", "The count is for the version you are looking at, not all of them added together, because only one variant is ever in play at a time. Switch to another variant and press Stats again to see what that one costs. Custom sections are counted inside the description, because that is where they end up when the character reaches CharSnap — and prompt overrides are left out of the totals, since those are counted against their own separate allowance. If you have any, the note at the bottom says what they come to.", "Tokens are an estimate at roughly four characters each, which is the same rule of thumb CharSnap quotes. Every model counts slightly differently, so treat it as a close guide rather than an exact figure."]
+}, {
+  heading: "1.119",
   notes: ["Restoring an older version used to wipe the portrait off every variant. The words came back correctly, but a version only ever records writing — it has never held pictures — and putting those variants back put them back without their artwork. The screen says your images are never changed by a restore, and now they are not. Nothing that was already lost this way can be brought back, but it cannot happen again.", "Importing a character brought its variants across without their portraits, and worse, the portraits it did not bring kept pointing at whatever picture already had that name in your vault — so an imported variant could quietly show a completely different character's face. Variant portraits are now carried across properly and given fresh names on arrival, the same as every other picture in the file.", "An “export text only” file was still carrying the names of variant portraits. No picture ever travelled with it, so the file was as small as it should be, but it named things that only existed in the vault it came from."]
 }, {
   heading: "1.118",
@@ -839,24 +842,35 @@ function loreToCharSnap(bookName, entries) {
    required top-level fields (name, gender, tagline, variants) + the same content
    field names CharSnap uses in its own character exports, mirrored into
    variants[0] (first variant becomes the default on import). */
-function charToCharSnap(c, scope) {
-  const known = {
-    "system override": "baseSystemOverride",
-    "nsfw system override": "nsfwSystemOverride",
-    "prefill instructions": "prefillInstructionOverride",
-    "additional first messages": "__afms"
-  };
+/* Which sections CharSnap treats as its own fields rather than as description.
+   Shared with the token counter so the two cannot disagree about what ends up
+   where — the counter is only worth anything if it matches what is actually
+   sent. */
+const CHARSNAP_SECTIONS = {
+  "system override": "baseSystemOverride",
+  "nsfw system override": "nsfwSystemOverride",
+  "prefill instructions": "prefillInstructionOverride",
+  "additional first messages": "__afms"
+};
+function splitCharSnapSections(c) {
   const mapped = {};
   const extras = [];
   (c.sections || []).forEach(s => {
-    const key = known[(s.title || "").trim().toLowerCase()];
+    const key = CHARSNAP_SECTIONS[(s.title || "").trim().toLowerCase()];
     if (key && !mapped[key]) mapped[key] = s.content || "";else extras.push(s);
   });
-  let baseDescription = c.story || "";
+  // anything that is not one of those is folded into the description on the way out
+  let description = c.story || "";
   extras.forEach(s => {
     if (!(s.content || "").trim()) return;
-    baseDescription += (baseDescription ? "\n\n" : "") + "[" + (s.title || "Section") + "]\n" + s.content;
+    description += (description ? "\n\n" : "") + "[" + (s.title || "Section") + "]\n" + s.content;
   });
+  return { mapped, extras, description };
+}
+function charToCharSnap(c, scope) {
+  const split = splitCharSnapSections(c);
+  const mapped = split.mapped;
+  let baseDescription = split.description;
   let afms = "[]";
   if (mapped.__afms) {
     try {
@@ -1708,7 +1722,75 @@ function textStats(text) {
     chars: t.length,
     letters,
     words,
-    tokens: Math.ceil(t.length / 4)
+    tokens: estTokens(t)
+  };
+}
+const estTokens = t => Math.ceil(String(t || "").length / 4);
+
+/* What a character costs, grouped the way CharSnap groups it, so the figures
+   here line up with the ones shown there rather than telling a second story.
+
+   Permanent  — description, personality, system prompt, always-active system
+                prompt. Always in the conversation, so re-sent with every reply.
+   Temporary  — first message, scenario, example messages. These may be trimmed
+                once the conversation gets long.
+   Overrides  — base prompt, NSFW prompt and prefill instruction overrides.
+                Counted apart from the other two and capped at 2,000.
+
+   Only one variant is ever in play at a time, so this is measured for a single
+   version; a character with six variants does not cost six times as much. */
+const OVERRIDE_LIMIT = 2000;
+const OVERRIDE_LABELS = [["baseSystemOverride", "Base prompt override"], ["nsfwSystemOverride", "NSFW prompt override"], ["prefillInstructionOverride", "Prefill instruction override"]];
+function promptBudget(c) {
+  const split = splitCharSnapSections(c);
+  const part = (label, text) => ({ label, text: String(text || ""), tokens: estTokens(text), chars: String(text || "").length });
+  const group = parts => {
+    const kept = parts.filter(p => p.tokens);
+    return {
+      total: parts.reduce((a, p) => a + p.tokens, 0),
+      chars: parts.reduce((a, p) => a + p.chars, 0),
+      items: kept.map(p => [p.label, p.tokens])
+    };
+  };
+  // the description is what CharSnap will actually receive: the story with any
+  // custom sections folded into it, exactly as the export builds it
+  const permanent = group([
+    part("Description" + (split.extras.length ? " (with " + split.extras.length + " section" + (split.extras.length === 1 ? "" : "s") + ")" : ""), split.description),
+    part("Personality", c.personality),
+    part("System prompt", c.systemPrompt),
+    part("Always-active system prompt", c.alwaysActiveSystemPrompt)
+  ]);
+  const temporary = group([
+    part("First message", c.firstMessage),
+    part("Scenario", c.scenario),
+    part("Example messages", c.exampleMessage),
+    part("Additional first messages", split.mapped.__afms)
+  ]);
+  const overrides = group(OVERRIDE_LABELS.map(([k, l]) => part(l, split.mapped[k])));
+  const unsent = group([
+    part("Creator memo", c.creatorMemo),
+    part("Tagline", c.tagline),
+    part("Tags and searchables", [...(c.tags || []), ...(c.searchables || [])].join(" "))
+  ]);
+  return {
+    permanent, temporary, overrides, unsent,
+    total: permanent.total + temporary.total,
+    totalChars: permanent.chars + temporary.chars,
+    overLimit: overrides.total > OVERRIDE_LIMIT
+  };
+}
+function personaBudget(p) {
+  const t = estTokens(p.description);
+  const empty = { total: 0, chars: 0, items: [] };
+  const unsentText = [p.tagline, p.role].filter(Boolean).join(" ");
+  return {
+    permanent: { total: t, chars: String(p.description || "").length, items: t ? [["Description", t]] : [] },
+    temporary: empty,
+    overrides: empty,
+    unsent: { total: estTokens(unsentText), chars: unsentText.length, items: unsentText.trim() ? [["Tagline and role", estTokens(unsentText)]] : [] },
+    total: t,
+    totalChars: String(p.description || "").length,
+    overLimit: false
   };
 }
 function dataUrlSize(v) {
@@ -1780,26 +1862,38 @@ function StatsModal({
     style: {
       marginTop: 10
     }
-  }, rows.map(([label, value], i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      gap: 14,
-      padding: "9px 0",
-      borderBottom: i < rows.length - 1 ? "1px solid var(--line)" : "none"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--mut)",
-      fontSize: 13.5
-    }
-  }, label), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      fontSize: 13.5
-    }
-  }, value)))), note && /*#__PURE__*/React.createElement("div", {
+    /* A third entry marks a row as a heading or as one of the lines making it
+       up, so the token breakdown can show what each figure is made of without
+       every other stats screen needing to change. */
+  }, rows.map(([label, value, kind], i) => {
+    const sub = kind === "sub";
+    const head = kind === "head";
+    const nextKind = rows[i + 1] && rows[i + 1][2];
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 14,
+        alignItems: "baseline",
+        padding: sub ? "3px 0 3px 14px" : head ? "10px 0 4px" : "9px 0",
+        borderBottom: i < rows.length - 1 && nextKind !== "sub" ? "1px solid var(--line)" : "none"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: sub ? "var(--dim)" : "var(--mut)",
+        fontSize: sub ? 12.5 : 13.5,
+        fontWeight: head ? 700 : 400
+      }
+    }, label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: sub ? 400 : 700,
+        fontSize: sub ? 12.5 : 13.5,
+        color: sub ? "var(--dim)" : head ? "var(--brass)" : "var(--text)",
+        whiteSpace: "nowrap"
+      }
+    }, value));
+  })), note && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--dim)",
@@ -4212,7 +4306,9 @@ function CharacterPage({
     onClick: () => onReorder(null)
   }, "Reset layout"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onStats
+    // measured for the version on screen: only one is ever in play at a time
+    onClick: () => onStats(activeVar),
+    title: "Words, pictures and what this version costs in tokens"
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       display: "inline-flex",
@@ -8492,7 +8588,7 @@ function RolecraftVault() {
       toast("Couldn't compute stats");
     }
   };
-  const openRecordStats = async (title, text, imgIds) => {
+  const openRecordStats = async (title, text, imgIds, budget, budgetNote) => {
     setStatsOpen({
       title,
       loading: true,
@@ -8507,10 +8603,28 @@ function RolecraftVault() {
           bytes += dataUrlSize(await sGet("img:" + id));
         } catch (e) {}
       }
+      const rows = [];
+      if (budget) {
+        const tilde = n => "~" + fmtNum(n);
+        const withChars = g => tilde(g.total) + "  ·  " + fmtNum(g.chars) + " chars";
+        const section = (head, g, emptyText) => {
+          rows.push([head, withChars(g), "head"]);
+          if (g.items.length) g.items.forEach(([l, n]) => rows.push([l, tilde(n), "sub"]));else rows.push([emptyText, "—", "sub"]);
+        };
+        section("Permanent", budget.permanent, "Nothing written yet");
+        section("Temporary", budget.temporary, "Nothing here");
+        rows.push(["Total", withChars({ total: budget.total, chars: budget.totalChars })]);
+        if (budget.unsent.total) {
+          rows.push(["Never sent", tilde(budget.unsent.total), "head"]);
+          budget.unsent.items.forEach(([l, n]) => rows.push([l, tilde(n), "sub"]));
+        }
+      }
+      rows.push(["Pictures", fmtNum(ids.length)], ["Picture size (originals)", fmtBytes(bytes)], ["Words", fmtNum(ts.words)], ["Letters (excl. spaces)", fmtNum(ts.letters)], ["Characters (incl. spaces)", fmtNum(ts.chars)], ["Est. AI tokens, everything", "~" + fmtNum(ts.tokens)]);
       setStatsOpen({
         title,
-        rows: [["Pictures", fmtNum(ids.length)], ["Picture size (originals)", fmtBytes(bytes)], ["Words", fmtNum(ts.words)], ["Letters (excl. spaces)", fmtNum(ts.letters)], ["Characters (incl. spaces)", fmtNum(ts.chars)], ["Est. AI tokens", "~" + fmtNum(ts.tokens)]],
-        note: "Text counts every written field (including variants and sections). Token estimate: ~4 characters per token."
+        subtitle: budgetNote,
+        rows,
+        note: (budget ? "Permanent is always in the conversation, so it is spent again on every reply — that is the figure worth keeping down. Temporary goes in at the start and may be trimmed once the chat gets long. Custom sections are folded into the description, which is where they end up on CharSnap. " + (budget.overrides.total ? "Your prompt overrides come to about " + fmtNum(budget.overrides.total) + " tokens; CharSnap counts those against their own separate allowance, so they are not in the figures above. " : "") + "The bottom rows count every written field, including all variants. " : "Text counts every written field (including variants and sections). ") + "Tokens are an estimate at roughly 4 characters each; every model counts them slightly differently."
       });
     } catch (e) {
       setStatsOpen(null);
@@ -11502,7 +11616,7 @@ function RolecraftVault() {
         record: vp
       }),
       onOpenLorebook: w => setViewLoreBook(w),
-      onStats: () => openRecordStats(vp.name || "Untitled", textOfPersona(vp), [vp.avatar, ...(vp.gallery || []).map(g => g.imgId)]),
+      onStats: () => openRecordStats(vp.name || "Untitled", textOfPersona(vp), [vp.avatar, ...(vp.gallery || []).map(g => g.imgId)], personaBudget(vp), "A persona goes in with every message, so all of it is permanent"),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
         return persistPersona({
@@ -12248,7 +12362,13 @@ function RolecraftVault() {
         setCharQ(t);
         toast("Showing everything tagged \u201c" + t + "\u201d");
       },
-      onStats: () => openRecordStats(vc.name || "Untitled", textOfChar(vc), [vc.profileImg, vc.banner, ...(vc.gallery || []).map(g => g.imgId)]),
+      onStats: scope => {
+        // the token budget is for the version being viewed; the word and picture
+        // counts below it still cover the whole character
+        const sc = scopedChar(vc, scope === undefined ? null : scope);
+        const label = scopeLabel(vc, scope === undefined ? null : scope) || "Default";
+        return openRecordStats(vc.name || "Untitled", textOfChar(vc), [vc.profileImg, vc.banner, ...(vc.gallery || []).map(g => g.imgId)], promptBudget(sc), "Token cost measured for “" + label + "”" + ((vc.variants || []).length ? " · one version is in play at a time" : ""));
+      },
       onClose: () => setViewCharId(null),
       onEdit: () => {
         setEditingChar(vc);
