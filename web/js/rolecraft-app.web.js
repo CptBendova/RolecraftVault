@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.121";
+const APP_VERSION = "1.122";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.121";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.121 — current",
+  heading: "1.122 — current",
+  notes: ["Prompts could be exported but never brought back. There was no import for them anywhere — not on the Prompt Vault screen, not inside a collection — so the file you got from “Export JSON” was a dead end, and anyone who exported their prompts meaning to move them to another computer or keep them somewhere safe had nowhere to put them. There is now an “Import JSON” on the Prompt Vault screen and an “Import prompt” inside a collection, both with a sample file beside them, exactly as lorebooks have.", "Importing from inside a collection puts everything in that collection, whatever the file says, and a prompt whose title you already have in that collection asks before it lands — the same choices as everywhere else: skip it, bring it in as a copy, or overwrite. Overwriting keeps the prompt's pictures unless the file brings its own."]
+}, {
+  heading: "1.121",
   notes: ["A “Sample” button now sits beside every “Import JSON”, on characters, personas and lorebooks, and beside “Import entry” inside a book. Each one downloads a blank file listing every field that kind of import accepts, with a note at the top explaining the awkward bits — that empty fields are ignored, that lorebooks are matched to your books by name, that an entry needs at least one trigger. Characters already had one in the editor; the other three are new.",
   "Importing a persona was only reading back part of it. Its tagline, its bucket, the lorebooks attached to it, and every section it had were all dropped on the way in — so exporting a persona and importing it somewhere else quietly gave you a poorer persona than the one that left, with the extra writing simply gone. All of it now comes back, sections in the order you had them.", "This affected files only. Personas moved between computers over Wi‑Fi were never touched by it, and nothing already in your vault was changed — but a persona you imported from a file before this will be missing whatever it had, and the file you imported it from still has it. Importing that file again now brings the rest across."]
 }, {
@@ -351,6 +354,13 @@ const SAMPLE_LOREBOOK_JSON = {
       enabled: true
     }
   }
+};
+const SAMPLE_PROMPT_JSON = {
+  _readme: "A reusable prompt. 'collection' is the book it goes in — importing from inside a collection puts it there whatever this says. To import several at once, put them in a list: [ { …prompt… }, { …prompt… } ].",
+  title: "Tavern opening scene",
+  collection: "",
+  tags: ["opener"],
+  content: "The reusable prompt text."
 };
 const SAMPLE_LORE_ENTRY_JSON = {
   _readme: "A single lore entry. Importing this from inside a book puts it in that book, whatever 'world' says — leave it empty unless you are importing from the Lorebooks screen, where it decides which book the entry lands in.",
@@ -802,6 +812,49 @@ function normalizePersonaImport(obj) {
   }
   for (const raw of asArray(obj)) if (raw && typeof raw === "object" && (raw.name || raw.description)) results.push(fresh(raw));
   return results;
+}
+/* A prompt collection could be exported and then never brought back — there was
+   no import for it anywhere, so the file was a dead end and anyone who exported
+   their prompts expecting to move them had nowhere to put them. Reads its own
+   export, a bare prompt, or a list of them. */
+function normalizePromptImport(obj, fallbackCollection) {
+  const out = [];
+  const srcImages = obj && obj.images || {},
+    srcThumbs = obj && obj.thumbs || {},
+    srcBlur = obj && obj.blurred || [];
+  const images = {},
+    thumbs = {},
+    blurred = [];
+  const remap = oldId => {
+    if (!oldId || !srcImages[oldId]) return null;
+    const nid = uid();
+    images[nid] = srcImages[oldId];
+    if (srcThumbs[oldId]) thumbs[nid] = srcThumbs[oldId];
+    if (srcBlur.indexOf(oldId) >= 0) blurred.push(nid);
+    return nid;
+  };
+  const push = raw => {
+    out.push({
+      id: uid(),
+      title: raw.title || raw.name || "Imported prompt",
+      collection: raw.collection || raw.book || fallbackCollection || "",
+      content: raw.content || raw.prompt || raw.text || "",
+      tags: toTermList(raw.tags),
+      images: (raw.images || []).map(im => ({
+        imgId: remap(im.imgId)
+      })).filter(im => im.imgId),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  };
+  const list = obj && obj.app === "rolecraft-vault" ? obj.prompt ? [obj.prompt] : obj.prompts || [] : asArray(obj).filter(raw => raw && typeof raw === "object" && (raw.content || raw.prompt || raw.text));
+  list.forEach(push);
+  return {
+    entries: out.filter(r => r.content),
+    images,
+    thumbs,
+    blurred
+  };
 }
 function normalizeLoreImport(obj, fallbackWorld) {
   const out = [];
@@ -3537,6 +3590,10 @@ function LorebookPage({
   onOpenEntry,
   onNewEntry,
   onImportEntry,
+  // the same page serves lorebooks and prompt collections, so the template it
+  // hands out has to follow whichever it is showing
+  sampleJson,
+  sampleName,
   onRename,
   onDeleteBook,
   onExportBook,
@@ -3677,7 +3734,7 @@ function LorebookPage({
   }, "Import ", entryNoun), onImportEntry && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     title: "Downloads a blank file showing every field one " + entryNoun + " accepts",
-    onClick: () => downloadJSON(SAMPLE_LORE_ENTRY_JSON, "rolecraft-lore-entry-template.json")
+    onClick: () => downloadJSON(sampleJson || SAMPLE_LORE_ENTRY_JSON, sampleName || "rolecraft-lore-entry-template.json")
   }, "Sample"), world && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
@@ -8157,6 +8214,41 @@ function RolecraftVault() {
     if (mode === "skip") parts.push("duplicates skipped");
     toast("Lore: " + (parts.join(" · ") || "nothing to do"));
   };
+  // same rule as lore: same collection, same title
+  const promptKey = p => String(p.collection || "").trim().toLowerCase() + " " + String(p.title || "").trim().toLowerCase();
+  const commitPromptImport = async (freshEntries, overwrites, mode, payload) => {
+    await writeImportedImages(payload.images, payload.thumbs);
+    await applyImportedBlur(payload.blurred);
+    let next = prompts;
+    if (overwrites.length) {
+      const byId = new Map(overwrites.map(d => [d.existingId, d.entry]));
+      next = next.map(p => {
+        const inc = byId.get(p.id);
+        if (!inc) return p;
+        // as with lore: a file carrying no pictures updates the words, not the artwork
+        const bringsImages = (inc.images || []).length > 0;
+        if (bringsImages) (p.images || []).forEach(im => {
+          sDel("img:" + im.imgId);
+          sDel("th:" + im.imgId);
+        });
+        return {
+          ...inc,
+          id: p.id,
+          images: bringsImages ? inc.images : p.images || [],
+          createdAt: p.createdAt,
+          updatedAt: Date.now()
+        };
+      });
+    }
+    next = [...next, ...freshEntries];
+    setPrompts(next);
+    await sSet("prompts:all", JSON.stringify(next));
+    const parts = [];
+    if (freshEntries.length) parts.push(freshEntries.length + " imported");
+    if (overwrites.length) parts.push(overwrites.length + " updated");
+    if (mode === "skip") parts.push("duplicates skipped");
+    toast("Prompts: " + (parts.join(" · ") || "nothing to do"));
+  };
   const [selectMode, setSelectMode] = useState(false);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
   const bulkDeleteChars = async ids => {
@@ -9179,6 +9271,36 @@ function RolecraftVault() {
           return;
         }
         await commitLoreImport(freshEntries, [], "copies", res);
+      } else if (type === "prompts") {
+        const res = normalizePromptImport(data, intoWorld === null ? file.name.replace(/\.json$/i, "") : intoWorld);
+        if (!res.entries.length) {
+          toast("No prompts found in that file");
+          return;
+        }
+        // imported from inside a collection: everything lands in that collection
+        if (intoWorld !== null) res.entries.forEach(p => {
+          p.collection = intoWorld;
+        });
+        const byKey = new Map(prompts.map(p => [promptKey(p), p]));
+        const freshEntries = [],
+          dupeEntries = [];
+        res.entries.forEach(p => {
+          const existing = byKey.get(promptKey(p));
+          if (existing) dupeEntries.push({
+            entry: p,
+            existingId: existing.id
+          });else freshEntries.push(p);
+        });
+        if (dupeEntries.length) {
+          setDupePrompt({
+            type: "prompts",
+            fresh: freshEntries,
+            dupes: dupeEntries,
+            payload: res
+          });
+          return;
+        }
+        await commitPromptImport(freshEntries, [], "copies", res);
       }
     } catch (e) {
       toast("Couldn't read that file — is it valid JSON?");
@@ -11582,7 +11704,14 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement(Ic, {
       d: icons.plus,
       size: 14
-    }), " New collection")))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }), " New collection")), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      onClick: () => triggerJsonImport("prompts")
+    }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      title: "Downloads a blank file showing every field an import accepts",
+      onClick: () => downloadJSON(SAMPLE_PROMPT_JSON, "rolecraft-prompt-template.json")
+    }, "Sample"))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
       className: "card",
       style: {
         padding: 34,
@@ -12132,6 +12261,9 @@ function RolecraftVault() {
           collection: viewPromptBook
         }
       }),
+      onImportEntry: () => triggerJsonImport("prompts", viewPromptBook || ""),
+      sampleJson: SAMPLE_PROMPT_JSON,
+      sampleName: "rolecraft-prompt-template.json",
       onRename: async name => {
         const nm = name.trim();
         await persistPrompts(prompts.map(p => (p.collection || "").trim() === viewPromptBook ? {
@@ -12335,14 +12467,17 @@ function RolecraftVault() {
   }, "Create collection")))), dupePrompt && (() => {
     const dp = dupePrompt;
     const isLore = dp.type === "lore";
-    const noun = dp.type === "characters" ? "character" : isLore ? "lore entry" : "persona";
-    const names = dp.dupes.map(d => (isLore ? d.entry.title : dp.type === "characters" ? d.item.char.name : d.item.persona.name) || "Untitled");
-    // lore entries arrive as one payload for the whole file, not one per entry
-    const commit = isLore ? (fresh, over, mode) => commitLoreImport(fresh, over, mode, dp.payload) : dp.type === "characters" ? commitCharImport : commitPersonaImport;
+    const isPrompt = dp.type === "prompts";
+    // lore and prompts both arrive as entries; characters and personas as items
+    const byEntry = isLore || isPrompt;
+    const noun = dp.type === "characters" ? "character" : isLore ? "lore entry" : isPrompt ? "prompt" : "persona";
+    const names = dp.dupes.map(d => (byEntry ? d.entry.title : dp.type === "characters" ? d.item.char.name : d.item.persona.name) || "Untitled");
+    // entries arrive as one payload for the whole file, not one per entry
+    const commit = isLore ? (fresh, over, mode) => commitLoreImport(fresh, over, mode, dp.payload) : isPrompt ? (fresh, over, mode) => commitPromptImport(fresh, over, mode, dp.payload) : dp.type === "characters" ? commitCharImport : commitPersonaImport;
     return /*#__PURE__*/React.createElement(DupeImportModal, {
       noun: noun,
       nounPlural: isLore ? "lore entries" : undefined,
-      softImages: isLore,
+      softImages: byEntry,
       names: names,
       freshCount: dp.fresh.length,
       onOverwrite: async () => {
@@ -12355,7 +12490,7 @@ function RolecraftVault() {
       },
       onCopies: async () => {
         setDupePrompt(null);
-        await commit([...dp.fresh, ...dp.dupes.map(d => isLore ? d.entry : d.item)], [], "copies");
+        await commit([...dp.fresh, ...dp.dupes.map(d => byEntry ? d.entry : d.item)], [], "copies");
       },
       onCancel: () => {
         setDupePrompt(null);
