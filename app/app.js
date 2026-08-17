@@ -26,7 +26,8 @@ const APP_VERSION = "1.121";
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
   heading: "1.121 — current",
-  notes: ["Importing a persona was only reading back part of it. Its tagline, its bucket, the lorebooks attached to it, and every section it had were all dropped on the way in — so exporting a persona and importing it somewhere else quietly gave you a poorer persona than the one that left, with the extra writing simply gone. All of it now comes back, sections in the order you had them.", "This affected files only. Personas moved between computers over Wi‑Fi were never touched by it, and nothing already in your vault was changed — but a persona you imported from a file before this will be missing whatever it had, and the file you imported it from still has it. Importing that file again now brings the rest across."]
+  notes: ["A “Sample” button now sits beside every “Import JSON”, on characters, personas and lorebooks, and beside “Import entry” inside a book. Each one downloads a blank file listing every field that kind of import accepts, with a note at the top explaining the awkward bits — that empty fields are ignored, that lorebooks are matched to your books by name, that an entry needs at least one trigger. Characters already had one in the editor; the other three are new.",
+  "Importing a persona was only reading back part of it. Its tagline, its bucket, the lorebooks attached to it, and every section it had were all dropped on the way in — so exporting a persona and importing it somewhere else quietly gave you a poorer persona than the one that left, with the extra writing simply gone. All of it now comes back, sections in the order you had them.", "This affected files only. Personas moved between computers over Wi‑Fi were never touched by it, and nothing already in your vault was changed — but a persona you imported from a file before this will be missing whatever it had, and the file you imported it from still has it. Importing that file again now brings the rest across."]
 }, {
   heading: "1.120",
   notes: ["Stats on a character or persona now show what it costs in tokens, split into permanent and temporary the same way CharSnap splits them. Permanent — description, personality and the two system prompts — is in the conversation for every single reply, so it is the number worth keeping down. Temporary — first message, scenario and example messages — goes in at the start and may be trimmed once the chat gets long. Each is broken down line by line with a character count beside it, so you can see which field is the expensive one.", "The count is for the version you are looking at, not all of them added together, because only one variant is ever in play at a time. Switch to another variant and press Stats again to see what that one costs. Custom sections are counted inside the description, because that is where they end up when the character reaches CharSnap — and prompt overrides are left out of the totals, since those are counted against their own separate allowance. If you have any, the note at the bottom says what they come to.", "Tokens are an estimate at roughly four characters each, which is the same rule of thumb CharSnap quotes. Every model counts slightly differently, so treat it as a close guide rather than an exact figure."]
@@ -317,6 +318,47 @@ const SAMPLE_CHARACTER_JSON = {
     system_prompt: "",
     always_active_system_prompt: ""
   }]
+};
+/* The same idea for the other two things you can import. These are the vault's
+   own shapes rather than CharSnap's, because personas are a Rolecraft idea and
+   a lorebook has a documented structure of its own. Every field is listed even
+   when empty, so the file doubles as the answer to "what can I put in here?" */
+const SAMPLE_PERSONA_JSON = {
+  _readme: "One persona. Fill in what you want and leave the rest empty — empty fields are ignored. 'lorebooks' are matched to your books by name, and any that do not exist yet are simply not attached. Sections are for anything extra: appearance, boundaries, writing preferences. To import several at once, put them in a list instead: [ { …persona… }, { …persona… } ].",
+  name: "",
+  tagline: "",
+  role: "",
+  pronouns: "",
+  bucket: "",
+  lorebooks: [],
+  description: "",
+  sections: [{
+    title: "",
+    content: ""
+  }]
+};
+const SAMPLE_LOREBOOK_JSON = {
+  _readme: "A whole lorebook. This is the Chub / CharSnap structure, so a file exported from either will import here as it is. 'keys' are the words that bring an entry up in a chat, and every entry needs at least one. 'name' at the top is the book; 'comment' or 'name' on an entry is its title.",
+  name: "My Lorebook",
+  description: "",
+  entries: {
+    "1": {
+      id: 1,
+      name: "An entry",
+      keys: ["a trigger word", "another"],
+      content: "What the AI should know when a trigger word comes up.",
+      entryType: "Location",
+      enabled: true
+    }
+  }
+};
+const SAMPLE_LORE_ENTRY_JSON = {
+  _readme: "A single lore entry. Importing this from inside a book puts it in that book, whatever 'world' says — leave it empty unless you are importing from the Lorebooks screen, where it decides which book the entry lands in.",
+  name: "An entry",
+  world: "",
+  keys: ["a trigger word"],
+  content: "What the AI should know when a trigger word comes up.",
+  entryType: "Other"
 };
 /* Revoking the object URL in the same tick as the click is a race: the browser
    has only been handed the URL, and a large export (a whole library with its
@@ -3632,7 +3674,11 @@ function LorebookPage({
     className: "btn btn-ghost",
     title: "Add " + entriesNoun + " from a JSON file straight into this " + bookNoun + ". One " + entryNoun + " on its own is fine, and so is a whole lorebook file — everything in it lands here rather than in a book of its own.",
     onClick: onImportEntry
-  }, "Import ", entryNoun), world && /*#__PURE__*/React.createElement("button", {
+  }, "Import ", entryNoun), onImportEntry && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    title: "Downloads a blank file showing every field one " + entryNoun + " accepts",
+    onClick: () => downloadJSON(SAMPLE_LORE_ENTRY_JSON, "rolecraft-lore-entry-template.json")
+  }, "Sample"), world && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
       setRenaming(true);
@@ -10341,6 +10387,13 @@ function RolecraftVault() {
     style: {
       flexShrink: 0
     },
+    title: "Downloads a blank file showing every field an import accepts",
+    onClick: () => downloadJSON(SAMPLE_CHARACTER_JSON, "rolecraft-character-template.json")
+  }, "Sample"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      flexShrink: 0
+    },
     onClick: () => askExport("your characters (including images)", exportCharsJson)
   }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
@@ -10913,6 +10966,10 @@ function RolecraftVault() {
       onClick: () => triggerJsonImport("personas")
     }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-ghost",
+      title: "Downloads a blank file showing every field an import accepts",
+      onClick: () => downloadJSON(SAMPLE_PERSONA_JSON, "rolecraft-persona-template.json")
+    }, "Sample"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
       onClick: () => askExport("your personas (including portraits)", exportPersonasJson)
     }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-primary",
@@ -11343,6 +11400,10 @@ function RolecraftVault() {
       className: "btn btn-ghost",
       onClick: () => triggerJsonImport("lore")
     }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      title: "Downloads a blank file showing every field an import accepts",
+      onClick: () => downloadJSON(SAMPLE_LOREBOOK_JSON, "rolecraft-lorebook-template.json")
+    }, "Sample"), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-ghost",
       onClick: () => askExport("your lorebooks", exportLoreJson)
     }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
