@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.124";
+const APP_VERSION = "1.125";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.124";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.124 — current",
+  heading: "1.125 — current",
+  notes: ["Renaming a lorebook quietly detached it from everyone. Characters and personas attach a book by its name, and renaming moved the entries and the cover but left every record still pointing at the old name — so the book you had carefully attached to eight characters was attached to none of them, while the link stayed on the page looking fine and opening nothing. The records now follow the rename, and it tells you how many did.", "Deleting a bucket left its cover picture behind in the vault forever, with nothing pointing at it, carried along in every backup from then on. Deleting a lorebook has always cleared its cover; buckets now do the same, for both characters and personas.", "Deleting a persona said “Deleted”, exactly as deleting a lore entry does — but a persona goes to the bin for thirty days and a lore entry does not. It now says so, so you know it can be brought back.", "Deleting a lore entry or a prompt left its pictures on the blur list, the same tidying that landed for characters last time."]
+}, {
+  heading: "1.124",
   notes: ["Deleting several characters or personas at once went round the bin entirely. One at a time went to the bin for thirty days with its pictures kept, but tick a few and press Delete selected and they were destroyed on the spot, artwork and all — the safety net vanished exactly when you were deleting the most. Selected deletions now go to the bin like everything else.", "Deleting a variant asked nothing at all. One click on a red button and that variant's entire writing was gone, when every other destructive thing in the app asks twice. It asks twice now, and switching to a different variant cancels it rather than leaving it armed on the wrong one.", "Deleting a variant also used to leave any gallery pictures tagged to it pointing at something that no longer existed, which the character page read as “shared by everyone” — so those pictures quietly turned up on every other variant. They are now properly marked as shared instead.", "Opening a character that had no sections at all — one from an old vault, or copied over from a computer running an older build — did not just fail to show them: it blanked the entire window, and reopening landed you on the same character and blanked it again. It opens normally now.", "Deleting a picture left its name behind on the blur list and in the album notes, for the life of the vault, and carried it into every backup. Both are tidied up now."]
 }, {
   heading: "1.123",
@@ -8335,6 +8338,15 @@ function RolecraftVault() {
     const next = {
       ...bucketMeta
     };
+    /* Deleting a lorebook removes its cover; deleting a bucket did not, so the
+       picture stayed in the vault forever with nothing pointing at it — and
+       travelled in every backup from then on. */
+    const cover = next[name] && next[name].cover;
+    if (cover) {
+      forgetBlur([cover]);
+      sDel("img:" + cover);
+      sDel("th:" + cover);
+    }
     delete next[name];
     setBucketMeta(next);
     await sSet("buckets:meta", JSON.stringify(next));
@@ -8908,6 +8920,12 @@ function RolecraftVault() {
     const next = {
       ...pBucketMeta
     };
+    const cover = next[name] && next[name].cover; // same leak as character buckets
+    if (cover) {
+      forgetBlur([cover]);
+      sDel("img:" + cover);
+      sDel("th:" + cover);
+    }
     delete next[name];
     setPBucketMeta(next);
     await sSet("pbuckets:meta", JSON.stringify(next));
@@ -9164,20 +9182,42 @@ function RolecraftVault() {
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
   };
+  /* Move every character and persona that had the old book attached onto the new
+     name. Returns how many moved, so the toast can say so — a rename that
+     silently reaches into other records should tell you it did. */
+  const renameAttachedBook = (from, to) => {
+    const was = String(from || "").trim();
+    if (!was || was === to) return 0;
+    let moved = 0;
+    const swap = list => list.map(r => {
+      const books = r.lorebooks || [];
+      if (!books.some(w => String(w).trim() === was)) return r;
+      moved++;
+      const next = [];
+      for (const w of books) {
+        const name = String(w).trim() === was ? to : w;
+        if (!next.includes(name)) next.push(name); // already attached to the new name: do not double it
+      }
+      return { ...r, lorebooks: next, updatedAt: Date.now() };
+    });
+    const nextChars = swap(chars);
+    const nextPersonas = swap(personas);
+    if (!moved) return 0;
+    setChars(nextChars);
+    setPersonas(nextPersonas);
+    sSet("chars:all", JSON.stringify(nextChars));
+    sSet("personas:all", JSON.stringify(nextPersonas));
+    return moved;
+  };
   const deleteRecord = async (type, r) => {
-    if (type === "prompt") {
+    if (type === "prompt" || type === "lore") {
+      // the blur list kept the ids of pictures that no longer exist
+      forgetBlur((r.images || []).map(im => im.imgId));
       (r.images || []).forEach(im => {
         sDel("img:" + im.imgId);
         sDel("th:" + im.imgId);
       });
-      setViewPromptEntryId(null);
-    }
-    if (type === "lore") {
-      (r.images || []).forEach(im => {
-        sDel("img:" + im.imgId);
-        sDel("th:" + im.imgId);
-      });
-      setViewLoreEntryId(null);
+      if (type === "prompt") setViewPromptEntryId(null);else setViewLoreEntryId(null);
     }
     if (type === "persona") {
       await sendToTrash("persona", r); // keeps its pictures until the bin is emptied
@@ -9188,7 +9228,9 @@ function RolecraftVault() {
     col.set(next);
     await sSet(col.key, JSON.stringify(next));
     setEditingRecord(null);
-    toast("Deleted");
+    // a persona is recoverable and a lore entry is not; saying "Deleted" for both
+    // hid the bin from the one place it applies
+    toast(type === "persona" ? "Persona moved to the bin — restore it from Settings within " + TRASH_DAYS + " days" : "Deleted");
   };
 
   /* --- backup --- */
@@ -12154,8 +12196,13 @@ function RolecraftVault() {
           delete metaNext[viewLoreBook];
           await persistLoreMeta(metaNext);
         }
+        /* Characters and personas attach a book by its name. Renaming moved the
+           entries and the cover but left every record still pointing at the old
+           name, so the book quietly detached itself from everyone who had it —
+           the link stayed on the page and opened nothing. */
+        const moved = renameAttachedBook(viewLoreBook, nm);
         setViewLoreBook(nm);
-        toast("Book renamed");
+        toast("Book renamed" + (moved ? " · " + moved + (moved === 1 ? " record follows it" : " records follow it") : ""));
       },
       onDeleteBook: async () => {
         entries.forEach(e => (e.images || []).forEach(im => {
