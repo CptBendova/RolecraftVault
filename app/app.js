@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.116";
+const APP_VERSION = "1.117";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.116";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.116 — current",
+  heading: "1.117 — current",
+  notes: ["If you made the window short — or zoomed in, which comes to the same thing — the bottom of the menu went off the end of the screen with no way to reach it. Settings is the last item in that menu, so backups, transfer, updates and the bin all became unreachable until the window was made taller again. The menu now scrolls when it runs out of room.", "Between roughly 760 and 1020 pixels wide the menu shrinks to icons, and those icons had no names at all — nothing on hover, and nothing for a screen reader to read out. Every one of them now says what it is.", "The little cross for removing a tag was eleven pixels square and sat right beside the next one. The cross looks the same, but there is now a proper target around it."]
+}, {
+  heading: "1.116",
   notes: ["A transfer now shows you what it is doing and how far along it is, instead of a spinner. Each step is named — asking the other device what it has, working out what is different, copying across, unpacking, saving — and the two long ones fill a bar with a real percentage, counting the megabytes as they land. The steps that genuinely cannot know how long they will take say so rather than inventing a number.", "Transfers are quicker to start. Working out what differs means reading and fingerprinting every record, and that was happening twice on each device — once to show you the summary and again to do the sync. The result is now kept and reused unless something in the vault actually changed. On a 600 MB library that second pass went from about three seconds to instant, on both devices."]
 }, {
   heading: "1.115",
@@ -1149,6 +1152,11 @@ const CSS = `
   @keyframes rcvpop { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   .rcv .scrollbody::-webkit-scrollbar, .rcv .modal::-webkit-scrollbar { width: 10px; }
   .rcv .scrollbody::-webkit-scrollbar-thumb, .rcv .modal::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; }
+  /* the menu only scrolls on a short window, and a default scrollbar there is
+     wider than the icons it sits beside */
+  .rcv .sidebar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .rcv .sidebar::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; }
+  .rcv .sidebar::-webkit-scrollbar-track { background: transparent; }
   .rcv .ss-root { position: fixed; inset: 0; z-index: 95; background: #04060d; overflow: hidden; }
   .rcv .ss-root.ss-hide { cursor: none; }
   .rcv .ss-back { position: absolute; inset: -70px; background-size: cover; background-position: center;
@@ -1625,11 +1633,22 @@ function TagInput({
   }, t, /*#__PURE__*/React.createElement("button", {
     onClick: () => onChange(tags.filter(x => x !== t)),
     "aria-label": "Remove tag " + t,
+    title: "Remove " + t,
+    /* The cross stays 11px, but an 11px target sitting between two others is a
+       fiddly thing to hit. Padding out to the 24px minimum and pulling the same
+       amount back in margin grows what you can click without moving anything. */
     style: {
       background: "none",
       color: "inherit",
-      padding: 0,
-      display: "flex"
+      padding: 6,
+      margin: -6,
+      marginLeft: -2,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 24,
+      minHeight: 24,
+      boxSizing: "border-box"
     }
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.x,
@@ -9414,7 +9433,17 @@ function RolecraftVault() {
       display: "flex",
       flexDirection: "column",
       gap: 4,
-      background: "var(--sidebg)"
+      background: "var(--sidebg)",
+      /* A short window — or the same window zoomed in, which amounts to the same
+         thing — makes this column taller than the screen, and Settings is the
+         last item in it. Without a ceiling the column simply grew past the
+         bottom of the window and the end of the menu could not be reached: no
+         scrollbar, no way down. The cap is what gives the overflow something to
+         work against; in the narrow layout the bar turns into a short row and
+         never comes near it. */
+      maxHeight: "100vh",
+      overflowY: "auto",
+      minHeight: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "brand",
@@ -9459,6 +9488,11 @@ function RolecraftVault() {
   }, "PRIVATE VAULT"))), nav.map(n => /*#__PURE__*/React.createElement("button", {
     key: n.id,
     className: "navitem" + (view === n.id ? " active" : ""),
+    /* Below 1020px wide the labels are hidden and these become bare icons, which
+       left them with no name at all — nothing on hover, and nothing for a screen
+       reader to read out but eight identical buttons. */
+    title: n.label,
+    "aria-label": n.label,
     onClick: () => setView(n.id)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: n.icon,
@@ -9474,22 +9508,31 @@ function RolecraftVault() {
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "navitem",
+    title: "Stats",
+    "aria-label": "Stats",
     onClick: openVaultStats
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.chart,
     size: 16
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
-  }, "Stats")), /*#__PURE__*/React.createElement("button", {
+  }, "Stats")), (() => {
+    const themeLabel = theme === "dark" ? "Theme · Dark" : theme === "light" ? "Theme · Light" : "Theme · CharSnap";
+    return /*#__PURE__*/React.createElement("button", {
+      className: "navitem",
+      title: themeLabel,
+      "aria-label": themeLabel,
+      onClick: () => setTheme(theme === "dark" ? "light" : theme === "light" ? "charsnap" : "dark")
+    }, /*#__PURE__*/React.createElement(Ic, {
+      d: theme === "dark" ? icons.moon : theme === "light" ? icons.sun : icons.persona,
+      size: 16
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "navlabel"
+    }, themeLabel));
+  })(), authState.passwordSet && /*#__PURE__*/React.createElement("button", {
     className: "navitem",
-    onClick: () => setTheme(theme === "dark" ? "light" : theme === "light" ? "charsnap" : "dark")
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: theme === "dark" ? icons.moon : theme === "light" ? icons.sun : icons.persona,
-    size: 16
-  }), /*#__PURE__*/React.createElement("span", {
-    className: "navlabel"
-  }, theme === "dark" ? "Theme · Dark" : theme === "light" ? "Theme · Light" : "Theme · CharSnap")), authState.passwordSet && /*#__PURE__*/React.createElement("button", {
-    className: "navitem",
+    title: "Lock vault",
+    "aria-label": "Lock vault",
     onClick: lockVault
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.lock,
@@ -9498,6 +9541,8 @@ function RolecraftVault() {
     className: "navlabel"
   }, "Lock vault")), /*#__PURE__*/React.createElement("button", {
     className: "navitem",
+    title: "Settings",
+    "aria-label": "Settings",
     onClick: () => setShowSettings(true)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.gear,
