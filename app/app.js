@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.118";
+const APP_VERSION = "1.119";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.118";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.118 — current",
+  heading: "1.119 — current",
+  notes: ["Restoring an older version used to wipe the portrait off every variant. The words came back correctly, but a version only ever records writing — it has never held pictures — and putting those variants back put them back without their artwork. The screen says your images are never changed by a restore, and now they are not. Nothing that was already lost this way can be brought back, but it cannot happen again.", "Importing a character brought its variants across without their portraits, and worse, the portraits it did not bring kept pointing at whatever picture already had that name in your vault — so an imported variant could quietly show a completely different character's face. Variant portraits are now carried across properly and given fresh names on arrival, the same as every other picture in the file.", "An “export text only” file was still carrying the names of variant portraits. No picture ever travelled with it, so the file was as small as it should be, but it named things that only existed in the vault it came from."]
+}, {
+  heading: "1.118",
   notes: ["On a 2K or 4K screen the pages no longer come apart. Nothing was broken exactly, but with nothing holding the width, a heading would sit against the far left edge while the four counts belonging to it were flung three thousand pixels away to the right, and the buttons on the dashboard stretched to nearly nine hundred pixels each. Every page now keeps to one column of a sensible width and sits in the middle of the screen — the same width the character and lorebook pages already used. Nothing changes below about 1900 pixels wide."]
 }, {
   heading: "1.117",
@@ -503,6 +506,20 @@ function normalizeCharacterImport(obj) {
     })).filter(g => g.imgId);
     const profileImg = remap(raw.profileImg);
     const banner = remap(raw.banner);
+    /* A variant carries its own portrait, and it was the one image id copied
+       through untouched while every other one was remapped. Two things went
+       wrong with that. The picture never arrived, because the payload below is
+       built from the remap table and the variant's id was never in it; and the
+       id it kept could already belong to a picture in this vault, so the
+       imported variant quietly adopted a stranger's portrait — the very
+       collision the remapping is here to prevent. Done here, above the payload
+       and the imgMeta pass, so the picture travels with it. */
+    const variants = Array.isArray(raw.variants) ? raw.variants.map(v => {
+      const out = { ...v, id: v.id || uid() };
+      const img = remap(v.profileImg);
+      if (img) out.profileImg = img; else delete out.profileImg;
+      return out;
+    }) : [];
     // imgMeta carries album/variant for images that are not gallery entries
     // (portraits, banner); its keys are image ids and need the same remapping.
     // Only ids the import actually brought across are kept.
@@ -552,10 +569,7 @@ function normalizeCharacterImport(obj) {
         creatorMemo: raw.creatorMemo || "",
         systemPrompt: raw.systemPrompt || "",
         alwaysActiveSystemPrompt: raw.alwaysActiveSystemPrompt || "",
-        variants: Array.isArray(raw.variants) ? raw.variants.map(v => ({
-          ...v,
-          id: v.id || uid()
-        })) : [],
+        variants,
         lorebooks: Array.isArray(raw.lorebooks) ? raw.lorebooks.filter(x => typeof x === "string") : [],
         bucket: raw.bucket || "",
         sections: sections,
@@ -5344,9 +5358,18 @@ function applySnapshot(c, snap) {
     lorebooks: (snap.lorebooks || []).slice(),
     sections,
     sectionOrder: order && order.length ? order : null,
-    variants: (snap.variants || []).map(v => Object.assign({}, v, {
-      id: v.id || uid()
-    }))
+    /* A snapshot holds a variant's words and nothing else — VARIANT_FIELDS has no
+       profileImg — so writing the snapshot's variants straight back used to erase
+       every variant portrait. Restoring some old wording is not meant to cost you
+       the artwork, and the JSON update path beside this one already gets it right.
+       The snapshot is laid over the variant that is still there, so its text wins
+       and everything else the variant carries is left alone. */
+    variants: (snap.variants || []).map(v => {
+      const liveV = v.id && (c.variants || []).find(x => x.id === v.id);
+      return Object.assign({}, liveV || {}, v, {
+        id: v.id || uid()
+      });
+    })
   });
 }
 function historyWhen(ts) {
@@ -9081,6 +9104,13 @@ function RolecraftVault() {
   const textOnlyChar = c => {
     const out = { ...c };
     ["profileImg", "banner", "gallery", "albums", "imgMeta", "history"].forEach(k => delete out[k]);
+    // a variant keeps a portrait of its own, and it was the one image reference
+    // a "text only" file still carried out with it
+    out.variants = (c.variants || []).map(v => {
+      const nv = { ...v };
+      delete nv.profileImg;
+      return nv;
+    });
     return out;
   };
   const textOnlyLore = e => {
