@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.117";
+const APP_VERSION = "1.118";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,9 +25,11 @@ const APP_VERSION = "1.117";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.117 — current",
-  notes: ["On a 2K or 4K screen the pages no longer come apart. Nothing was broken exactly, but with nothing holding the width, a heading would sit against the far left edge while the four counts belonging to it were flung three thousand pixels away to the right, and the buttons on the dashboard stretched to nearly nine hundred pixels each. Every page now keeps to one column of a sensible width and sits in the middle of the screen — the same width the character and lorebook pages already used. Nothing changes below about 1900 pixels wide.",
-  "If you made the window short — or zoomed in, which comes to the same thing — the bottom of the menu went off the end of the screen with no way to reach it. Settings is the last item in that menu, so backups, transfer, updates and the bin all became unreachable until the window was made taller again. The menu now scrolls when it runs out of room.", "Between roughly 760 and 1020 pixels wide the menu shrinks to icons, and those icons had no names at all — nothing on hover, and nothing for a screen reader to read out. Every one of them now says what it is.", "The little cross for removing a tag was eleven pixels square and sat right beside the next one. The cross looks the same, but there is now a proper target around it."]
+  heading: "1.118 — current",
+  notes: ["On a 2K or 4K screen the pages no longer come apart. Nothing was broken exactly, but with nothing holding the width, a heading would sit against the far left edge while the four counts belonging to it were flung three thousand pixels away to the right, and the buttons on the dashboard stretched to nearly nine hundred pixels each. Every page now keeps to one column of a sensible width and sits in the middle of the screen — the same width the character and lorebook pages already used. Nothing changes below about 1900 pixels wide."]
+}, {
+  heading: "1.117",
+  notes: ["If you made the window short — or zoomed in, which comes to the same thing — the bottom of the menu went off the end of the screen with no way to reach it. Settings is the last item in that menu, so backups, transfer, updates and the bin all became unreachable until the window was made taller again. The menu now scrolls when it runs out of room.", "Between roughly 760 and 1020 pixels wide the menu shrinks to icons, and those icons had no names at all — nothing on hover, and nothing for a screen reader to read out. Every one of them now says what it is.", "The little cross for removing a tag was eleven pixels square and sat right beside the next one. The cross looks the same, but there is now a proper target around it."]
 }, {
   heading: "1.116",
   notes: ["A transfer now shows you what it is doing and how far along it is, instead of a spinner. Each step is named — asking the other device what it has, working out what is different, copying across, unpacking, saving — and the two long ones fill a bar with a real percentage, counting the megabytes as they land. The steps that genuinely cannot know how long they will take say so rather than inventing a number.", "Transfers are quicker to start. Working out what differs means reading and fingerprinting every record, and that was happening twice on each device — once to show you the summary and again to do the sync. The result is now kept and reused unless something in the vault actually changed. On a 600 MB library that second pass went from about three seconds to instant, on both devices."]
