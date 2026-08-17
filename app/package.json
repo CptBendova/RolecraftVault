@@ -1,7 +1,7 @@
 {
   "name": "rolecraft-vault",
   "productName": "Rolecraft Vault",
-  "version": "1.122",
+  "version": "1.123",
   "description": "A private, encrypted library for roleplay characters, personas, lorebooks and prompts.",
   "main": "main.js"
 }

@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.122";
+const APP_VERSION = "1.123";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.122";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.122 — current",
+  heading: "1.123 — current",
+  notes: ["Your backup was missing two things. Persona buckets were not in it — so any you had created but not yet filled, and any you had given a cover, were gone after a restore. And the bin was not in it either, so anything waiting there went with it, which rather defeats the point of a bin that holds things for thirty days.", "Worse, restoring did not clear those two. A backup restored onto a computer that already had a vault left the old persona buckets and the old bin sitting there among the restored records — so you ended up with a mixture of two vaults rather than the one you asked for. A restore now replaces everything, and the covers and pictures those two need travel with the file.", "Backups made before this are still perfectly good; they simply do not carry those two things, and restoring one now clears them rather than leaving whatever was there."]
+}, {
+  heading: "1.122",
   notes: ["Prompts could be exported but never brought back. There was no import for them anywhere — not on the Prompt Vault screen, not inside a collection — so the file you got from “Export JSON” was a dead end, and anyone who exported their prompts meaning to move them to another computer or keep them somewhere safe had nowhere to put them. There is now an “Import JSON” on the Prompt Vault screen and an “Import prompt” inside a collection, both with a sample file beside them, exactly as lorebooks have.", "Importing from inside a collection puts everything in that collection, whatever the file says, and a prompt whose title you already have in that collection asks before it lands — the same choices as everywhere else: skip it, bring it in as a copy, or overwrite. Overwriting keeps the prompt's pictures unless the file brings its own."]
 }, {
   heading: "1.121",
@@ -9603,6 +9606,14 @@ function RolecraftVault() {
     Object.values(promptMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
+    /* Persona buckets were the one grouping the backup did not carry, so a
+       restore lost the empty ones and their covers. The bin was missing too —
+       and a bin without its pictures is not a bin, since the whole point of it
+       is that a restore brings the artwork back with the record. */
+    Object.values(pBucketMeta).forEach(m => {
+      if (m && m.cover) imgIds.push(m.cover);
+    });
+    trash.forEach(t => imageIdsOf(t.type, t.record).forEach(id => imgIds.push(id)));
     for (const id of imgIds.filter(Boolean)) {
       images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
       const t = await sGet("th:" + id);
@@ -9610,7 +9621,7 @@ function RolecraftVault() {
     }
     downloadJSON({
       app: "rolecraft-vault",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       chars,
       personas,
@@ -9620,8 +9631,10 @@ function RolecraftVault() {
       thumbs,
       blurred: Object.keys(blurred),
       buckets: bucketMeta,
+      personaBuckets: pBucketMeta,
       loreBooks: loreMeta,
-      promptBooks: promptMeta
+      promptBooks: promptMeta,
+      trash
     }, "rolecraft-backup-" + new Date().toISOString().slice(0, 10) + ".json");
   };
   const importAll = async file => {
@@ -9659,6 +9672,17 @@ function RolecraftVault() {
       await sSet("lore:meta", JSON.stringify(data.loreBooks || {}));
       setPromptMeta(data.promptBooks || {});
       await sSet("prompts:meta", JSON.stringify(data.promptBooks || {}));
+      /* Set even when the file does not carry them, so a restore replaces the
+         vault rather than blending into it. Left alone, persona buckets and the
+         bin survived from whatever was here before, and a backup from another
+         machine came back with a stranger's groupings and a bin full of records
+         that had nothing to do with it. */
+      const pb = data.personaBuckets || {};
+      setPBucketMeta(pb);
+      await sSet("pbuckets:meta", JSON.stringify(pb));
+      const tr = Array.isArray(data.trash) ? data.trash : [];
+      setTrash(tr);
+      await sSet("trash:all", JSON.stringify(tr));
       setShowSettings(false);
       toast("Backup restored");
     } catch {
