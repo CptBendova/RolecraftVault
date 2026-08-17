@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.123";
+const APP_VERSION = "1.124";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.123";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.123 — current",
+  heading: "1.124 — current",
+  notes: ["Deleting several characters or personas at once went round the bin entirely. One at a time went to the bin for thirty days with its pictures kept, but tick a few and press Delete selected and they were destroyed on the spot, artwork and all — the safety net vanished exactly when you were deleting the most. Selected deletions now go to the bin like everything else.", "Deleting a variant asked nothing at all. One click on a red button and that variant's entire writing was gone, when every other destructive thing in the app asks twice. It asks twice now, and switching to a different variant cancels it rather than leaving it armed on the wrong one.", "Deleting a variant also used to leave any gallery pictures tagged to it pointing at something that no longer existed, which the character page read as “shared by everyone” — so those pictures quietly turned up on every other variant. They are now properly marked as shared instead.", "Opening a character that had no sections at all — one from an old vault, or copied over from a computer running an older build — did not just fail to show them: it blanked the entire window, and reopening landed you on the same character and blanked it again. It opens normally now.", "Deleting a picture left its name behind on the blur list and in the album notes, for the life of the vault, and carried it into every backup. Both are tidied up now."]
+}, {
+  heading: "1.123",
   notes: ["Your backup was missing two things. Persona buckets were not in it — so any you had created but not yet filled, and any you had given a cover, were gone after a restore. And the bin was not in it either, so anything waiting there went with it, which rather defeats the point of a bin that holds things for thirty days.", "Worse, restoring did not clear those two. A backup restored onto a computer that already had a vault left the old persona buckets and the old bin sitting there among the restored records — so you ended up with a mixture of two vaults rather than the one you asked for. A restore now replaces everything, and the covers and pictures those two need travel with the file.", "Backups made before this are still perfectly good; they simply do not carry those two things, and restoring one now clears them rather than leaving whatever was there."]
 }, {
   heading: "1.122",
@@ -1922,6 +1925,13 @@ function personaBudget(p) {
     overLimit: false
   };
 }
+// drop notes filed against images that no longer exist
+const withoutImgMeta = (meta, idSet) => {
+  if (!meta) return meta;
+  const out = {};
+  for (const k of Object.keys(meta)) if (!idSet.has(k)) out[k] = meta[k];
+  return out;
+};
 function dataUrlSize(v) {
   if (!v) return 0;
   const i = v.indexOf(",");
@@ -4061,7 +4071,12 @@ function CharacterPage({
     key: "aasp",
     title: "Always-active system prompt",
     body: F("alwaysActiveSystemPrompt")
-  }, ...c.sections.map(s => ({
+    /* Guarded like every other list on this page. Unguarded, a character that
+       arrived without a sections field — an old vault, or a record copied over
+       from a device running an older build — did not merely fail to show its
+       sections: it threw while rendering and took the entire interface down to
+       a blank window, with no way back to it. */
+  }, ...(c.sections || []).map(s => ({
     key: "sec:" + s.id,
     title: s.title || "Untitled section",
     body: s.content
@@ -5639,6 +5654,7 @@ function CharacterEditor({
   });
   const [lightbox, setLightbox] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [confirmVar, setConfirmVar] = useState(false); // deleting a variant asks twice
   const [advOpen, setAdvOpenRaw] = useState(false);
   useEffect(() => {
     sGet("ui:advopen").then(v => {
@@ -5651,6 +5667,10 @@ function CharacterEditor({
     return next;
   });
   const [vIdx, setVIdx] = useState(-1); // -1 = Default (base fields), otherwise index into c.variants
+  // an armed delete must not follow you to another variant
+  useEffect(() => {
+    setConfirmVar(false);
+  }, [vIdx]);
   const [jsonIncoming, setJsonIncoming] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const jsonRef = useRef(null);
@@ -5678,9 +5698,21 @@ function CharacterEditor({
     setVIdx(variants.length);
     setAdvOpen(true);
   };
+  /* Every other destructive button in the app asks twice; this one threw away a
+     whole variant's writing on a single click. It also left the gallery images
+     that were tagged to that variant pointing at something that no longer
+     existed, which the viewer then treated as "shared by everyone" — so those
+     pictures quietly reappeared on every other variant. Untag them instead, so
+     being shared is a fact rather than a side effect of a dangling id. */
   const removeVariant = i => {
-    set("variants", variants.filter((_, j) => j !== i));
+    const gone = variants[i];
+    setC(p => ({
+      ...p,
+      variants: (p.variants || []).filter((_, j) => j !== i),
+      gallery: (p.gallery || []).map(g => gone && g.variantId === gone.id ? { ...g, variantId: "" } : g)
+    }));
     setVIdx(-1);
+    setConfirmVar(false);
   };
   const copyFromDefault = () => {
     set("variants", variants.map((x, j) => j === vIdx ? {
@@ -6262,8 +6294,14 @@ function CharacterEditor({
     onClick: copyFromDefault
   }, "Copy from Default"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
-    onClick: () => removeVariant(vIdx)
-  }, "Delete variant")), vIdx >= 0 && /*#__PURE__*/React.createElement("div", {
+    onClick: () => {
+      if (!confirmVar) {
+        setConfirmVar(true);
+        return;
+      }
+      removeVariant(vIdx);
+    }
+  }, confirmVar ? "Click again — this variant's writing goes" : "Delete variant")), vIdx >= 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--mut)",
@@ -6464,13 +6502,13 @@ function CharacterEditor({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.plus,
     size: 14
-  }), " Add section"))), c.sections.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }), " Add section"))), (c.sections || []).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--dim)",
       fontSize: 13.5,
       padding: "8px 2px"
     }
-  }, "No custom sections yet."), c.sections.map((s, i) => /*#__PURE__*/React.createElement("div", {
+  }, "No custom sections yet."), (c.sections || []).map((s, i) => /*#__PURE__*/React.createElement("div", {
     key: s.id,
     style: {
       border: "1px solid var(--line)",
@@ -6487,7 +6525,7 @@ function CharacterEditor({
   }, /*#__PURE__*/React.createElement("input", {
     value: s.title,
     placeholder: "Section title (e.g. Appearance)",
-    onChange: e => set("sections", c.sections.map((x, j) => j === i ? {
+    onChange: e => set("sections", (c.sections || []).map((x, j) => j === i ? {
       ...x,
       title: e.target.value
     } : x))
@@ -6498,7 +6536,7 @@ function CharacterEditor({
       flexShrink: 0,
       padding: "8px 11px"
     },
-    onClick: () => set("sections", c.sections.filter((_, j) => j !== i))
+    onClick: () => set("sections", (c.sections || []).filter((_, j) => j !== i))
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.trash,
     size: 15
@@ -6506,7 +6544,7 @@ function CharacterEditor({
     rows: 4,
     value: s.content,
     placeholder: "Section content",
-    onChange: e => set("sections", c.sections.map((x, j) => j === i ? {
+    onChange: e => set("sections", (c.sections || []).map((x, j) => j === i ? {
       ...x,
       content: e.target.value
     } : x))
@@ -8254,20 +8292,21 @@ function RolecraftVault() {
   };
   const [selectMode, setSelectMode] = useState(false);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
+  /* Deleting one character sends it to the bin and keeps its pictures. Deleting
+     a handful at once used to destroy them outright, images and all — so the
+     safety net people had learned to rely on disappeared the moment they
+     selected more than one, which is exactly when it matters most. */
   const bulkDeleteChars = async ids => {
     const idSet = new Set(ids);
     const going = chars.filter(c => idSet.has(c.id));
-    going.forEach(c => [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
-      sDel("img:" + id);
-      sDel("th:" + id);
-    }));
     const next = chars.filter(c => !idSet.has(c.id));
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
+    await sendManyToTrash("character", going);
     setSelected({});
     setConfirmBulkDel(false);
     setSelectMode(false);
-    toast(going.length + (going.length === 1 ? " character deleted" : " characters deleted"));
+    toast(going.length + (going.length === 1 ? " character" : " characters") + " moved to the bin — restore from Settings within " + TRASH_DAYS + " days");
   };
   const [selected, setSelected] = useState({});
   useEffect(() => {
@@ -8580,6 +8619,25 @@ function RolecraftVault() {
       return next;
     });
   }, []);
+  /* Deleting a picture removed the picture and nothing else, so its id stayed on
+     the blur list for the life of the vault. Nothing cleans that list, so it only
+     ever grew — and it travels in every backup. */
+  const forgetBlur = useCallback(ids => {
+    const idSet = new Set([...ids].filter(Boolean));
+    if (!idSet.size) return;
+    setBlurred(prev => {
+      let touched = false;
+      const next = { ...prev };
+      idSet.forEach(id => {
+        if (next[id]) {
+          delete next[id];
+          touched = true;
+        }
+      });
+      if (touched) sSet("blurset", JSON.stringify(Object.keys(next)));
+      return touched ? next : prev;
+    });
+  }, []);
 
   /* --- one-time: lift known character sections into first-class fields --- */
   useEffect(() => {
@@ -8874,20 +8932,18 @@ function RolecraftVault() {
   useEffect(() => {
     setPConfirmDel(false);
   }, [pSelected, pSelMode]);
+  // same as characters: the bin applies however many you delete at once
   const bulkDeletePersonas = async ids => {
     const idSet = new Set(ids);
     const going = personas.filter(p => idSet.has(p.id));
-    going.forEach(p => [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
-      sDel("img:" + id);
-      sDel("th:" + id);
-    }));
     const next = personas.filter(p => !idSet.has(p.id));
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
+    await sendManyToTrash("persona", going);
     setPSelected({});
     setPConfirmDel(false);
     setPSelMode(false);
-    toast(going.length + (going.length === 1 ? " persona deleted" : " personas deleted"));
+    toast(going.length + (going.length === 1 ? " persona" : " personas") + " moved to the bin — restore from Settings within " + TRASH_DAYS + " days");
   };
   useEffect(() => {
     if (view === "dashboard") setDashSeed(Date.now() & 0x7fffffff || 1);
@@ -9000,13 +9056,21 @@ function RolecraftVault() {
     if (type === "persona") return [r.avatar, ...(r.gallery || []).map(g => g.imgId)].filter(Boolean);
     return (r.images || []).map(im => im.imgId).filter(Boolean);
   };
-  const sendToTrash = async (type, record) => {
-    const entry = { tid: uid(), type, record, deletedAt: Date.now() };
-    const next = [entry, ...trash];
+  /* Several at once has to be one write. Calling the single version in a loop
+     would have each call build its list from the same closed-over trash, so
+     every write but the last would be thrown away and only one of the records
+     would actually reach the bin. */
+  const sendManyToTrash = async (type, records) => {
+    if (!records.length) return;
+    const at = Date.now();
+    const entries = records.map(record => ({ tid: uid(), type, record, deletedAt: at }));
+    const next = [...entries, ...trash];
     setTrash(next);
     await sSet("trash:all", JSON.stringify(next));
   };
+  const sendToTrash = (type, record) => sendManyToTrash(type, [record]);
   const purgeTrashEntry = async entry => {
+    forgetBlur(imageIdsOf(entry.type, entry.record));
     imageIdsOf(entry.type, entry.record).forEach(id => {
       sDel("img:" + id);
       sDel("th:" + id);
@@ -10630,7 +10694,7 @@ function RolecraftVault() {
       }
       bulkDeleteChars(Object.keys(selected));
     }
-  }, confirmBulkDel ? "Really delete " + Object.keys(selected).length + "? This removes their images too" : "Delete selected")), (() => {
+  }, confirmBulkDel ? "Click again — " + Object.keys(selected).length + " to the bin for " + TRASH_DAYS + " days" : "Delete selected")), (() => {
     const buckets = {};
     chars.forEach(c => {
       const b = (c.bucket || "").trim();
@@ -11378,7 +11442,7 @@ function RolecraftVault() {
         }
         bulkDeletePersonas(Object.keys(pSelected));
       }
-    }, pConfirmDel ? "Really delete " + Object.keys(pSelected).length + "? This removes their images too" : "Delete selected")), shown.length === 0 && (pBucketFilter && pBucketMeta[pBucketFilter] !== undefined && !personas.some(p => (p.bucket || "").trim() === pBucketFilter) ? /*#__PURE__*/React.createElement("div", {
+    }, pConfirmDel ? "Click again — " + Object.keys(pSelected).length + " to the bin for " + TRASH_DAYS + " days" : "Delete selected")), shown.length === 0 && (pBucketFilter && pBucketMeta[pBucketFilter] !== undefined && !personas.some(p => (p.bucket || "").trim() === pBucketFilter) ? /*#__PURE__*/React.createElement("div", {
       className: "card",
       style: {
         padding: 40,
@@ -11920,9 +11984,11 @@ function RolecraftVault() {
           sDel("img:" + id);
           sDel("th:" + id);
         });
+        forgetBlur(idSet);
         const patch = {
           ...vp,
           gallery: (vp.gallery || []).filter(g => !idSet.has(g.imgId)),
+          imgMeta: withoutImgMeta(vp.imgMeta, idSet),
           updatedAt: Date.now()
         };
         if (idSet.has(vp.avatar)) patch.avatar = null;
@@ -11990,6 +12056,7 @@ function RolecraftVault() {
         sDel("img:" + id);
         sDel("th:" + id);
       });
+      forgetBlur(idSet);
       const next = personas.map(p => {
         const hitAvatar = idSet.has(p.avatar);
         const hitGallery = (p.gallery || []).some(g => idSet.has(g.imgId));
@@ -11998,6 +12065,7 @@ function RolecraftVault() {
           ...p,
           avatar: hitAvatar ? null : p.avatar,
           gallery: (p.gallery || []).filter(g => !idSet.has(g.imgId)),
+          imgMeta: withoutImgMeta(p.imgMeta, idSet),
           updatedAt: Date.now()
         };
       });
@@ -12658,9 +12726,13 @@ function RolecraftVault() {
           sDel("img:" + id);
           sDel("th:" + id);
         });
+        forgetBlur(idSet);
         const patch = {
           ...vc,
           gallery: (vc.gallery || []).filter(g => !idSet.has(g.imgId)),
+          imgMeta: withoutImgMeta(vc.imgMeta, idSet),
+          // a variant's portrait can be deleted from the grid too
+          variants: (vc.variants || []).map(v => idSet.has(v.profileImg) ? { ...v, profileImg: null } : v),
           updatedAt: Date.now()
         };
         if (idSet.has(vc.profileImg)) patch.profileImg = null;
