@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.127";
+const APP_VERSION = "1.128";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.127";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.127 — current",
+  heading: "1.128 — current",
+  notes: ["Pictures you had blurred stayed on the blurred list after they were deleted. Nearly every place that removed a picture — deleting a lorebook or a prompt collection, replacing a cover or a banner, emptying the bin — left its name behind, so the list only ever grew and it travelled in every backup you made. Removing a picture now always forgets it was blurred, because there is one piece of code doing both rather than twenty places each having to remember.","Setting a cover or a banner said “Couldn't read that image” when the real problem was that there was no room to save it — the same wrong diagnosis fixed for galleries last time, still in place for single pictures. It now says which of the two happened. A cover that fails to save also leaves the old one exactly where it was, rather than replacing it with nothing."]
+}, {
+  heading: "1.127",
   notes: ["A picture that failed to save appeared on screen as though it had worked. It was being shown before it was written, so if the vault could not keep it — a full disk, or a browser storage limit on the web version — you saw it sitting there quite happily, and only found out it was never there after restarting. Pictures are now written first and shown second, so what you see is what was actually kept.", "When a picture could not be saved, the app said “Couldn't read those images”. That sends you off checking the file when the real problem is that there is no room left. It now says which of the two went wrong, and if you added several it says how many were added and how many were not, rather than reporting only the failure or only the success.", "Removing a picture from a lore entry or a prompt left its name on the blur list — the last two places still doing that."]
 }, {
   heading: "1.126",
@@ -5674,6 +5677,7 @@ function CharacterEditor({
   requestFull,
   loadImage,
   saveImage,
+  dropImage,
   blurred,
   onToggleBlur,
   buckets,
@@ -5837,20 +5841,27 @@ function CharacterEditor({
   }, []);
   const uploadBanner = async files => {
     if (!files || !files[0]) return;
+    /* Read and save reported the same way, and the old banner is only let go
+       once the new one is safely written — losing the old one to a failed save
+       would leave the character with no banner at all. */
+    let orig;
     try {
-      const orig = await fileToDataUrl(files[0]);
-      const thumb = await makeThumb(orig).catch(() => null);
-      const imgId = uid();
-      await saveImage(imgId, orig, thumb);
-      if (c.banner) {
-        sDel("img:" + c.banner);
-        sDel("th:" + c.banner);
-      }
-      set("banner", imgId);
-      toast("Banner updated");
+      orig = await fileToDataUrl(files[0]);
     } catch (e) {
       toast("Couldn't read that image");
+      return;
     }
+    const thumb = await makeThumb(orig).catch(() => null);
+    const imgId = uid();
+    try {
+      await saveImage(imgId, orig, thumb);
+    } catch (e) {
+      toast("Couldn't save that image — the vault may be out of room");
+      return;
+    }
+    if (c.banner) dropImage(c.banner);
+    set("banner", imgId);
+    toast("Banner updated");
   };
   const doSave = () => {
     if (!c.name.trim()) {
@@ -6093,8 +6104,7 @@ function CharacterEditor({
       padding: "7px 10px"
     },
     onClick: () => {
-      sDel("img:" + c.banner);
-      sDel("th:" + c.banner);
+      dropImage(c.banner);
       set("banner", null);
     }
   }, "Remove banner")), /*#__PURE__*/React.createElement("div", {
@@ -8198,8 +8208,7 @@ function RolecraftVault() {
         const it = byId.get(c.id);
         if (!it) return c;
         [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
-          sDel("img:" + id);
-          sDel("th:" + id);
+          dropImage(id);
         });
         return {
           ...it.char,
@@ -8231,8 +8240,7 @@ function RolecraftVault() {
         const it = byId.get(p.id);
         if (!it) return p;
         [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
-          sDel("img:" + id);
-          sDel("th:" + id);
+          dropImage(id);
         });
         return {
           ...it.persona,
@@ -8270,8 +8278,7 @@ function RolecraftVault() {
            artwork — so old images are only discarded when new ones replace them. */
         const bringsImages = (inc.images || []).length > 0;
         if (bringsImages) (e.images || []).forEach(im => {
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         });
         return {
           ...inc,
@@ -8305,8 +8312,7 @@ function RolecraftVault() {
         // as with lore: a file carrying no pictures updates the words, not the artwork
         const bringsImages = (inc.images || []).length > 0;
         if (bringsImages) (p.images || []).forEach(im => {
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         });
         return {
           ...inc,
@@ -8377,8 +8383,7 @@ function RolecraftVault() {
     const cover = next[name] && next[name].cover;
     if (cover) {
       forgetBlur([cover]);
-      sDel("img:" + cover);
-      sDel("th:" + cover);
+      dropImage(cover);
     }
     delete next[name];
     setBucketMeta(next);
@@ -8421,8 +8426,7 @@ function RolecraftVault() {
     setBucketMeta(prev => {
       const old = prev[name] && prev[name].cover;
       if (old && old !== imgId) {
-        sDel("img:" + old);
-        sDel("th:" + old);
+        dropImage(old);
       }
       const next = {
         ...prev
@@ -8683,6 +8687,16 @@ function RolecraftVault() {
       return touched ? next : prev;
     });
   }, []);
+  /* Every place that removed a picture had to remember to also take it off the
+     blur list, and most of them did not — so the list only ever grew, and it
+     travels in every backup. One helper now does both, so forgetting is no
+     longer possible. */
+  const dropImage = useCallback(id => {
+    if (!id) return;
+    forgetBlur([id]);
+    sDel("img:" + id);
+    sDel("th:" + id);
+  }, [forgetBlur]);
 
   /* --- one-time: lift known character sections into first-class fields --- */
   useEffect(() => {
@@ -8956,8 +8970,7 @@ function RolecraftVault() {
     const cover = next[name] && next[name].cover; // same leak as character buckets
     if (cover) {
       forgetBlur([cover]);
-      sDel("img:" + cover);
-      sDel("th:" + cover);
+      dropImage(cover);
     }
     delete next[name];
     setPBucketMeta(next);
@@ -9093,6 +9106,25 @@ function RolecraftVault() {
   /* Read failures and save failures need different words: one means check the
      file, the other means the vault could not keep it. Saying "couldn't read
      those images" when the disk is full sends you looking in the wrong place. */
+  /* One picture, same distinction the multi-image adders make: a file that
+     cannot be read is your file's problem, a picture that cannot be written is
+     the vault running out of room, and telling you the first when it is the
+     second sends you looking in the wrong place. */
+  const readThenSave = async file => {
+    let orig;
+    try {
+      orig = await fileToDataUrl(file);
+    } catch (e) {
+      const err = new Error("unreadable");
+      err.rcvUnreadable = true;
+      throw err;
+    }
+    const thumb = await makeThumb(orig).catch(() => null);
+    const imgId = uid();
+    await saveImage(imgId, orig, thumb);
+    return imgId;
+  };
+  const imageFailMessage = e => e && e.rcvUnreadable ? "Couldn't read that image" : "Couldn't save that image — the vault may be out of room";
   const imageAddResult = (added, unreadable, unsaved) => {
     const bits = [];
     if (added) bits.push(added + (added === 1 ? " image added" : " images added"));
@@ -9138,8 +9170,7 @@ function RolecraftVault() {
   const purgeTrashEntry = async entry => {
     forgetBlur(imageIdsOf(entry.type, entry.record));
     imageIdsOf(entry.type, entry.record).forEach(id => {
-      sDel("img:" + id);
-      sDel("th:" + id);
+      dropImage(id);
     });
   };
   const restoreFromTrash = async entry => {
@@ -9262,8 +9293,7 @@ function RolecraftVault() {
       // the blur list kept the ids of pictures that no longer exist
       forgetBlur((r.images || []).map(im => im.imgId));
       (r.images || []).forEach(im => {
-        sDel("img:" + im.imgId);
-        sDel("th:" + im.imgId);
+        dropImage(im.imgId);
       });
       if (type === "prompt") setViewPromptEntryId(null);else setViewLoreEntryId(null);
     }
@@ -12081,8 +12111,7 @@ function RolecraftVault() {
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
         idSet.forEach(id => {
-          sDel("img:" + id);
-          sDel("th:" + id);
+          dropImage(id);
         });
         forgetBlur(idSet);
         const patch = {
@@ -12169,8 +12198,7 @@ function RolecraftVault() {
     onDeleteSelected: async imgIds => {
       const idSet = new Set(imgIds);
       idSet.forEach(id => {
-        sDel("img:" + id);
-        sDel("th:" + id);
+        dropImage(id);
       });
       forgetBlur(idSet);
       const next = personas.map(p => {
@@ -12208,13 +12236,9 @@ function RolecraftVault() {
       blurred: blurred,
       onSetCover: async files => {
         try {
-          const orig = await fileToDataUrl(files[0]);
-          const thumb = await makeThumb(orig).catch(() => null);
-          const imgId = uid();
-          await saveImage(imgId, orig, thumb);
+          const imgId = await readThenSave(files[0]);
           if (meta.cover) {
-            sDel("img:" + meta.cover);
-            sDel("th:" + meta.cover);
+            dropImage(meta.cover);
           }
           await persistLoreMeta({
             ...loreMeta,
@@ -12226,13 +12250,12 @@ function RolecraftVault() {
           requestFull(imgId);
           toast("Cover updated");
         } catch (e) {
-          toast("Couldn't read that image");
+          toast(imageFailMessage(e));
         }
       },
       onRemoveCover: async () => {
         if (meta.cover) {
-          sDel("img:" + meta.cover);
-          sDel("th:" + meta.cover);
+          dropImage(meta.cover);
         }
         const nm = {
           ...loreMeta
@@ -12280,12 +12303,10 @@ function RolecraftVault() {
       },
       onDeleteBook: async () => {
         entries.forEach(e => (e.images || []).forEach(im => {
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         }));
         if (meta.cover) {
-          sDel("img:" + meta.cover);
-          sDel("th:" + meta.cover);
+          dropImage(meta.cover);
         }
         const metaNext = {
           ...loreMeta
@@ -12389,8 +12410,7 @@ function RolecraftVault() {
         const im = (ve.images || [])[idx];
         if (im) {
           forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         }
         await persistLore(lore.map(e => e.id === ve.id ? {
           ...e,
@@ -12436,13 +12456,9 @@ function RolecraftVault() {
       blurred: blurred,
       onSetCover: async files => {
         try {
-          const orig = await fileToDataUrl(files[0]);
-          const thumb = await makeThumb(orig).catch(() => null);
-          const imgId = uid();
-          await saveImage(imgId, orig, thumb);
+          const imgId = await readThenSave(files[0]);
           if (meta.cover) {
-            sDel("img:" + meta.cover);
-            sDel("th:" + meta.cover);
+            dropImage(meta.cover);
           }
           await persistPromptMeta({
             ...promptMeta,
@@ -12454,13 +12470,12 @@ function RolecraftVault() {
           requestFull(imgId);
           toast("Cover updated");
         } catch (e) {
-          toast("Couldn't read that image");
+          toast(imageFailMessage(e));
         }
       },
       onRemoveCover: async () => {
         if (meta.cover) {
-          sDel("img:" + meta.cover);
-          sDel("th:" + meta.cover);
+          dropImage(meta.cover);
         }
         const nm = {
           ...promptMeta
@@ -12504,12 +12519,10 @@ function RolecraftVault() {
       },
       onDeleteBook: async () => {
         entries.forEach(p => (p.images || []).forEach(im => {
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         }));
         if (meta.cover) {
-          sDel("img:" + meta.cover);
-          sDel("th:" + meta.cover);
+          dropImage(meta.cover);
         }
         const metaNext = {
           ...promptMeta
@@ -12595,8 +12608,7 @@ function RolecraftVault() {
         const im = (ve.images || [])[idx];
         if (im) {
           forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
-          sDel("img:" + im.imgId);
-          sDel("th:" + im.imgId);
+          dropImage(im.imgId);
         }
         await persistPrompts(prompts.map(p => p.id === ve.id ? {
           ...p,
@@ -12860,8 +12872,7 @@ function RolecraftVault() {
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
         idSet.forEach(id => {
-          sDel("img:" + id);
-          sDel("th:" + id);
+          dropImage(id);
         });
         forgetBlur(idSet);
         const patch = {
@@ -12947,6 +12958,7 @@ function RolecraftVault() {
     requestFull: requestFull,
     loadImage: loadImage,
     saveImage: saveImage,
+    dropImage: dropImage,
     blurred: blurred,
     onToggleBlur: toggleBlur,
     buckets: [...new Set([...chars.map(c => (c.bucket || "").trim()).filter(Boolean), ...Object.keys(bucketMeta)])].sort(),
@@ -13161,14 +13173,11 @@ function RolecraftVault() {
       e.target.value = "";
       if (!f || !coverTarget) return;
       try {
-        const orig = await fileToDataUrl(f);
-        const thumb = await makeThumb(orig).catch(() => null);
-        const imgId = uid();
-        await saveImage(imgId, orig, thumb);
+        const imgId = await readThenSave(f);
         await setBucketCover(coverTarget, imgId);
         toast("Bucket cover updated");
       } catch (err) {
-        toast("Couldn't read that image");
+        toast(imageFailMessage(err));
       }
       setCoverTarget(null);
     }
