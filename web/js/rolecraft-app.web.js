@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.134";
+const APP_VERSION = "1.135";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.134";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.134 — current",
+  heading: "1.135 — current",
+  notes: ["A variant can now have its own age, gender and pronouns. It never could — those three lived on the character, so every variant was the same age as the Default with no way to differ. They behave like every other variant field: fill one in and it is that variant’s, leave it empty and it falls back to the Default, which the box now shows you as its placeholder.","Updating a variant from a JSON file ignored most of what was in the file. Only the written fields were applied — the name, age, gender and pronouns were dropped without a word, so the variant stayed tied to the Default no matter what the file said. It now takes all of them, and a file that names the variant renames it. A file carrying the character’s own name is not treated as a rename.","Sections in a JSON file were never read at all. The importer only ever built sections out of the three override fields and the extra first messages — write your own sections into a file and nothing happened, and the sample file did not list them, so there was no way to discover that. Files carrying sections now bring them across, and the sample shows the field.","Updating a variant also ignored sections entirely, even when they had been read. Sections are shared by every variant, so a file that carries them now applies them whichever variant you have open.","Exporting to CharSnap gave every variant the character’s age. CharSnap keeps age on the variant, so a character whose variants were seventeen, thirty-one and sixty-eight exported as three variants all aged thirty-one. Each carries its own now, and one that has none still falls back to the character’s.","Importing from CharSnap dropped the age of every variant after the first, for the same reason from the other direction. A file with three ages now arrives with three ages."]
+}, {
+  heading: "1.134",
   notes: ["Downloading pictures now shows a progress bar. Zipping a library is not quick — reading, decoding and checksumming runs at roughly 27 MB a second, so twenty gigabytes takes over ten minutes. All you got before was a count that nudged every twenty-five pictures, which is not enough to tell whether it is working or has wedged. There is now a bar with how many pictures are done, how many there are, and roughly how long is left. It appears wherever pictures are downloaded — a character, a persona, an album, a lorebook, or the whole vault at once.","Which pictures to fetch is worked out before any of them are read, so the total shown is the real total from the first moment rather than climbing as it goes.","A zip holding exactly 65,535 files was written in a way that says “the real number is recorded elsewhere” — and then did not record it anywhere. The three unpackers this was tested against all cope, but it is a claim about the file that is not true. The same applied to a file starting at exactly the four gigabyte mark. Both now take the 64-bit path.","Handing each picture to the browser separately, as 1.133 began doing, cost about 0.12 ms each — around five thousand small pictures that added up to nearly a second. They are gathered into batches of a few megabytes now, which restores the speed while still keeping the archive out of memory."]
 }, {
   heading: "1.133",
@@ -339,16 +342,22 @@ function compressImage(file, maxDim = 1000, quality = 0.85) {
    this is the one worth handing someone who asks what to write. Unknown keys are
    ignored on import, so the note travels with the file harmlessly. */
 const SAMPLE_CHARACTER_JSON = {
-  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
+  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number. Each variant can carry its own age, gender and pronouns; leave them blank and it uses the Default's. 'sections' are your own titled blocks and are shared by every variant. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
   name: "",
   gender: "",
   tagline: "",
   tags: [],
   searchables: [],
+  sections: [{
+    title: "",
+    content: ""
+  }],
   variants: [{
     variant_name: "Default",
     variant_tagline: "",
     age: "",
+    gender: "",
+    pronouns: "",
     personality: "",
     description: "",
     first_message: "",
@@ -811,6 +820,14 @@ function normalizeCharacterImport(obj) {
         sec("Additional first messages", extra.map(x => typeof x === "string" ? x : JSON.stringify(x)).join("\n\n---\n\n"));
       }
     } catch (e) {}
+    /* A file's own sections were never read here — only the four override
+       fields below produced any. Writing sections into a hand-made file did
+       nothing at all, and the sample did not list them, so there was no way to
+       find that out. Sections carried by the file come first, then the
+       overrides, which are sections in all but name. */
+    (Array.isArray(d.sections) ? d.sections : []).forEach(x => {
+      if (x && typeof x === "object") sec(S(x.title) || "Section", x.content || x.body);
+    });
     sec("System override", d.baseSystemOverride);
     sec("NSFW system override", d.nsfwSystemOverride);
     sec("Prefill instructions", d.prefillInstructionOverride || d.post_history_instructions);
@@ -823,7 +840,11 @@ function normalizeCharacterImport(obj) {
       exampleMessage: S(v.mes_example || v.exampleMessage || v.example_message || v.example_dialogs),
       creatorMemo: S(v.creator_notes || v.characterCreatorComment || v.creator_comment || v.creatorMemo),
       systemPrompt: S(v.system_prompt || v.systemPrompt),
-      alwaysActiveSystemPrompt: S(v.superSystemPrompt || v.always_active_system_prompt || v.alwaysActiveSystemPrompt)
+      alwaysActiveSystemPrompt: S(v.superSystemPrompt || v.always_active_system_prompt || v.alwaysActiveSystemPrompt),
+      // CharSnap keeps age on the variant; every variant past the first used to lose it
+      age: S(v.age),
+      gender: S(v.gender),
+      pronouns: S(v.pronouns)
     });
     const base = contentOf(d);
     // CharSnap-style variants: first = default (already in base), extras become vault variants
@@ -846,7 +867,16 @@ function normalizeCharacterImport(obj) {
        "Imported character". */
     const firstV = Array.isArray(d.variants) && d.variants[0] || null;
     const ageOf = x => x && x.age != null && String(x.age).trim() ? String(x.age) : "";
-    results.push(fresh({
+    /* variants[0] is the Default s content, so its variant_name was thrown
+       away — which meant a file could never rename the variant it updated.
+       It is carried alongside the character rather than on it, so it reaches
+       the update dialog without ever being saved onto a record. */
+    /* "Default" is not a name — it is what the sample file and CharSnap both
+       put in the first slot to mean "this one is the default". Taking it would
+       name a variant "Default". */
+    const fvn = S(firstV && firstV.variant_name);
+    const firstVName = /^default$/i.test(fvn) ? "" : fvn;
+    const res0 = fresh({
       name: S(d.name || d.variant_name),
       tags: toTagList(d.tags),
       // CharSnap keeps several fields on the variant, so look there too
@@ -857,7 +887,9 @@ function normalizeCharacterImport(obj) {
       pronouns: d.pronouns,
       ...base,
       variants
-    }));
+    });
+    res0.variantName = firstVName;
+    results.push(res0);
   }
   return results;
 }
@@ -1176,7 +1208,8 @@ function charToCharSnap(c, scope) {
       personality: srcC.personality || baseContent.personality || "",
       description: description || baseContent.description || "",
       first_message: srcC.firstMessage || baseContent.firstMessage || "",
-      age: ageStr
+      // a variant with its own age exports it; otherwise the character's stands in
+      age: String(srcC.age == null ? "" : srcC.age).trim() || ageStr
     };
     const opt = (k, v) => {
       if (v != null && String(v).trim()) out[k] = v;
@@ -1201,6 +1234,7 @@ function charToCharSnap(c, scope) {
     // The tagline is NOT inherited: variant_tagline is an override, and filling it
     // with the character's own tagline would set an override that says nothing.
     variants.push(variantOf({
+      age: v.age,
       personality: v.personality || c.personality,
       firstMessage: v.firstMessage || c.firstMessage,
       scenario: v.scenario,
@@ -4165,7 +4199,6 @@ function CharacterPage({
   }, [onClose, lb, ss, grid, escOff]);
   let activeProfileId = c.profileImg;
   let profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
-  const details = [["Age", c.age], ["Gender", c.gender], ["Pronouns", c.pronouns], ["Bucket", c.bucket]].filter(x => x[1]);
   const [activeVar, setActiveVar] = useState(null); // variant id or null = Default
   /* A well-tagged character can carry dozens of each of these, which pushed the
      writing off the screen entirely. Show a first row's worth and keep the rest
@@ -4201,6 +4234,9 @@ function CharacterPage({
   activeProfileId = (av && av.profileImg) || c.profileImg;
   profile = activeProfileId ? fullCache[activeProfileId] || imgCache[activeProfileId] : null;
   const F = k => av && (av[k] || "").trim() ? av[k] : c[k] || ""; // variant field with Default fallback
+  /* These three read straight off the character, so an open variant with its own
+     age still showed the Default's. Bucket is shared and stays as it is. */
+  const details = [["Age", F("age")], ["Gender", F("gender")], ["Pronouns", F("pronouns")], ["Bucket", c.bucket]].filter(x => x[1]);
   const memo = (F("creatorMemo") || "").trim(); // shown in the header, not with the prose
   const blocks = [{
     key: "story",
@@ -5707,11 +5743,16 @@ function HistoryModal({
 }
 
 /* ---------- character editor (full-screen) ---------- */
-const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt"];
+/* A variant used to share the Default's age, gender and pronouns with no way to
+   differ, while the Sample JSON told you to write an age inside variants[] — a
+   field the app then dropped on the floor. They are variant fields now, with the
+   same rule as the rest: empty falls back to the Default. Tags, bucket, sections
+   and the gallery stay shared. */
+const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt", "age", "gender", "pronouns"];
 const DEFAULT_VID = "__default__"; // image belongs to the Default variant only
 /* version history: text only — images (profileImg/banner/gallery) are never captured or restored,
    so photos always survive an update or a rollback */
-const VERSION_BASE_KEYS = ["name", "age", "gender", "pronouns"].concat(VARIANT_FIELDS);
+const VERSION_BASE_KEYS = ["name"].concat(VARIANT_FIELDS);
 const HISTORY_LIMIT = 20;
 function snapshotChar(c, label) {
   return {
@@ -5911,7 +5952,7 @@ function CharacterEditor({
         toast("No character found in that file. Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.");
         return;
       }
-      setJsonIncoming(results[0].char);
+      setJsonIncoming(Object.assign({}, results[0].char, { __vname: results[0].variantName || "" }));
     } catch (e) {
       toast("Couldn't read that JSON file. Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.");
     }
@@ -5926,9 +5967,6 @@ function CharacterEditor({
         if ((inc[k] || "").trim()) patch[k] = inc[k];
       });
       if ((inc.name || "").trim()) patch.name = inc.name;
-      ["age", "gender", "pronouns"].forEach(k => {
-        if ((inc[k] || "").trim()) patch[k] = inc[k];
-      });
       /* The file is the source of truth for the lists it actually carries: they
          replace rather than merge. Union-ing tags meant one that had been removed
          upstream could never be got rid of here, and searchables were not applied
@@ -5952,14 +5990,29 @@ function CharacterEditor({
         VARIANT_FIELDS.forEach(k => {
           if ((inc[k] || "").trim()) merged[k] = inc[k];
         });
+        /* The file could never rename the variant: only VARIANT_FIELDS were
+           applied and name was not one of them. A full-character file carries
+           the character's own name, which is not a rename — so it is taken only
+           when it differs, the same test used when adding a new variant. */
+        const wanted = (inc.__vname || "").trim() || ((inc.name || "").trim() && inc.name !== c.name ? inc.name : "");
+        if (wanted) merged.name = wanted;
         return merged;
       });
-      setC(p => ({ ...p, variants: nextVariants, history, __historyPushed: true }));
-      toast("Variant updated from JSON — images kept");
+      /* Sections are shared across variants, so a file that carries them applies
+         them whichever variant is selected. Updating a variant used to ignore
+         them entirely, which read as sections never importing. */
+      const vPatch = { variants: nextVariants, history, __historyPushed: true };
+      if ((inc.sections || []).length) vPatch.sections = inc.sections.map(sec => ({
+        id: uid(),
+        title: sec.title || "",
+        content: sec.content || ""
+      }));
+      setC(p => ({ ...p, ...vPatch }));
+      toast(vPatch.sections ? "Variant updated from JSON — sections replaced, images kept" : "Variant updated from JSON — images kept");
     } else {
       const nv = Object.assign({
         id: uid(),
-        name: (inc.name || "").trim() && inc.name !== c.name ? inc.name : "Variant " + (variants.length + 2)
+        name: (inc.__vname || "").trim() || ((inc.name || "").trim() && inc.name !== c.name ? inc.name : "Variant " + (variants.length + 2))
       }, Object.fromEntries(VARIANT_FIELDS.map(k => [k, inc[k] || ""])));
       setC(p => ({ ...p, variants: [...variants, nv], history, __historyPushed: true }));
       setVIdx(variants.length);
@@ -6311,21 +6364,21 @@ function CharacterEditor({
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, "Age"), /*#__PURE__*/React.createElement("input", {
-    value: c.age,
-    onChange: e => set("age", e.target.value),
-    placeholder: "24"
+    value: getF("age"),
+    onChange: e => setF("age", e.target.value),
+    placeholder: vIdx < 0 ? "24" : c.age || "24"
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, "Gender"), /*#__PURE__*/React.createElement("input", {
-    value: c.gender,
-    onChange: e => set("gender", e.target.value),
-    placeholder: "Woman, man, nonbinary…"
+    value: getF("gender"),
+    onChange: e => setF("gender", e.target.value),
+    placeholder: vIdx < 0 ? "Woman, man, nonbinary…" : c.gender || "Woman, man, nonbinary…"
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, "Pronouns"), /*#__PURE__*/React.createElement("input", {
-    value: c.pronouns,
-    onChange: e => set("pronouns", e.target.value),
-    placeholder: "she/her, they/them…"
+    value: getF("pronouns"),
+    onChange: e => setF("pronouns", e.target.value),
+    placeholder: vIdx < 0 ? "she/her, they/them…" : c.pronouns || "she/her, they/them…"
   }))), /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, "Tagline — short line shown under the name (like \"OC | The Maid\")"), /*#__PURE__*/React.createElement("input", {
@@ -6527,7 +6580,7 @@ function CharacterEditor({
       color: "var(--mut)",
       marginTop: 10
     }
-  }, "Variant fields left empty fall back to the Default variant on the character page. Tags, bucket, sections and the gallery are shared across all variants.")), vIdx >= 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Variant fields left empty fall back to the Default variant on the character page — including age, gender and pronouns, so a variant can be its own person. Tags, bucket, sections and the gallery are shared across all variants.")), vIdx >= 0 && /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: 20,
