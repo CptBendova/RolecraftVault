@@ -2,7 +2,7 @@
 !define APP_NAME "Rolecraft Vault"
 !define APP_EXE "Rolecraft Vault.exe"
 !define COMPANY "Rolecraft"
-!define VERSION "1.132"
+!define VERSION "1.133"
 
 Name "${APP_NAME}"
 OutFile "..\dist\Rolecraft-Vault-Setup-${VERSION}.exe"

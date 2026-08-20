@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.132";
+const APP_VERSION = "1.133";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.132";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.132 — current",
+  heading: "1.133 — current",
+  notes: ["Downloading images is no longer capped at four gigabytes. 1.132 stopped the app handing you a quietly corrupt archive; it did so by refusing. The zip format keeps every size and position in four bytes, so anything past that wraps around — the archive looks whole and unpacks wrong. The 64-bit form of those fields is now written whenever a value needs it, and the 65,535-file limit is gone with it. A zip that fits in the old shape is still written in the old shape, so nothing that reads them today has to change.","Raising that ceiling on its own would not have helped, because the whole archive used to be assembled in memory before you were given it — with a large library that ran out long before four gigabytes. Each picture is now handed over as it is read and let go of immediately. Measured on 320 megabytes of images, the old way kept about 300 of them in memory and the new way keeps none: the archive is held where the browser can put it on disk.","Folder and file names inside a zip were not marked as being written in UTF-8, so a name in Cyrillic or Japanese — which 1.132 had just made possible — was read back as nonsense by Windows and by anything else that trusts the marking. Names are now marked correctly and repeated in the field designed to carry them, which several unpackers need before they will decode them at all.","Every file in a downloaded zip was dated 30 November 1979, because no modification time was ever written. They now carry the time the download was made."]
+}, {
+  heading: "1.132",
   notes: ["Characters whose names are not written in the English alphabet exported as “untitled”. A name in Cyrillic, Chinese or Japanese — or even just an accented one — was stripped away to nothing, so every such character produced a file called untitled, each one overwriting the last in your downloads folder. Names of any script now come through.","Two characters with the same name shared one folder inside a downloaded zip, and both started numbering at one — so the zip contained the same paths twice and unpacking it silently kept only the second. They get separate folders now.","Downloading all images crashed if any character had never had a gallery.","Downloading a very large number of images produced a zip that looked fine and was quietly broken, because the format this app writes cannot describe more than four gigabytes. It now says so and asks you to do it in batches, rather than handing you a corrupt file.","Thumbnails were always saved as JPEG, which cannot hold transparency — so a PNG portrait with a clear background came back with a solid black one, and the thumbnail is what every grid and card shows. Pictures that carry transparency keep it.","Importing a backup applied its pictures to the display one at a time, each pass copying everything already loaded. That is the same slowdown fixed for ordinary loading in 1.129, still present in the import. A large import now applies them in one go.","Four places saved to storage from inside a React update, which can run twice — storing the same thing twice — and had nowhere to report a failure. Blurring, unblurring, importing blurred pictures and setting a bucket cover all now save properly. A bucket cover also only lets go of the old picture once the new one is safely stored.","The dashboard’s “recent work” list copied every character, persona, lore entry and prompt in your vault, sorted the lot and kept six — and did it again on every keystroke anywhere in the app, including on screens that do not show it. It now only does that work when something has actually changed."]
 }, {
   heading: "1.131",
@@ -405,8 +408,8 @@ const SAMPLE_LORE_ENTRY_JSON = {
    has only been handed the URL, and a large export (a whole library with its
    pictures runs to tens of megabytes) may not have been read yet when the URL is
    pulled out from under it, which shows up as a download that silently fails. */
-function revokeSoon(url) {
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+function revokeSoon(url, delay) {
+  setTimeout(() => URL.revokeObjectURL(url), delay || 60000);
 }
 function downloadJSON(obj, filename) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], {
@@ -495,35 +498,91 @@ function dataUrlBytes(u) {
   for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
   return a;
 }
-const ZIP_MAX = 0xFFFFFFFF; // 32-bit offsets: this writer has no ZIP64
-function zipTooBig(files) {
-  let total = 0;
-  for (const f of files) total += f.bytes.length + f.name.length * 2 + 76;
-  return total > ZIP_MAX || files.length > 0xFFFF;
-}
-function makeZip(files) {
-  // [{name, bytes}]
+/* ZIP64, and an archive that is never held in memory.
+
+   The classic zip format keeps every size and offset in four bytes, so an
+   archive past 4 GB wrapped around: it looked complete and unpacked wrong or
+   not at all. It also could not describe more than 65,535 files. The 64-bit
+   fields below are written only when a value genuinely needs them, so an
+   ordinary zip stays exactly what older tools already read.
+
+   Raising that ceiling alone would not have helped, because the whole archive
+   used to be collected in an array and turned into a Blob at the end — the
+   real limit was how much fitted in memory. Each entry is handed to blob
+   storage as it is made, which the browser can page to disk, and the caller
+   drops its copy of the image immediately after.
+
+   Flag 0x0800 marks the entry name as UTF-8. Since 1.132 allowed names in any
+   script this matters: without it, a name written in Cyrillic or Japanese is
+   read back as mojibake by Windows Explorer. */
+function zipWriter() {
   const enc = new TextEncoder();
-  const parts = [];
-  const central = [];
-  let offset = 0;
+  const U16_MAX = 0xFFFF;
+  const U32_MAX = 0xFFFFFFFF;
   const u16 = v => [v & 255, v >> 8 & 255];
   const u32 = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24 & 255];
-  for (const f of files) {
-    const nameB = enc.encode(f.name);
-    const crc = crc32(f.bytes);
-    const sz = f.bytes.length;
-    const local = new Uint8Array([0x50, 0x4B, 3, 4, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16(0)]);
-    parts.push(local, nameB, f.bytes);
-    central.push(new Uint8Array([0x50, 0x4B, 1, 2, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), nameB);
-    offset += local.length + nameB.length + sz;
-  }
-  let cdSize = 0;
-  central.forEach(c => cdSize += c.length);
-  const end = new Uint8Array([0x50, 0x4B, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
-  return new Blob([...parts, ...central, end], {
-    type: "application/zip"
-  });
+  const u64 = v => [...u32(v >>> 0), ...u32(Math.floor(v / 4294967296) >>> 0)];
+  const UTF8 = 0x0800;
+  /* Zip stores the modified time as a packed DOS date. Leaving it zero made
+     every entry list as 30 Nov 1979, which reads as a damaged archive. */
+  const now = new Date();
+  const dosTime = now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1;
+  const dosDate = Math.max(0, now.getFullYear() - 1980) << 9 | now.getMonth() + 1 << 5 | now.getDate();
+  const chunks = []; // Blobs — the browser may keep these on disk
+  const central = []; // ~60 bytes per entry, small enough to keep in memory
+  let offset = 0;
+  let count = 0;
+  const add = (name, bytes) => {
+    const nameB = enc.encode(name);
+    const crc = crc32(bytes);
+    const sz = bytes.length;
+    /* A name outside ASCII is carried again in the Unicode Path extra field.
+       The name itself is already UTF-8 and flagged as such, but some unpackers
+       only decode it when this field is present — and it has to be on both the
+       local and the central copy, or they read the two in different character
+       sets and report the entry as damaged. UTF-8 makes a non-ASCII name
+       longer in bytes than in characters, which is the test here. ASCII names
+       are left exactly as they were. */
+    const uni = nameB.length === name.length ? null : new Uint8Array([...u16(0x7075), ...u16(5 + nameB.length), 1, ...u32(crc32(nameB)), ...nameB]);
+    const uniLen = uni ? uni.length : 0;
+    // only this entry's own start needs 64 bits; a single image is never 4 GB
+    const far = offset > U32_MAX;
+    const local = new Uint8Array([0x50, 0x4B, 3, 4, ...u16(20), ...u16(UTF8), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16(uniLen)]);
+    chunks.push(new Blob(uni ? [local, nameB, uni, bytes] : [local, nameB, bytes]));
+    const z64 = far ? new Uint8Array([...u16(1), ...u16(8), ...u64(offset)]) : null;
+    central.push(new Uint8Array([0x50, 0x4B, 1, 2, ...u16(far ? 45 : 20), ...u16(far ? 45 : 20), ...u16(UTF8), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16((z64 ? z64.length : 0) + uniLen), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(far ? U32_MAX : offset)]), nameB);
+    if (z64) central.push(z64);
+    if (uni) central.push(uni);
+    offset += local.length + nameB.length + uniLen + sz;
+    count++;
+  };
+  const finish = () => {
+    let cdSize = 0;
+    central.forEach(c => cdSize += c.length);
+    const cdAt = offset;
+    const need64 = count > U16_MAX || cdAt > U32_MAX || cdSize > U32_MAX;
+    const tail = [];
+    if (need64) {
+      // zip64 end of central directory, then the locator that points back at it
+      tail.push(new Uint8Array([0x50, 0x4B, 6, 6, ...u64(44), ...u16(45), ...u16(45), ...u32(0), ...u32(0), ...u64(count), ...u64(count), ...u64(cdSize), ...u64(cdAt)]));
+      tail.push(new Uint8Array([0x50, 0x4B, 6, 7, ...u32(0), ...u64(cdAt + cdSize), ...u32(1)]));
+    }
+    // each classic field still carries the real value whenever it fits
+    tail.push(new Uint8Array([0x50, 0x4B, 5, 6, ...u16(0), ...u16(0), ...u16(count > U16_MAX ? U16_MAX : count), ...u16(count > U16_MAX ? U16_MAX : count), ...u32(cdSize > U32_MAX ? U32_MAX : cdSize), ...u32(cdAt > U32_MAX ? U32_MAX : cdAt), ...u16(0)]));
+    return new Blob([...chunks, ...central, ...tail], {
+      type: "application/zip"
+    });
+  };
+  return {
+    add,
+    finish,
+    get count() {
+      return count;
+    },
+    get bytes() {
+      return offset;
+    }
+  };
 }
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -531,7 +590,10 @@ function downloadBlob(blob, filename) {
   a.href = url;
   a.download = filename;
   a.click();
-  revokeSoon(url);
+  /* A multi-gigabyte archive is still being read out of this url long after a
+     small one has finished, and revoking it mid-download can cut it off. Hold
+     it for a minute per 200 MB, and never less than the original minute. */
+  revokeSoon(url, Math.max(60000, Math.ceil(blob.size / 2e8) * 60000));
 }
 const extOf = u => {
   const m = /^data:image\/([\w+]+)/.exec(u || "");
@@ -9870,42 +9932,35 @@ function RolecraftVault() {
   };
   const zipSelectedImages = async (items, zipName) => {
     // items: [{imgId, label}]
-    const files = [];
+    const z = zipWriter();
     let n = 1;
     for (const it of items) {
       const v = await sGet("img:" + it.imgId);
       if (!v) continue;
-      files.push({
-        name: String(n).padStart(2, "0") + (it.label ? "-" + sanitizeName(it.label) : "") + "." + extOf(v),
-        bytes: dataUrlBytes(v)
-      });
+      z.add(String(n).padStart(2, "0") + (it.label ? "-" + sanitizeName(it.label) : "") + "." + extOf(v), dataUrlBytes(v));
       n++;
     }
-    if (!files.length) {
+    if (!z.count) {
       toast("Nothing to download");
       return;
     }
-    if (zipTooBig(files)) {
-      toast("That is too much for one zip file — select fewer images and do it in batches");
-      return;
-    }
-    downloadBlob(makeZip(files), zipName);
-    toast(files.length + (files.length === 1 ? " image" : " images") + " exported at original quality");
+    downloadBlob(z.finish(), zipName);
+    toast(z.count + (z.count === 1 ? " image" : " images") + " exported at original quality");
   };
   const [personaGrid, setPersonaGrid] = useState(false);
   const downloadImagesZip = async (scopeChars, scopePersonas, zipName) => {
     toast("Collecting images…");
-    const files = [];
+    /* Images go into blob storage one at a time and the data url is dropped
+       straight after, so a whole library no longer has to fit in memory. */
+    const z = zipWriter();
     const seen = new Set();
     const push = async (id, base, n) => {
       if (!id || seen.has(id)) return;
       seen.add(id);
       const v = await sGet("img:" + id);
       if (!v) return;
-      files.push({
-        name: base + "/" + String(n).padStart(2, "0") + "." + extOf(v),
-        bytes: dataUrlBytes(v)
-      });
+      z.add(base + "/" + String(n).padStart(2, "0") + "." + extOf(v), dataUrlBytes(v));
+      if (z.count % 25 === 0) toast("Collecting images… " + z.count + " so far");
     };
     /* Two characters called the same thing shared one folder and restarted
        numbering, so the zip held duplicate paths and unpacking silently kept
@@ -9932,12 +9987,12 @@ function RolecraftVault() {
       await push(p.avatar, base, n++);
       for (const g of p.gallery || []) await push(g.imgId, base, n++);
     }
-    if (!files.length) {
+    if (!z.count) {
       toast("No images to download");
       return;
     }
-    downloadBlob(makeZip(files), zipName);
-    toast(files.length + (files.length === 1 ? " image exported" : " images exported"));
+    downloadBlob(z.finish(), zipName);
+    toast(z.count + (z.count === 1 ? " image exported" : " images exported"));
   };
   const exportAll = async () => {
     toast("Preparing backup…");
