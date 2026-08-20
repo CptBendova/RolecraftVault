@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.135";
+const APP_VERSION = "1.136";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.135";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.135 — current",
+  heading: "1.136 — current",
+  notes: ["Closing a character, persona, lorebook or prompt is an X in the top corner now, instead of a button called “Close” sitting at the end of a row of export buttons — the one thing you always want, dressed identically to the things you rarely do. Same place and shape on every record, and Escape still closes as it always has.","Stats no longer read every picture in the vault just to add up how much room they take. Working out a byte count from the length of a stored picture meant loading each one back in full, one after another — the whole library, every time you opened Stats. A picture never changes once saved, so its size is recorded when it is written and read back from a few bytes instead of a few megabytes. Measured on a 164 MB library: 179 ms before, 8 ms after — and older pictures are measured once, then remembered.","Every button that permanently destroys a picture now asks twice. Removing a portrait, a banner, a book cover, a picture in the viewer, or a picture on a lore or prompt entry all did it on a single click with no warning — and unlike a character or a persona, a deleted picture does not go to the bin and cannot be brought back. Each now arms on the first click and says what the second one will do, and forgets after a few seconds so a live trigger is never left under the cursor."]
+}, {
+  heading: "1.135",
   notes: ["A variant can now have its own age, gender and pronouns. It never could — those three lived on the character, so every variant was the same age as the Default with no way to differ. They behave like every other variant field: fill one in and it is that variant’s, leave it empty and it falls back to the Default, which the box now shows you as its placeholder.","Updating a variant from a JSON file ignored most of what was in the file. Only the written fields were applied — the name, age, gender and pronouns were dropped without a word, so the variant stayed tied to the Default no matter what the file said. It now takes all of them, and a file that names the variant renames it. A file carrying the character’s own name is not treated as a rename.","Sections in a JSON file were never read at all. The importer only ever built sections out of the three override fields and the extra first messages — write your own sections into a file and nothing happened, and the sample file did not list them, so there was no way to discover that. Files carrying sections now bring them across, and the sample shows the field.","Updating a variant also ignored sections entirely, even when they had been read. Sections are shared by every variant, so a file that carries them now applies them whichever variant you have open.","Exporting to CharSnap gave every variant the character’s age. CharSnap keeps age on the variant, so a character whose variants were seventeen, thirty-one and sixty-eight exported as three variants all aged thirty-one. Each carries its own now, and one that has none still falls back to the character’s.","Importing from CharSnap dropped the age of every variant after the first, for the same reason from the other direction. A file with three ages now arrives with three ages."]
 }, {
   heading: "1.134",
@@ -1904,10 +1907,86 @@ function Lightbox({
   }), blurred && blurred[item.imgId] ? "Unblur" : "Blur")), onSetProfile && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => onSetProfile(item.imgId)
-  }, "Set as profile"), onRemove && /*#__PURE__*/React.createElement("button", {
+  }, "Set as profile"), onRemove && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-danger",
-    onClick: () => onRemove(index)
-  }, "Remove"))));
+    label: "Remove",
+    armedLabel: "Click again — this picture is gone",
+    onConfirm: () => onRemove(index)
+  }))));
+}
+
+/* Closing a record meant finding a button called "Close" at the end of a row of
+   export buttons — the one thing you always want, dressed identically to the
+   things you rarely want. It is an X in the top corner now, the same place and
+   shape on every record. Escape still closes, as it always has.
+   "fixed" on the full-page records so it stays put while the page scrolls under
+   it; "absolute" inside the entry popup so it sits on the card, not the screen. */
+function CloseX({ onClose, label, fixed }) {
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": label || "Close",
+    title: label || "Close",
+    className: "closex",
+    style: {
+      position: fixed ? "fixed" : "absolute",
+      top: fixed ? 16 : 14,
+      right: fixed ? 20 : 14,
+      zIndex: 6,
+      width: 34,
+      height: 34,
+      padding: 0,
+      borderRadius: 999,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "rgba(8,12,26,.62)",
+      border: "1px solid var(--line2)",
+      color: "var(--text)",
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.x,
+    size: 16
+  }));
+}
+
+/* A delete that asks twice. Characters, personas, lore and prompts go to the
+   bin and can be brought back, so a stray click there costs nothing — but an
+   image is gone the moment dropImage runs, and every button that did that
+   destroyed an original on one click. The arming clears itself after a few
+   seconds so a live trigger is never left sitting under the cursor, and the
+   label says what the second click will do rather than just "sure?". */
+function DangerButton({ label, armedLabel, onConfirm, className, style, icon, armedIcon, iconSize, title, stop, el, role, tabIndex }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const say = armed ? armedLabel || "Click again to remove" : label;
+  const go = ev => {
+    if (stop) ev.stopPropagation();
+    if (armed) {
+      setArmed(false);
+      onConfirm(ev);
+    } else setArmed(true);
+  };
+  // some of these live as a styled span with role=button, so the tag is a prop
+  return /*#__PURE__*/React.createElement(el || "button", {
+    className: className,
+    role: role,
+    tabIndex: tabIndex,
+    style: armed ? Object.assign({}, style, { color: "var(--danger, #e5484d)", fontWeight: 700 }) : style,
+    title: title ? armed ? say : title : say,
+    "aria-label": say,
+    onClick: go,
+    onKeyDown: ev => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        go(ev);
+      }
+    }
+  }, icon ? /*#__PURE__*/React.createElement(Ic, { d: armed ? armedIcon || icon : icon, size: iconSize || 13 }) : say);
 }
 
 /* ---------- tag input ---------- */
@@ -3532,6 +3611,7 @@ function LoreEntryView({
   }, /*#__PURE__*/React.createElement("div", {
     className: "card modal",
     style: {
+      position: "relative",
       maxWidth: 760,
       width: "94vw",
       maxHeight: "88vh",
@@ -3581,7 +3661,9 @@ function LoreEntryView({
       marginLeft: "auto",
       display: "flex",
       gap: 8,
-      flexShrink: 0
+      flexShrink: 0,
+      // leave the corner clear so the buttons do not run under the X
+      paddingRight: 40
     }
   }, onCopy && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
@@ -3602,10 +3684,10 @@ function LoreEntryView({
   }, "Export for CharSnap"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: onEdit
-  }, "Edit"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onClose
-  }, "Close"))), /*#__PURE__*/React.createElement(MDText, {
+  }, "Edit")), /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    label: "Close entry"
+  })), /*#__PURE__*/React.createElement(MDText, {
     text: e.content,
     style: {
       fontSize: "var(--prose-size, 14.5px)",
@@ -3728,29 +3810,23 @@ function LoreEntryView({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 13
-  })), /*#__PURE__*/React.createElement("span", {
+  })), /*#__PURE__*/React.createElement(DangerButton, {
+    el: "span",
     className: "blurbtn on",
     role: "button",
     tabIndex: 0,
-    "aria-label": "Remove image " + (i + 1),
     style: {
       opacity: 1,
       right: 80
     },
-    onClick: ev => {
-      ev.stopPropagation();
-      onRemoveImage(i);
-    },
-    onKeyDown: ev => {
-      if (ev.key === "Enter") {
-        ev.stopPropagation();
-        onRemoveImage(i);
-      }
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.x,
-    size: 13
-  })), imgCache[im.imgId] ? /*#__PURE__*/React.createElement("img", {
+    stop: true,
+    icon: icons.x,
+    iconSize: 13,
+    title: "Remove image " + (i + 1),
+    label: "Remove image " + (i + 1),
+    armedLabel: "Click again — this picture is gone",
+    onConfirm: () => onRemoveImage(i)
+  }), imgCache[im.imgId] ? /*#__PURE__*/React.createElement("img", {
     src: imgCache[im.imgId],
     alt: "entry image " + (i + 1),
     className: blurred[im.imgId] ? "blur-img" : undefined
@@ -3838,7 +3914,11 @@ function LorebookPage({
       overflowY: "auto"
     },
     className: "scrollbody"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    fixed: true,
+    label: "Close lorebook"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "hero",
     style: {
       position: "relative",
@@ -3971,10 +4051,12 @@ function LorebookPage({
   }), " Stats")), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => coverRef.current.click()
-  }, cover ? "Replace cover" : "Set cover"), cover && /*#__PURE__*/React.createElement("button", {
+  }, cover ? "Replace cover" : "Set cover"), cover && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-ghost",
-    onClick: onRemoveCover
-  }, "Remove cover"), anyImages && /*#__PURE__*/React.createElement("button", {
+    label: "Remove cover",
+    armedLabel: "Click again — the cover is gone",
+    onConfirm: onRemoveCover
+  }), anyImages && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onDownloadBookImages
   }, /*#__PURE__*/React.createElement("span", {
@@ -3998,10 +4080,7 @@ function LorebookPage({
   }), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     onClick: () => confirmDel ? onDeleteBook() : setConfirmDel(true)
-  }, confirmDel ? "Really delete all " + entries.length + "?" : "Delete " + bookNoun), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onClose
-  }, "Close"), /*#__PURE__*/React.createElement("input", {
+  }, confirmDel ? "Really delete all " + entries.length + "?" : "Delete " + bookNoun), /*#__PURE__*/React.createElement("input", {
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "Search " + label + "…",
@@ -4328,7 +4407,11 @@ function CharacterPage({
       overflowY: "auto"
     },
     className: "scrollbody"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    fixed: true,
+    label: "Close character"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "hero",
     style: {
       position: "relative",
@@ -4665,10 +4748,7 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.chart,
     size: 13
-  }), " Stats")), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onClose
-  }, "Close"))))), /*#__PURE__*/React.createElement("div", {
+  }), " Stats")))))), /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: 1560,
       margin: "0 auto",
@@ -5068,7 +5148,11 @@ function PersonaPage({
       overflowY: "auto"
     },
     className: "scrollbody"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    fixed: true,
+    label: "Close persona"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "hero",
     style: {
       position: "relative",
@@ -5262,10 +5346,7 @@ function PersonaPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.chart,
     size: 13
-  }), " Stats")), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onClose
-  }, "Close")), /*#__PURE__*/React.createElement("input", {
+  }), " Stats"))), /*#__PURE__*/React.createElement("input", {
     ref: addRef,
     type: "file",
     accept: "image/*",
@@ -6260,14 +6341,16 @@ function CharacterEditor({
     accept: "image/*",
     hidden: true,
     onChange: e => uploadProfile(e.target.files)
-  }), editorPortraitId && /*#__PURE__*/React.createElement("button", {
+  }), editorPortraitId && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-ghost",
     style: {
       width: "100%",
       marginTop: 10
     },
-    onClick: () => setPortraitFor(null)
-  }, "Remove \u201c" + activeVariantName + "\u201d portrait"), vIdx >= 0 && !editorPortraitId && c.profileImg && /*#__PURE__*/React.createElement("div", {
+    label: "Remove “" + activeVariantName + "” portrait",
+    armedLabel: "Click again — this portrait is gone",
+    onConfirm: () => setPortraitFor(null)
+  }), vIdx >= 0 && !editorPortraitId && c.profileImg && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--dim)",
@@ -6322,7 +6405,7 @@ function CharacterEditor({
       uploadBanner(e.target.files);
       e.target.value = "";
     }
-  }), c.banner && /*#__PURE__*/React.createElement("button", {
+  }), c.banner && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-ghost",
     style: {
       width: "100%",
@@ -6330,11 +6413,13 @@ function CharacterEditor({
       fontSize: 12.5,
       padding: "7px 10px"
     },
-    onClick: () => {
+    label: "Remove banner",
+    armedLabel: "Click again — the banner is gone",
+    onConfirm: () => {
       dropImage(c.banner);
       set("banner", null);
     }
-  }, "Remove banner")), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: 20,
@@ -8987,6 +9072,7 @@ function RolecraftVault() {
     forgetBlur([id]);
     sDel("img:" + id);
     sDel("th:" + id);
+    sDel("sz:" + id);
   }, [forgetBlur]);
 
   /* --- one-time: lift known character sections into first-class fields --- */
@@ -9138,6 +9224,35 @@ function RolecraftVault() {
     setDashOrder(next);
   };
   const [statsOpen, setStatsOpen] = useState(null); // null | { title, subtitle?, rows, note?, loading }
+  /* Adds up what a set of pictures takes on disk. Sizes recorded at save time
+     cost a few bytes each to read; anything from before that (or from an
+     import) is measured once and then recorded, so the slow path happens at
+     most once per picture. The reads run eight at a time rather than one after
+     another — the round trip is the cost, not the arithmetic. */
+  const measureImages = useCallback(async ids => {
+    const want = [...new Set(ids.filter(Boolean))];
+    let bytes = 0;
+    const missing = [];
+    const CONC = 8;
+    for (let i = 0; i < want.length; i += CONC) {
+      const slice = want.slice(i, i + CONC);
+      const got = await Promise.all(slice.map(id => sGet("sz:" + id).catch(() => null)));
+      got.forEach((v, j) => {
+        const n = v == null ? NaN : Number(v);
+        if (Number.isFinite(n)) bytes += n;else missing.push(slice[j]);
+      });
+    }
+    for (let i = 0; i < missing.length; i += CONC) {
+      const slice = missing.slice(i, i + CONC);
+      const got = await Promise.all(slice.map(id => sGet("img:" + id).catch(() => null)));
+      await Promise.all(got.map((v, j) => {
+        const n = dataUrlSize(v);
+        bytes += n;
+        return v ? sSet("sz:" + slice[j], String(n)).catch(() => {}) : Promise.resolve();
+      }));
+    }
+    return { bytes, count: want.length };
+  }, []);
   const openVaultStats = async () => {
     setStatsOpen({
       title: "Your vault",
@@ -9151,12 +9266,8 @@ function RolecraftVault() {
         keys
       } = await sList();
       const imgKeys = keys.filter(k => k.startsWith("img:"));
-      let bytes = 0;
-      for (const k of imgKeys) {
-        try {
-          bytes += dataUrlSize(await sGet(k));
-        } catch (e) {}
-      }
+      const measured = await measureImages(imgKeys.map(k => k.slice(4)));
+      const bytes = measured.bytes;
       setStatsOpen({
         title: "Your vault",
         subtitle: chars.length + " characters · " + personas.length + " personas · " + lore.length + " lore · " + prompts.length + " prompts",
@@ -9176,13 +9287,8 @@ function RolecraftVault() {
     });
     try {
       const ts = textStats(text);
-      let bytes = 0;
       const ids = [...new Set(imgIds.filter(Boolean))];
-      for (const id of ids) {
-        try {
-          bytes += dataUrlSize(await sGet("img:" + id));
-        } catch (e) {}
-      }
+      const bytes = (await measureImages(ids)).bytes;
       const rows = [];
       if (budget) {
         const tilde = n => "~" + fmtNum(n);
@@ -9425,6 +9531,15 @@ function RolecraftVault() {
   const saveImage = useCallback(async (imgId, dataUrl, thumb) => {
     await sSet("img:" + imgId, dataUrl);
     if (thumb) await sSet("th:" + imgId, thumb);
+    /* Stats used to read every original back in full just to measure it — the
+       whole vault, one picture at a time, to work out a byte count from the
+       length of a string. An image never changes once written (a replacement
+       gets a new id), so its size is recorded here, once, and read from a few
+       bytes instead of a few megabytes. A failure here is not worth losing the
+       picture over; a missing size is filled in the next time stats runs. */
+    try {
+      await sSet("sz:" + imgId, String(dataUrlSize(dataUrl)));
+    } catch (e) {}
     setImgCache(p => ({
       ...p,
       [imgId]: thumb || dataUrl
