@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.136";
+const APP_VERSION = "1.137";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.136";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.136 — current",
+  heading: "1.137 — current",
+  notes: ["Import and export are one button now, on every screen that had them. They had grown into a row of their own — a lorebook carried “Import entry”, “Sample”, “Export JSON”, “Export text only” and “Export for CharSnap” side by side, and a character page four export buttons — all crowding out the things you actually came to the page to do. That book’s toolbar is down from nine buttons to five.","Behind the button is a popup laid out like Settings: the choices split into “Bring in” and “Send out”, each with a line under it saying what it actually does and when you would want it. The bare labels never said whether “Export JSON” included your pictures, or which of the two CharSnap exports to use — now they do.","It also says what applies. The menu on a character tells you which version it is about to export; the one inside a lorebook says that importing there always lands in that book whatever the file claims; the whole-library ones point you at the record itself if you only wanted one."]
+}, {
+  heading: "1.136",
   notes: ["Closing a character, persona, lorebook or prompt is an X in the top corner now, instead of a button called “Close” sitting at the end of a row of export buttons — the one thing you always want, dressed identically to the things you rarely do. Same place and shape on every record, and Escape still closes as it always has.","Stats no longer read every picture in the vault just to add up how much room they take. Working out a byte count from the length of a stored picture meant loading each one back in full, one after another — the whole library, every time you opened Stats. A picture never changes once saved, so its size is recorded when it is written and read back from a few bytes instead of a few megabytes. Measured on a 164 MB library: 179 ms before, 8 ms after — and older pictures are measured once, then remembered.","Every button that permanently destroys a picture now asks twice. Removing a portrait, a banner, a book cover, a picture in the viewer, or a picture on a lore or prompt entry all did it on a single click with no warning — and unlike a character or a persona, a deleted picture does not go to the bin and cannot be brought back. Each now arms on the first click and says what the second one will do, and forgets after a few seconds so a live trigger is never left under the cursor."]
 }, {
   heading: "1.135",
@@ -1913,6 +1916,120 @@ function Lightbox({
     armedLabel: "Click again — this picture is gone",
     onConfirm: () => onRemove(index)
   }))));
+}
+
+/* One button instead of five. Import and export had spread across every screen
+   — the lorebook page alone carried Import entry, Sample, Export JSON, Export
+   text only and Export for CharSnap in one row — crowding out the things you
+   actually came to do. They live behind a single button now, in a popup with
+   room to say what each one is for, which the bare labels never did.
+   Groups and items may contain falsy entries so a caller can drop one with a
+   condition inline; empty groups are removed, and a menu with nothing in it
+   renders nothing at all. */
+function FilesMenu({ label, title, note, groups }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const h = ev => {
+      if (ev.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [open]);
+  const live = (groups || []).filter(Boolean).map(g => Object.assign({}, g, {
+    items: (g.items || []).filter(Boolean)
+  })).filter(g => g.items.length);
+  if (!live.length) return null;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setOpen(true),
+    title: title || "Import and export"
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.down,
+    size: 13
+  }), " " + (label || "Import / Export"))), open && /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: {
+      zIndex: 74
+    },
+    onMouseDown: ev => {
+      if (ev.target === ev.currentTarget) setOpen(false);
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: {
+      position: "relative",
+      maxWidth: 520,
+      background: "var(--panel)",
+      boxShadow: "var(--shadow)"
+    },
+    role: "dialog",
+    "aria-label": title || "Import and export"
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: () => setOpen(false),
+    label: "Close"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Files"), /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: {
+      fontSize: 24,
+      margin: "2px 0 12px",
+      paddingRight: 44
+    }
+  }, title || "Import and export"), live.map((g, gi) => /*#__PURE__*/React.createElement("div", {
+    key: gi,
+    style: {
+      marginTop: gi ? 14 : 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow",
+    style: {
+      marginBottom: 7
+    }
+  }, g.heading), g.items.map((it, ii) => /*#__PURE__*/React.createElement("button", {
+    key: ii,
+    className: "card",
+    style: {
+      display: "block",
+      width: "100%",
+      textAlign: "left",
+      padding: "10px 12px",
+      marginBottom: 6,
+      cursor: "pointer",
+      background: "transparent",
+      border: "1px solid var(--line)"
+    },
+    onClick: () => {
+      setOpen(false);
+      it.onClick();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13.5
+    }
+  }, it.label), it.hint && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--mut)",
+      marginTop: 2,
+      lineHeight: 1.45
+    }
+  }, it.hint))))), note && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--dim)",
+      marginTop: 14,
+      lineHeight: 1.5
+    }
+  }, note))));
 }
 
 /* Closing a record meant finding a button called "Close" at the end of a row of
@@ -4012,31 +4129,43 @@ function LorebookPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.plus,
     size: 14
-  }), " New ", entryNoun)), onImportEntry && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    title: "Add " + entriesNoun + " from a JSON file straight into this " + bookNoun + ". One " + entryNoun + " on its own is fine, and so is a whole lorebook file — everything in it lands here rather than in a book of its own.",
-    onClick: onImportEntry
-  }, "Import ", entryNoun), onImportEntry && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    title: "Downloads a blank file showing every field one " + entryNoun + " accepts",
-    onClick: () => downloadJSON(sampleJson || SAMPLE_LORE_ENTRY_JSON, sampleName || "rolecraft-lore-entry-template.json")
-  }, "Sample"), world && /*#__PURE__*/React.createElement("button", {
+  }), " New ", entryNoun)), /*#__PURE__*/React.createElement(FilesMenu, {
+    title: "This " + bookNoun,
+    note: "Importing here always lands in this " + bookNoun + ", whatever the file itself says. Pictures are never included in a JSON file — use “Download images” for those.",
+    groups: [{
+      heading: "Bring in",
+      items: [onImportEntry && {
+        label: "Import " + entriesNoun,
+        hint: "From a JSON file, straight into this " + bookNoun + ". One " + entryNoun + " on its own is fine, and so is a whole lorebook file.",
+        onClick: onImportEntry
+      }, onImportEntry && {
+        label: "Download a sample file",
+        hint: "A blank file showing every field one " + entryNoun + " accepts.",
+        onClick: () => downloadJSON(sampleJson || SAMPLE_LORE_ENTRY_JSON, sampleName || "rolecraft-lore-entry-template.json")
+      }]
+    }, {
+      heading: "Send out",
+      items: [{
+        label: "Export JSON",
+        hint: "The whole " + bookNoun + ", in this app’s own format. Import it back here or on another machine.",
+        onClick: onExportBook
+      }, onExportBookText && {
+        label: "Export text only",
+        hint: "No pictures — small enough to read or paste elsewhere.",
+        onClick: onExportBookText
+      }, onExportCharSnap && {
+        label: "Export for CharSnap",
+        hint: "A Chub-compatible lorebook file, ready to upload.",
+        onClick: onExportCharSnap
+      }]
+    }]
+  }), world && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
       setRenaming(true);
       setNewName(world);
     }
-  }, "Rename ", bookNoun), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onExportBook
-  }, "Export JSON"), onExportBookText && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    title: "This " + bookNoun + " as text, with no pictures — small enough to read or paste elsewhere.",
-    onClick: onExportBookText
-  }, "Export text only"), onExportCharSnap && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onExportCharSnap
-  }, "Export for CharSnap"), onStats && /*#__PURE__*/React.createElement("button", {
+  }, "Rename ", bookNoun), onStats && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onStats
   }, /*#__PURE__*/React.createElement("span", {
@@ -4714,23 +4843,31 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 13
-  }), " Download images")), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => onExportJson(activeVar),
-    title: "Exports only what you're viewing right now"
-  }, "Export JSON \u00b7 " + (av ? av.name || "Variant" : "Default")), onExportText && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => onExportText(activeVar),
-    title: "Just the writing, no pictures \u2014 small enough to read or paste elsewhere"
-  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => onExportCharSnap(activeVar),
-    title: "Exports only what you're viewing right now"
-  }, "Export for CharSnap \u00b7 " + (av ? av.name || "Variant" : "Default")), variants.length > 0 && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: () => onExportCharSnap("all"),
-    title: "Every variant in one CharSnap file"
-  }, "Export all variants"), (c.sectionOrder || []).length > 0 && /*#__PURE__*/React.createElement("button", {
+  }), " Download images")), /*#__PURE__*/React.createElement(FilesMenu, {
+    label: "Export",
+    title: c.name || "This character",
+    note: "These export the version you are looking at — " + (av ? av.name || "Variant" : "Default") + ". Switch versions on the page behind to export a different one. Pictures are never inside a JSON file; use “Download images” for those.",
+    groups: [{
+      heading: "Send out",
+      items: [{
+        label: "Export JSON",
+        hint: "This app’s own format. Import it back here or on another machine.",
+        onClick: () => onExportJson(activeVar)
+      }, onExportText && {
+        label: "Export text only",
+        hint: "Just the writing — small enough to read or paste elsewhere.",
+        onClick: () => onExportText(activeVar)
+      }, {
+        label: "Export for CharSnap",
+        hint: "Ready to upload to CharSnap. Add the pictures there afterwards.",
+        onClick: () => onExportCharSnap(activeVar)
+      }, variants.length > 0 && {
+        label: "Export every version for CharSnap",
+        hint: "All " + (variants.length + 1) + " in one file, rather than just the one on screen.",
+        onClick: () => onExportCharSnap("all")
+      }]
+    }]
+  }), (c.sectionOrder || []).length > 0 && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     title: "Put the sections back in their original order",
     onClick: () => onReorder(null)
@@ -5327,14 +5464,23 @@ function PersonaPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 13
-  }), " Download images")), onExportJson && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onExportJson
-  }, "Export JSON"), onExportText && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    onClick: onExportText,
-    title: "Just the writing, no pictures — small enough to read or paste elsewhere"
-  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
+  }), " Download images")), /*#__PURE__*/React.createElement(FilesMenu, {
+    label: "Export",
+    title: p.name || "This persona",
+    note: "Pictures are never inside a JSON file — use “Download images” for those.",
+    groups: [{
+      heading: "Send out",
+      items: [onExportJson && {
+        label: "Export JSON",
+        hint: "This app’s own format. Import it back here or on another machine.",
+        onClick: onExportJson
+      }, onExportText && {
+        label: "Export text only",
+        hint: "Just the writing — small enough to read or paste elsewhere.",
+        onClick: onExportText
+      }]
+    }]
+  }), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onStats
   }, /*#__PURE__*/React.createElement("span", {
@@ -11198,33 +11344,33 @@ function RolecraftVault() {
       flexShrink: 0
     },
     onClick: () => selectMode ? exitSelect() : (setBucketFilter(null), setSelectMode(true))
-  }, selectMode ? "Cancel selection" : "Select"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      flexShrink: 0
-    },
-    onClick: () => triggerJsonImport("characters")
-  }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      flexShrink: 0
-    },
-    title: "Downloads a blank file showing every field an import accepts",
-    onClick: () => downloadJSON(SAMPLE_CHARACTER_JSON, "rolecraft-character-template.json")
-  }, "Sample"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      flexShrink: 0
-    },
-    onClick: () => askExport("your characters (including images)", exportCharsJson)
-  }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      flexShrink: 0
-    },
-    title: "Every character as text, with no pictures — small enough to read or paste elsewhere. Linked lore travels with it.",
-    onClick: () => askExport("your characters as text, with no pictures", exportCharsTextJson)
-  }, "Export text only"), /*#__PURE__*/React.createElement("button", {
+  }, selectMode ? "Cancel selection" : "Select"), /*#__PURE__*/React.createElement(FilesMenu, {
+    title: "All characters",
+    note: "These cover every character in the vault. To export just one, open it and use Export there.",
+    groups: [{
+      heading: "Bring in",
+      items: [{
+        label: "Import JSON",
+        hint: "This app's own export, a CharSnap file, or a Tavern v1/v2 card.",
+        onClick: () => triggerJsonImport("characters")
+      }, {
+        label: "Download a sample file",
+        hint: "A blank file showing every field an import accepts.",
+        onClick: () => downloadJSON(SAMPLE_CHARACTER_JSON, "rolecraft-character-template.json")
+      }]
+    }, {
+      heading: "Send out",
+      items: [{
+        label: "Export JSON",
+        hint: "Every character, pictures included. This is the one to keep as a backup.",
+        onClick: () => askExport("your characters (including images)", exportCharsJson)
+      }, {
+        label: "Export text only",
+        hint: "No pictures — small enough to read or paste elsewhere. Linked lore travels with it.",
+        onClick: () => askExport("your characters as text, with no pictures", exportCharsTextJson)
+      }]
+    }]
+  }), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     style: {
       flexShrink: 0
@@ -11783,17 +11929,29 @@ function RolecraftVault() {
     }, pSelMode ? "Cancel selection" : "Select"), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-ghost",
       onClick: () => personas.some(p => p.avatar || (p.gallery || []).length) ? setPersonaGrid(true) : toast("No persona images yet")
-    }, "Image grid"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      onClick: () => triggerJsonImport("personas")
-    }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      title: "Downloads a blank file showing every field an import accepts",
-      onClick: () => downloadJSON(SAMPLE_PERSONA_JSON, "rolecraft-persona-template.json")
-    }, "Sample"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      onClick: () => askExport("your personas (including portraits)", exportPersonasJson)
-    }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
+    }, "Image grid"), /*#__PURE__*/React.createElement(FilesMenu, {
+      title: "All personas",
+      note: "These cover every persona in the vault. To export just one, open it and use Export there.",
+      groups: [{
+        heading: "Bring in",
+        items: [{
+          label: "Import JSON",
+          hint: "A personas file exported from this app, here or on another machine.",
+          onClick: () => triggerJsonImport("personas")
+        }, {
+          label: "Download a sample file",
+          hint: "A blank file showing every field an import accepts.",
+          onClick: () => downloadJSON(SAMPLE_PERSONA_JSON, "rolecraft-persona-template.json")
+        }]
+      }, {
+        heading: "Send out",
+        items: [{
+          label: "Export JSON",
+          hint: "Every persona, portraits included.",
+          onClick: () => askExport("your personas (including portraits)", exportPersonasJson)
+        }]
+      }]
+    }), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-primary",
       onClick: () => setEditingRecord({
         type: "persona",
@@ -12218,17 +12376,29 @@ function RolecraftVault() {
         gap: 10,
         flexWrap: "wrap"
       }
-    }, /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      onClick: () => triggerJsonImport("lore")
-    }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      title: "Downloads a blank file showing every field an import accepts",
-      onClick: () => downloadJSON(SAMPLE_LOREBOOK_JSON, "rolecraft-lorebook-template.json")
-    }, "Sample"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      onClick: () => askExport("your lorebooks", exportLoreJson)
-    }, "Export JSON"), /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement(FilesMenu, {
+      title: "All lorebooks",
+      note: "Importing here files entries by the world named in the file. To put everything into one book instead, open that book and import from inside it.",
+      groups: [{
+        heading: "Bring in",
+        items: [{
+          label: "Import JSON",
+          hint: "A lorebook file from this app, or a Chub-style lorebook.",
+          onClick: () => triggerJsonImport("lore")
+        }, {
+          label: "Download a sample file",
+          hint: "A blank file showing every field an import accepts. Every entry needs at least one trigger.",
+          onClick: () => downloadJSON(SAMPLE_LOREBOOK_JSON, "rolecraft-lorebook-template.json")
+        }]
+      }, {
+        heading: "Send out",
+        items: [{
+          label: "Export JSON",
+          hint: "Every lorebook in the vault, in this app's own format.",
+          onClick: () => askExport("your lorebooks", exportLoreJson)
+        }]
+      }]
+    }), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-primary",
       onClick: () => {
         setNewBookName("");
@@ -12404,14 +12574,22 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement(Ic, {
       d: icons.plus,
       size: 14
-    }), " New collection")), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      onClick: () => triggerJsonImport("prompts")
-    }, "Import JSON"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      title: "Downloads a blank file showing every field an import accepts",
-      onClick: () => downloadJSON(SAMPLE_PROMPT_JSON, "rolecraft-prompt-template.json")
-    }, "Sample"))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }), " New collection")), /*#__PURE__*/React.createElement(FilesMenu, {
+      title: "All prompts",
+      note: "To export prompts, open a collection — the export lives inside it.",
+      groups: [{
+        heading: "Bring in",
+        items: [{
+          label: "Import JSON",
+          hint: "A prompts file exported from this app, here or on another machine.",
+          onClick: () => triggerJsonImport("prompts")
+        }, {
+          label: "Download a sample file",
+          hint: "A blank file showing every field an import accepts.",
+          onClick: () => downloadJSON(SAMPLE_PROMPT_JSON, "rolecraft-prompt-template.json")
+        }]
+      }]
+    }))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
       className: "card",
       style: {
         padding: 34,
