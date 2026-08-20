@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.133";
+const APP_VERSION = "1.134";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.133";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.133 — current",
+  heading: "1.134 — current",
+  notes: ["Downloading pictures now shows a progress bar. Zipping a library is not quick — reading, decoding and checksumming runs at roughly 27 MB a second, so twenty gigabytes takes over ten minutes. All you got before was a count that nudged every twenty-five pictures, which is not enough to tell whether it is working or has wedged. There is now a bar with how many pictures are done, how many there are, and roughly how long is left. It appears wherever pictures are downloaded — a character, a persona, an album, a lorebook, or the whole vault at once.","Which pictures to fetch is worked out before any of them are read, so the total shown is the real total from the first moment rather than climbing as it goes.","A zip holding exactly 65,535 files was written in a way that says “the real number is recorded elsewhere” — and then did not record it anywhere. The three unpackers this was tested against all cope, but it is a claim about the file that is not true. The same applied to a file starting at exactly the four gigabyte mark. Both now take the 64-bit path.","Handing each picture to the browser separately, as 1.133 began doing, cost about 0.12 ms each — around five thousand small pictures that added up to nearly a second. They are gathered into batches of a few megabytes now, which restores the speed while still keeping the archive out of memory."]
+}, {
+  heading: "1.133",
   notes: ["Downloading images is no longer capped at four gigabytes. 1.132 stopped the app handing you a quietly corrupt archive; it did so by refusing. The zip format keeps every size and position in four bytes, so anything past that wraps around — the archive looks whole and unpacks wrong. The 64-bit form of those fields is now written whenever a value needs it, and the 65,535-file limit is gone with it. A zip that fits in the old shape is still written in the old shape, so nothing that reads them today has to change.","Raising that ceiling on its own would not have helped, because the whole archive used to be assembled in memory before you were given it — with a large library that ran out long before four gigabytes. Each picture is now handed over as it is read and let go of immediately. Measured on 320 megabytes of images, the old way kept about 300 of them in memory and the new way keeps none: the archive is held where the browser can put it on disk.","Folder and file names inside a zip were not marked as being written in UTF-8, so a name in Cyrillic or Japanese — which 1.132 had just made possible — was read back as nonsense by Windows and by anything else that trusts the marking. Names are now marked correctly and repeated in the field designed to carry them, which several unpackers need before they will decode them at all.","Every file in a downloaded zip was dated 30 November 1979, because no modification time was ever written. They now carry the time the download was made."]
 }, {
   heading: "1.132",
@@ -528,7 +531,30 @@ function zipWriter() {
   const now = new Date();
   const dosTime = now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1;
   const dosDate = Math.max(0, now.getFullYear() - 1980) << 9 | now.getMonth() + 1 << 5 | now.getDate();
+  /* 0xFFFF and 0xFFFFFFFF are not just the largest values these fields hold —
+     they are the marker that says "the real value is in the zip64 record". A
+     count or offset that lands exactly on one has to take the 64-bit path too,
+     or it reads as a marker pointing at a record that was never written. */
   const chunks = []; // Blobs — the browser may keep these on disk
+  /* One Blob per file cost about 0.12 ms each — 2.7x slower over five thousand
+     small pictures. Entries are gathered until they are worth handing over, so
+     the count of blobs is small while the memory held is still bounded. */
+  const FLUSH_AT = 8 * 1024 * 1024;
+  let pending = [];
+  let pendingSize = 0;
+  const flush = () => {
+    if (!pending.length) return;
+    chunks.push(new Blob(pending));
+    pending = [];
+    pendingSize = 0;
+  };
+  const stash = parts => {
+    for (const p of parts) {
+      pending.push(p);
+      pendingSize += p.length;
+    }
+    if (pendingSize >= FLUSH_AT) flush();
+  };
   const central = []; // ~60 bytes per entry, small enough to keep in memory
   let offset = 0;
   let count = 0;
@@ -546,9 +572,9 @@ function zipWriter() {
     const uni = nameB.length === name.length ? null : new Uint8Array([...u16(0x7075), ...u16(5 + nameB.length), 1, ...u32(crc32(nameB)), ...nameB]);
     const uniLen = uni ? uni.length : 0;
     // only this entry's own start needs 64 bits; a single image is never 4 GB
-    const far = offset > U32_MAX;
+    const far = offset >= U32_MAX;
     const local = new Uint8Array([0x50, 0x4B, 3, 4, ...u16(20), ...u16(UTF8), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16(uniLen)]);
-    chunks.push(new Blob(uni ? [local, nameB, uni, bytes] : [local, nameB, bytes]));
+    stash(uni ? [local, nameB, uni, bytes] : [local, nameB, bytes]);
     const z64 = far ? new Uint8Array([...u16(1), ...u16(8), ...u64(offset)]) : null;
     central.push(new Uint8Array([0x50, 0x4B, 1, 2, ...u16(far ? 45 : 20), ...u16(far ? 45 : 20), ...u16(UTF8), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(sz), ...u32(sz), ...u16(nameB.length), ...u16((z64 ? z64.length : 0) + uniLen), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(far ? U32_MAX : offset)]), nameB);
     if (z64) central.push(z64);
@@ -557,10 +583,11 @@ function zipWriter() {
     count++;
   };
   const finish = () => {
+    flush();
     let cdSize = 0;
     central.forEach(c => cdSize += c.length);
     const cdAt = offset;
-    const need64 = count > U16_MAX || cdAt > U32_MAX || cdSize > U32_MAX;
+    const need64 = count >= U16_MAX || cdAt >= U32_MAX || cdSize >= U32_MAX;
     const tail = [];
     if (need64) {
       // zip64 end of central directory, then the locator that points back at it
@@ -568,7 +595,7 @@ function zipWriter() {
       tail.push(new Uint8Array([0x50, 0x4B, 6, 7, ...u32(0), ...u64(cdAt + cdSize), ...u32(1)]));
     }
     // each classic field still carries the real value whenever it fits
-    tail.push(new Uint8Array([0x50, 0x4B, 5, 6, ...u16(0), ...u16(0), ...u16(count > U16_MAX ? U16_MAX : count), ...u16(count > U16_MAX ? U16_MAX : count), ...u32(cdSize > U32_MAX ? U32_MAX : cdSize), ...u32(cdAt > U32_MAX ? U32_MAX : cdAt), ...u16(0)]));
+    tail.push(new Uint8Array([0x50, 0x4B, 5, 6, ...u16(0), ...u16(0), ...u16(count >= U16_MAX ? U16_MAX : count), ...u16(count >= U16_MAX ? U16_MAX : count), ...u32(cdSize >= U32_MAX ? U32_MAX : cdSize), ...u32(cdAt >= U32_MAX ? U32_MAX : cdAt), ...u16(0)]));
     return new Blob([...chunks, ...central, ...tail], {
       type: "application/zip"
     });
@@ -8365,6 +8392,11 @@ function RolecraftVault() {
   const [editingRecord, setEditingRecord] = useState(null); // {type, record}
   const [showSettings, setShowSettings] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
+  /* Zipping a whole library is not quick — measured at about 27 MB a second
+     through reading, decoding and checksumming, so twenty gigabytes is over ten
+     minutes. A count that only moves every twenty-five pictures is not enough to
+     tell whether it is working or wedged. */
+  const [zipProg, setZipProg] = useState(null);
   const [charQ, setCharQ] = useState("");
   const [tagFilter, setTagFilter] = useState(null);
   const [bucketFilter, setBucketFilter] = useState(null); // bucket name, "" = Unsorted, null = all
@@ -8656,6 +8688,40 @@ function RolecraftVault() {
   const toast = useCallback(m => {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 2400);
+  }, []);
+  /* Drives the bar for anything that walks a list of pictures. Repainting on
+     every file would cost more than the work itself on a small library, so it
+     paints at most eight times a second — but always on the last one, so it
+     never stops short of full. The estimate waits for a few files to go by,
+     because the first one carries the cost of opening the store. */
+  const zipTracker = useCallback((label, total) => {
+    const start = Date.now();
+    let done = 0, painted = 0;
+    setZipProg({ label, done: 0, total, left: "" });
+    return {
+      step() {
+        done++;
+        const now = Date.now();
+        if (now - painted < 120 && done < total) return;
+        painted = now;
+        const secs = (now - start) / 1000;
+        let left = "";
+        if (done > 3 && secs > 2 && total > done) {
+          const rem = Math.round(secs / done * (total - done));
+          /* "nearly done" belongs at the end, not wherever the running average
+             happens to dip — it read that way at 58% on a library that sped up
+             as the store warmed. Seconds are shown right down to one. */
+          left = rem > 90 ? "about " + Math.ceil(rem / 60) + " minutes left" : rem >= 1 ? "about " + rem + " second" + (rem === 1 ? "" : "s") + " left" : "nearly done";
+        }
+        setZipProg({ label, done, total, left });
+      },
+      packing() {
+        setZipProg({ label: "Packing the zip", done: total, total, left: "" });
+      },
+      clear() {
+        setZipProg(null);
+      }
+    };
   }, []);
 
   /* Last line of defence for a failed write. sSet throws, which stops the caller
@@ -9933,34 +9999,40 @@ function RolecraftVault() {
   const zipSelectedImages = async (items, zipName) => {
     // items: [{imgId, label}]
     const z = zipWriter();
+    const track = zipTracker("Preparing images", items.length);
     let n = 1;
-    for (const it of items) {
-      const v = await sGet("img:" + it.imgId);
-      if (!v) continue;
-      z.add(String(n).padStart(2, "0") + (it.label ? "-" + sanitizeName(it.label) : "") + "." + extOf(v), dataUrlBytes(v));
-      n++;
+    try {
+      for (const it of items) {
+        const v = await sGet("img:" + it.imgId);
+        if (v) {
+          z.add(String(n).padStart(2, "0") + (it.label ? "-" + sanitizeName(it.label) : "") + "." + extOf(v), dataUrlBytes(v));
+          n++;
+        }
+        track.step();
+      }
+      if (!z.count) {
+        toast("Nothing to download");
+        return;
+      }
+      track.packing();
+      await new Promise(r => setTimeout(r, 0));
+      downloadBlob(z.finish(), zipName);
+      toast(z.count + (z.count === 1 ? " image" : " images") + " exported at original quality");
+    } finally {
+      track.clear();
     }
-    if (!z.count) {
-      toast("Nothing to download");
-      return;
-    }
-    downloadBlob(z.finish(), zipName);
-    toast(z.count + (z.count === 1 ? " image" : " images") + " exported at original quality");
   };
   const [personaGrid, setPersonaGrid] = useState(false);
   const downloadImagesZip = async (scopeChars, scopePersonas, zipName) => {
-    toast("Collecting images…");
-    /* Images go into blob storage one at a time and the data url is dropped
-       straight after, so a whole library no longer has to fit in memory. */
-    const z = zipWriter();
+    /* Which pictures to fetch is worked out first. It touches no storage, so
+       the total is known before the slow part starts and the bar can be honest
+       about how far along it is. */
+    const plan = [];
     const seen = new Set();
-    const push = async (id, base, n) => {
+    const push = (id, base, n) => {
       if (!id || seen.has(id)) return;
       seen.add(id);
-      const v = await sGet("img:" + id);
-      if (!v) return;
-      z.add(base + "/" + String(n).padStart(2, "0") + "." + extOf(v), dataUrlBytes(v));
-      if (z.count % 25 === 0) toast("Collecting images… " + z.count + " so far");
+      plan.push({ id, base, n });
     };
     /* Two characters called the same thing shared one folder and restarted
        numbering, so the zip held duplicate paths and unpacking silently kept
@@ -9977,22 +10049,41 @@ function RolecraftVault() {
     for (const c of scopeChars) {
       const base = folderFor(c.name);
       let n = 1;
-      await push(c.profileImg, base, n++);
-      await push(c.banner, base, n++);
-      for (const g of c.gallery || []) await push(g.imgId, base, n++);
+      push(c.profileImg, base, n++);
+      push(c.banner, base, n++);
+      for (const g of c.gallery || []) push(g.imgId, base, n++);
     }
     for (const p of scopePersonas || []) {
       const base = "personas/" + folderFor(p.name);
       let n = 1;
-      await push(p.avatar, base, n++);
-      for (const g of p.gallery || []) await push(g.imgId, base, n++);
+      push(p.avatar, base, n++);
+      for (const g of p.gallery || []) push(g.imgId, base, n++);
     }
-    if (!z.count) {
+    if (!plan.length) {
       toast("No images to download");
       return;
     }
-    downloadBlob(z.finish(), zipName);
-    toast(z.count + (z.count === 1 ? " image exported" : " images exported"));
+    /* Images go into blob storage as they are read and the data url is dropped
+       straight after, so a whole library no longer has to fit in memory. */
+    const z = zipWriter();
+    const track = zipTracker("Collecting images", plan.length);
+    try {
+      for (const it of plan) {
+        const v = await sGet("img:" + it.id);
+        if (v) z.add(it.base + "/" + String(it.n).padStart(2, "0") + "." + extOf(v), dataUrlBytes(v));
+        track.step();
+      }
+      if (!z.count) {
+        toast("No images to download");
+        return;
+      }
+      track.packing();
+      await new Promise(r => setTimeout(r, 0)); // let the phase paint before the archive is assembled
+      downloadBlob(z.finish(), zipName);
+      toast(z.count + (z.count === 1 ? " image exported" : " images exported"));
+    } finally {
+      track.clear();
+    }
   };
   const exportAll = async () => {
     toast("Preparing backup…");
@@ -13496,7 +13587,54 @@ function RolecraftVault() {
   }, "Export anyway"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setExportConfirm(null)
-  }, "Cancel")))), toastMsg && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")))), zipProg && /*#__PURE__*/React.createElement("div", {
+    className: "toast",
+    style: {
+      minWidth: 260,
+      maxWidth: "min(420px, calc(100vw - 32px))",
+      textAlign: "left",
+      display: "block"
+    },
+    role: "status",
+    "aria-live": "polite"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 12,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", null, zipProg.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: 0.7,
+      whiteSpace: "nowrap"
+    }
+  }, zipProg.total ? zipProg.done + " of " + zipProg.total : zipProg.done)), /*#__PURE__*/React.createElement("div", {
+    role: "progressbar",
+    "aria-valuenow": zipProg.total ? Math.round(zipProg.done / zipProg.total * 100) : undefined,
+    "aria-valuemin": 0,
+    "aria-valuemax": 100,
+    style: {
+      height: 6,
+      borderRadius: 999,
+      background: "var(--line)",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      width: (zipProg.total ? Math.round(zipProg.done / zipProg.total * 100) : 0) + "%",
+      background: "var(--brass)",
+      borderRadius: 999,
+      transition: "width .2s linear"
+    }
+  })), zipProg.left && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      fontSize: 12,
+      opacity: 0.7
+    }
+  }, zipProg.left)), toastMsg && !zipProg && /*#__PURE__*/React.createElement("div", {
     className: "toast"
   }, toastMsg));
 }
