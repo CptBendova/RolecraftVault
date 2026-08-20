@@ -2,7 +2,8 @@ const {
   useState,
   useEffect,
   useRef,
-  useCallback
+  useCallback,
+  useMemo
 } = React;
 
 /* ============================================================
@@ -14,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.131";
+const APP_VERSION = "1.132";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +26,10 @@ const APP_VERSION = "1.131";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.131 — current",
+  heading: "1.132 — current",
+  notes: ["Characters whose names are not written in the English alphabet exported as “untitled”. A name in Cyrillic, Chinese or Japanese — or even just an accented one — was stripped away to nothing, so every such character produced a file called untitled, each one overwriting the last in your downloads folder. Names of any script now come through.","Two characters with the same name shared one folder inside a downloaded zip, and both started numbering at one — so the zip contained the same paths twice and unpacking it silently kept only the second. They get separate folders now.","Downloading all images crashed if any character had never had a gallery.","Downloading a very large number of images produced a zip that looked fine and was quietly broken, because the format this app writes cannot describe more than four gigabytes. It now says so and asks you to do it in batches, rather than handing you a corrupt file.","Thumbnails were always saved as JPEG, which cannot hold transparency — so a PNG portrait with a clear background came back with a solid black one, and the thumbnail is what every grid and card shows. Pictures that carry transparency keep it.","Importing a backup applied its pictures to the display one at a time, each pass copying everything already loaded. That is the same slowdown fixed for ordinary loading in 1.129, still present in the import. A large import now applies them in one go.","Four places saved to storage from inside a React update, which can run twice — storing the same thing twice — and had nowhere to report a failure. Blurring, unblurring, importing blurred pictures and setting a bucket cover all now save properly. A bucket cover also only lets go of the old picture once the new one is safely stored.","The dashboard’s “recent work” list copied every character, persona, lore entry and prompt in your vault, sorted the lot and kept six — and did it again on every keystroke anywhere in the app, including on screens that do not show it. It now only does that work when something has actually changed."]
+}, {
+  heading: "1.131",
   notes: ["A tag or trigger you had typed but not pressed Enter on was thrown away when you saved. Nothing said so — the word was sitting there in the box in front of you and simply did not survive. Leaving the box now adds it, and Save reads what is actually on screen rather than what was there a moment before you clicked.","Renaming a lorebook or a prompt collection to a name that already existed merged the two without asking, and handed the surviving one this book's cover — losing the cover it had, with the picture left behind in the vault taking up room. It now tells you the name is taken and changes nothing.","The password boxes in Settings ignored the Enter key, so setting or changing a password meant reaching for the mouse. They submit on Enter now, like the unlock screen always has, and the first box is focused when the dialog opens.","A persona portrait that could not be saved said nothing at all — it just never appeared. It now tells you, and distinguishes a picture it could not read from one there was no room to keep. This was the last upload in the app without that.","Lore entries can be copied out with a button, the way prompts always could. The viewer they share had always supported it; lore entries were simply never given the button."]
 }, {
   heading: "1.130",
@@ -445,7 +449,12 @@ function makeThumb(dataUrl, maxDim = 1000, quality = 0.85) {
         c.width = Math.round(width * s);
         c.height = Math.round(height * s);
         c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL("image/jpeg", quality));
+        /* Everything was re-encoded as JPEG, which has no transparency: a PNG
+           portrait with a clear background came back with a black one, and the
+           thumbnail is what every grid and card shows. Formats carrying an
+           alpha channel keep it. */
+        const kind = /^data:image\/(png|webp)/i.exec(dataUrl);
+        resolve(c.toDataURL(kind ? "image/" + kind[1].toLowerCase() : "image/jpeg", quality));
       } catch (e) {
         reject(e);
       }
@@ -486,6 +495,12 @@ function dataUrlBytes(u) {
   for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
   return a;
 }
+const ZIP_MAX = 0xFFFFFFFF; // 32-bit offsets: this writer has no ZIP64
+function zipTooBig(files) {
+  let total = 0;
+  for (const f of files) total += f.bytes.length + f.name.length * 2 + 76;
+  return total > ZIP_MAX || files.length > 0xFFFF;
+}
 function makeZip(files) {
   // [{name, bytes}]
   const enc = new TextEncoder();
@@ -523,7 +538,12 @@ const extOf = u => {
   const e = m ? m[1].toLowerCase() : "jpeg";
   return e === "jpeg" ? "jpg" : e === "svg+xml" ? "svg" : e;
 };
-const sanitizeName = s => (s || "untitled").replace(/[^\w\- ]+/g, "").trim().replace(/ +/g, "-").slice(0, 40) || "untitled";
+/* w is A-Z, 0-9 and underscore only, so a name written in Cyrillic, Chinese
+   or Japanese — or simply an accented one — was stripped to nothing and every
+   such character exported as "untitled", each file overwriting the last.
+   Letters and digits of any script are kept; anything that could confuse a file
+   path still goes. */
+const sanitizeName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
 
 /* ---------- JSON import normalizers ---------- */
 /* Term lists (searchables) arrive in whatever shape produced the file. Anything
@@ -8516,28 +8536,21 @@ function RolecraftVault() {
   };
   const bucketCoverRef = useRef(null);
   const [coverTarget, setCoverTarget] = useState(null);
+  /* Everything here used to happen inside a setState updater: deleting the old
+     picture and saving to storage both. React may run an updater more than
+     once, which would delete twice and save twice, and a failed save had
+     nowhere to go. Worked out first, then applied. */
   const setBucketCover = async (name, imgId) => {
-    setBucketMeta(prev => {
-      const old = prev[name] && prev[name].cover;
-      if (old && old !== imgId) {
-        dropImage(old);
-      }
-      const next = {
-        ...prev
-      };
-      if (imgId) next[name] = {
-        ...(next[name] || {}),
-        cover: imgId
-      };else if (next[name]) {
-        const m = {
-          ...next[name]
-        };
-        delete m.cover;
-        if (Object.keys(m).length) next[name] = m;else delete next[name];
-      }
-      sSet("buckets:meta", JSON.stringify(next));
-      return next;
-    });
+    const old = bucketMeta[name] && bucketMeta[name].cover;
+    const next = { ...bucketMeta };
+    if (imgId) next[name] = { ...(next[name] || {}), cover: imgId };else if (next[name]) {
+      const m = { ...next[name] };
+      delete m.cover;
+      if (Object.keys(m).length) next[name] = m;else delete next[name];
+    }
+    setBucketMeta(next);
+    await sSet("buckets:meta", JSON.stringify(next));
+    if (old && old !== imgId) dropImage(old); // only once the new one is safely recorded
   };
   const exitSelect = () => {
     setSelectMode(false);
@@ -8751,36 +8764,39 @@ function RolecraftVault() {
     })();
   }, [ready]);
   const [blurred, setBlurred] = useState({});
+  /* Saving from inside a setState updater is not safe: React may run an updater
+     more than once, which wrote the same thing twice, and a write that failed
+     had nowhere to report. The list is mirrored in a ref so the new value can
+     be worked out and stored outside the updater. */
+  const blurredRef = useRef(blurred);
+  blurredRef.current = blurred;
+  const persistBlur = useCallback(next => {
+    blurredRef.current = next;
+    setBlurred(next);
+    return sSet("blurset", JSON.stringify(Object.keys(next))).catch(() => {});
+  }, []);
   const toggleBlur = useCallback(imgId => {
     if (!imgId) return;
-    setBlurred(prev => {
-      const next = {
-        ...prev
-      };
-      if (next[imgId]) delete next[imgId];else next[imgId] = true;
-      sSet("blurset", JSON.stringify(Object.keys(next)));
-      return next;
-    });
-  }, []);
+    const next = { ...blurredRef.current };
+    if (next[imgId]) delete next[imgId];else next[imgId] = true;
+    persistBlur(next);
+  }, [persistBlur]);
   /* Deleting a picture removed the picture and nothing else, so its id stayed on
      the blur list for the life of the vault. Nothing cleans that list, so it only
      ever grew — and it travels in every backup. */
   const forgetBlur = useCallback(ids => {
     const idSet = new Set([...ids].filter(Boolean));
     if (!idSet.size) return;
-    setBlurred(prev => {
-      let touched = false;
-      const next = { ...prev };
-      idSet.forEach(id => {
-        if (next[id]) {
-          delete next[id];
-          touched = true;
-        }
-      });
-      if (touched) sSet("blurset", JSON.stringify(Object.keys(next)));
-      return touched ? next : prev;
+    const next = { ...blurredRef.current };
+    let touched = false;
+    idSet.forEach(id => {
+      if (next[id]) {
+        delete next[id];
+        touched = true;
+      }
     });
-  }, []);
+    if (touched) persistBlur(next);
+  }, [persistBlur]);
   /* Every place that removed a picture had to remember to also take it off the
      blur list, and most of them did not — so the list only ever grew, and it
      travels in every backup. One helper now does both, so forgetting is no
@@ -9475,30 +9491,31 @@ function RolecraftVault() {
   };
   const applyImportedBlur = async ids => {
     if (!ids || !ids.length) return;
-    setBlurred(prev => {
-      const next = {
-        ...prev
-      };
-      ids.forEach(id => next[id] = true);
-      sSet("blurset", JSON.stringify(Object.keys(next)));
-      return next;
-    });
+    const next = { ...blurredRef.current };
+    ids.forEach(id => next[id] = true);
+    await persistBlur(next);
   };
+  /* This wrote both caches once per picture, each time copying the whole
+     cache and redrawing — the same quadratic that loading had until 1.129,
+     left behind in the import path. Importing a backup of a few thousand
+     pictures paid it in full. Collected and applied once. */
   const writeImportedImages = async (images, thumbs) => {
+    const thumbBatch = {};
+    const fullBatch = {};
     for (const [id, v] of Object.entries(images || {})) {
       if (!v) continue;
       await sSet("img:" + id, v);
-      setFullCache(p => ({
-        ...p,
-        [id]: v
-      }));
-      setImgCache(p => ({
-        ...p,
-        [id]: thumbs && thumbs[id] || v
-      }));
+      fullBatch[id] = v;
+      thumbBatch[id] = thumbs && thumbs[id] || v;
     }
     for (const [id, v] of Object.entries(thumbs || {})) {
       if (v) await sSet("th:" + id, v);
+    }
+    if (Object.keys(fullBatch).length) {
+      setFullCache(prev => ({ ...prev, ...fullBatch }));
+      setImgCache(prev => ({ ...prev, ...thumbBatch }));
+      // they are in the cache now, so loading must not fetch them all again
+      Object.keys(thumbBatch).forEach(id => imgLoading.current.add(id));
     }
   };
   const handleJsonImportFile = async file => {
@@ -9868,6 +9885,10 @@ function RolecraftVault() {
       toast("Nothing to download");
       return;
     }
+    if (zipTooBig(files)) {
+      toast("That is too much for one zip file — select fewer images and do it in batches");
+      return;
+    }
     downloadBlob(makeZip(files), zipName);
     toast(files.length + (files.length === 1 ? " image" : " images") + " exported at original quality");
   };
@@ -9886,15 +9907,27 @@ function RolecraftVault() {
         bytes: dataUrlBytes(v)
       });
     };
+    /* Two characters called the same thing shared one folder and restarted
+       numbering, so the zip held duplicate paths and unpacking silently kept
+       only the last. Folder names are made unique here. c.gallery was also read
+       without a guard, unlike the persona line below it. */
+    const usedFolders = new Set();
+    const folderFor = name => {
+      const base = sanitizeName(name);
+      let out = base, i = 2;
+      while (usedFolders.has(out.toLowerCase())) out = base + "-" + i++;
+      usedFolders.add(out.toLowerCase());
+      return out;
+    };
     for (const c of scopeChars) {
-      const base = sanitizeName(c.name);
+      const base = folderFor(c.name);
       let n = 1;
       await push(c.profileImg, base, n++);
       await push(c.banner, base, n++);
-      for (const g of c.gallery) await push(g.imgId, base, n++);
+      for (const g of c.gallery || []) await push(g.imgId, base, n++);
     }
     for (const p of scopePersonas || []) {
-      const base = "personas/" + sanitizeName(p.name);
+      const base = "personas/" + folderFor(p.name);
       let n = 1;
       await push(p.avatar, base, n++);
       for (const g of p.gallery || []) await push(g.imgId, base, n++);
@@ -10014,24 +10047,27 @@ function RolecraftVault() {
   };
 
   /* --- derived --- */
-  const allTags = [...new Set(chars.flatMap(c => c.tags || []))].sort();
+  const allTags = useMemo(() => [...new Set(chars.flatMap(c => c.tags || []))].sort(), [chars]);
   const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter))/* Every other list guards its fields; this one concatenated name, story and
    personality raw, so a character missing any of them had the literal word
    "undefined" folded into what gets searched — and typing it matched them. */
 .filter(c => !charQ || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
-  const recent = [...chars.map(c => ({
-    ...c,
-    _t: "Character"
-  })), ...personas.map(p => ({
-    ...p,
-    _t: "Persona"
-  })), ...lore.map(l => ({
-    ...l,
-    _t: "Lore"
-  })), ...prompts.map(p => ({
-    ...p,
-    _t: "Prompt"
-  }))].filter(r => r.updatedAt).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
+  /* This copied every character, persona, lore entry and prompt in the vault
+     into a new object, sorted the lot, and threw all but six away — and it ran
+     on every render, including while typing in a search box on a completely
+     different screen. It now sorts light references and copies only the six it
+     keeps, and only when the records themselves change. */
+  const recent = useMemo(() => {
+    const refs = [];
+    const add = (list, t) => (list || []).forEach(r => {
+      if (r.updatedAt) refs.push({ r, t, u: r.updatedAt });
+    });
+    add(chars, "Character");
+    add(personas, "Persona");
+    add(lore, "Lore");
+    add(prompts, "Prompt");
+    return refs.sort((a, b) => b.u - a.u).slice(0, 6).map(x => ({ ...x.r, _t: x.t }));
+  }, [chars, personas, lore, prompts]);
   const nav = [{
     id: "dashboard",
     label: "Dashboard",
