@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.130";
+const APP_VERSION = "1.131";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.130";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.130 — current",
+  heading: "1.131 — current",
+  notes: ["A tag or trigger you had typed but not pressed Enter on was thrown away when you saved. Nothing said so — the word was sitting there in the box in front of you and simply did not survive. Leaving the box now adds it, and Save reads what is actually on screen rather than what was there a moment before you clicked.","Renaming a lorebook or a prompt collection to a name that already existed merged the two without asking, and handed the surviving one this book's cover — losing the cover it had, with the picture left behind in the vault taking up room. It now tells you the name is taken and changes nothing.","The password boxes in Settings ignored the Enter key, so setting or changing a password meant reaching for the mouse. They submit on Enter now, like the unlock screen always has, and the first box is focused when the dialog opens.","A persona portrait that could not be saved said nothing at all — it just never appeared. It now tells you, and distinguishes a picture it could not read from one there was no room to keep. This was the last upload in the app without that.","Lore entries can be copied out with a button, the way prompts always could. The viewer they share had always supported it; lore entries were simply never given the button."]
+}, {
+  heading: "1.130",
   notes: ["Cancel in the character editor threw away everything you had written, without a word. It sits directly beside Save, and one wrong click on it after an hour of writing lost the lot. It now asks first, and offers to keep editing — the same warning the persona, lore and prompt editor has had for a while. The character editor, where you write the most, was the one place still missing it.","If you have not actually changed anything, Cancel still closes straight away without pestering you."]
 }, {
   heading: "1.129",
@@ -1800,7 +1803,12 @@ function TagInput({
         e.preventDefault();
         add();
       }
-    }
+    },
+    /* Typing a tag and then going straight to Save threw it away: it only
+       counted once Enter or Add had been pressed, and nothing said so. Leaving
+       the box now commits what is in it. Pressing Add blurs first, which is
+       harmless — the draft is cleared and the second add finds nothing. */
+    onBlur: add
   }), suggestions && suggestions.length > 0 && /*#__PURE__*/React.createElement("datalist", {
     id: listId
   }, suggestions.filter(s => !tags.some(x => x.toLowerCase() === s.toLowerCase())).map(s => /*#__PURE__*/React.createElement("option", {
@@ -5700,6 +5708,8 @@ function CharacterEditor({
   });
   const [lightbox, setLightbox] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const cRef = useRef(null);
+  cRef.current = c;
   const [confirmVar, setConfirmVar] = useState(false); // deleting a variant asks twice
   /* Cancel threw away everything typed without a word. The persona, lore and
      prompt editor has guarded against this for a while; the character editor —
@@ -5885,6 +5895,8 @@ function CharacterEditor({
     toast("Banner updated");
   };
   const doSave = () => {
+    // as in RecordModal: Save must see a tag typed but not yet entered
+    const c = cRef.current;
     if (!c.name.trim()) {
       toast("Give your character a name first");
       return;
@@ -6872,13 +6884,28 @@ function ImageField({
     accept: "image/*",
     hidden: true,
     onChange: async e => {
-      if (!e.target.files[0]) return;
-      const orig = await fileToDataUrl(e.target.files[0]);
+      const f = e.target.files[0];
+      e.target.value = "";
+      if (!f) return;
+      /* This was the last upload with no failure handling: a picture that could
+         not be read or could not be saved simply never appeared, with nothing
+         said. Same two messages as everywhere else. */
+      let orig;
+      try {
+        orig = await fileToDataUrl(f);
+      } catch (err) {
+        imgCtx.toast && imgCtx.toast("Couldn't read that image");
+        return;
+      }
       const thumb = await makeThumb(orig).catch(() => null);
       const imgId = uid();
-      await imgCtx.saveImage(imgId, orig, thumb);
+      try {
+        await imgCtx.saveImage(imgId, orig, thumb);
+      } catch (err) {
+        imgCtx.toast && imgCtx.toast("Couldn't save that image — the vault may be out of room");
+        return;
+      }
       onChange(imgId);
-      e.target.value = "";
     }
   }));
 }
@@ -6894,6 +6921,13 @@ function RecordModal({
   imgCtx
 }) {
   const [r, setR] = useState(initial);
+  /* Committing a half-typed tag when the box loses focus is not enough on its
+     own: clicking Save blurs the box and saves in the same gesture, and the
+     click handler still holds the record as it was before the blur. Keeping a
+     live reference means Save writes what is on screen, not what was there a
+     moment earlier. */
+  const rRef = useRef(r);
+  rRef.current = r;
   const [confirmDel, setConfirmDel] = useState(false);
   /* Clicking the backdrop used to close outright and throw away everything typed.
      Compare against what was opened rather than tracking edits, so undoing a change
@@ -7052,9 +7086,9 @@ function RecordModal({
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: () => onSave({
-      ...r,
+      ...rRef.current,
       updatedAt: Date.now(),
-      createdAt: r.createdAt || Date.now()
+      createdAt: rRef.current.createdAt || Date.now()
     })
   }, "Save"))));
 }
@@ -7254,6 +7288,13 @@ function AuthForm({
   const [vals, setVals] = useState({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    const e2 = await onSubmit(vals);
+    setBusy(false);
+    if (e2) setErr(e2);
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
@@ -7261,10 +7302,11 @@ function AuthForm({
       flexDirection: "column",
       gap: 10
     }
-  }, fields.map(f => /*#__PURE__*/React.createElement("input", {
+  }, fields.map((f, i) => /*#__PURE__*/React.createElement("input", {
     key: f.key,
     type: "password",
     placeholder: f.label,
+    autoFocus: i === 0,
     value: vals[f.key] || "",
     onChange: e => {
       setVals(p => ({
@@ -7272,6 +7314,10 @@ function AuthForm({
         [f.key]: e.target.value
       }));
       setErr("");
+    },
+    // the lock screen submits on Enter; these dialogs made you reach for the mouse
+    onKeyDown: e => {
+      if (e.key === "Enter" && !busy) submit();
     }
   })), err && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7286,12 +7332,7 @@ function AuthForm({
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     disabled: busy,
-    onClick: async () => {
-      setBusy(true);
-      const e2 = await onSubmit(vals);
-      setBusy(false);
-      if (e2) setErr(e2);
-    }
+    onClick: submit
   }, busy ? "Working…" : submitLabel), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onCancel
@@ -12378,6 +12419,15 @@ function RolecraftVault() {
       onImportEntry: () => triggerJsonImport("lore", viewLoreBook || ""),
       onRename: async name => {
         const nm = name.trim();
+        /* Renaming onto a book that already exists merged the two without a
+           word and, worse, handed the target this book's cover — losing the
+           cover it had, with the picture left behind in the vault. */
+        const clash = [...new Set(lore.map(e => (e.world || "").trim()).concat(Object.keys(loreMeta || {})))]
+          .find(w => w && w !== viewLoreBook && w.toLowerCase() === nm.toLowerCase());
+        if (clash) {
+          toast("There is already a lorebook called “" + clash + "” — pick another name, or move the entries across instead");
+          return;
+        }
         const next = lore.map(e => (e.world || "").trim() === viewLoreBook ? {
           ...e,
           world: nm
@@ -12461,6 +12511,8 @@ function RolecraftVault() {
       requestFull: requestFull,
       blurred: blurred,
       onToggleBlur: toggleBlur,
+      // prompts have always had this; lore entries are just as worth copying out
+      onCopy: () => copyText(ve.content || "", "Lore entry copied"),
       onClose: () => setViewLoreEntryId(null),
       onExportCharSnap: () => askExport("this entry (CharSnap format)", () => {
         downloadJSON(loreToCharSnap(ve.world, [ve]), sanitizeName(ve.title || "entry") + "-charsnap.json");
@@ -12600,6 +12652,13 @@ function RolecraftVault() {
       sampleName: "rolecraft-prompt-template.json",
       onRename: async name => {
         const nm = name.trim();
+        // same as lorebooks: renaming onto an existing collection merged them silently
+        const clash = [...new Set(prompts.map(x => (x.collection || "").trim()).concat(Object.keys(promptMeta || {})))]
+          .find(w => w && w !== viewPromptBook && w.toLowerCase() === nm.toLowerCase());
+        if (clash) {
+          toast("There is already a collection called “" + clash + "” — pick another name, or move the prompts across instead");
+          return;
+        }
         await persistPrompts(prompts.map(p => (p.collection || "").trim() === viewPromptBook ? {
           ...p,
           collection: nm
@@ -13090,7 +13149,8 @@ function RolecraftVault() {
       saveImage,
       loadImage,
       blurred,
-      onToggleBlur: toggleBlur
+      onToggleBlur: toggleBlur,
+      toast // so a portrait that fails to save can say so
     },
     fields: [{
       key: "avatar",
