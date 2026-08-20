@@ -14,7 +14,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.129";
+const APP_VERSION = "1.130";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -25,7 +25,10 @@ const APP_VERSION = "1.129";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.129 — current",
+  heading: "1.130 — current",
+  notes: ["Cancel in the character editor threw away everything you had written, without a word. It sits directly beside Save, and one wrong click on it after an hour of writing lost the lot. It now asks first, and offers to keep editing — the same warning the persona, lore and prompt editor has had for a while. The character editor, where you write the most, was the one place still missing it.","If you have not actually changed anything, Cancel still closes straight away without pestering you."]
+}, {
+  heading: "1.129",
   notes: ["Big libraries open faster and stay lighter. Every thumbnail used to arrive as its own separate update, each one copying the whole picture cache and redrawing the screen — which gets slower and slower the more pictures you own. At four thousand pictures that copying alone measured about 1.2 seconds; batching the arrivals together brings it under a thirtieth of a second. You will not notice on a small vault. On a large one you should.","The same picture is no longer fetched several times over. The old check only skipped pictures that had already finished loading, so anything asked for repeatedly while it was still on its way was fetched again each time.","Full-size pictures no longer pile up in memory. Opening one kept it for as long as the app stayed open, so browsing a gallery of large images held every one of them at once. Only the most recent two dozen are kept now; anything older falls back to its thumbnail and is fetched again if you look at it. Viewing fifty large pictures in a row used to add about seventy megabytes and now adds none."]
 }, {
   heading: "1.128",
@@ -5698,6 +5701,21 @@ function CharacterEditor({
   const [lightbox, setLightbox] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const [confirmVar, setConfirmVar] = useState(false); // deleting a variant asks twice
+  /* Cancel threw away everything typed without a word. The persona, lore and
+     prompt editor has guarded against this for a while; the character editor —
+     the screen people write the most in — never did, and Cancel sits right
+     beside Save. Compared against what was opened, so undoing an edit by hand
+     counts as unchanged and closes without nagging. */
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  /* Compared against the state as the editor first built it, not against the
+     record it was handed: the editor fills in a missing variants list on open,
+     which reorders the keys and made an untouched character look edited. */
+  const openedAs = useRef(null);
+  if (openedAs.current === null) openedAs.current = JSON.stringify(c);
+  const editorDirty = () => JSON.stringify(c) !== openedAs.current;
+  const tryClose = () => {
+    if (editorDirty()) setConfirmLeave(true);else onClose();
+  };
   const [advOpen, setAdvOpenRaw] = useState(false);
   useEffect(() => {
     sGet("ui:advopen").then(v => {
@@ -5972,11 +5990,43 @@ function CharacterEditor({
     }
   }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onClose
+    onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: doSave
-  }, "Save character"))), /*#__PURE__*/React.createElement("div", {
+  }, "Save character"))), confirmLeave && /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid var(--brass-line)",
+      background: "var(--brass-soft)",
+      borderRadius: 10,
+      padding: "12px 14px",
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "You have unsaved changes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.55,
+      marginBottom: 12
+    }
+  }, "Closing now throws away what you have written here."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => setConfirmLeave(false)
+  }, "Keep editing"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onClose
+  }, "Discard changes"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 20,
