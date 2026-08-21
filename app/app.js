@@ -27,7 +27,7 @@ const APP_VERSION = "1.138";
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
   heading: "1.138 — current",
-  notes: ["The import/export popup had its headings in the wrong colour entirely. A button does not inherit text colour from the page, so “Import JSON”, “Export JSON” and the rest fell back to the browser’s own black — on a dark panel, near invisible, and dimmer than the small grey line underneath it, which read as broken. They are the same white the rest of the app uses for a heading now, with the description below in the same grey Settings uses.","The rows are proper theme styling rather than one-off inline values: they match the app’s corner rounding and text size instead of the browser’s defaults, they light up in brass as the pointer crosses them so it is clear they can be clicked, and they take a visible outline when reached by keyboard. Checked in all three themes — light, dark and CharSnap — and every line clears the accessible contrast standard with room to spare."]
+  notes: ["The import/export popup had its headings in the wrong colour entirely. A button does not inherit text colour from the page, so “Import JSON”, “Export JSON” and the rest fell back to the browser’s own black — on a dark panel, near invisible, and dimmer than the small grey line underneath it, which read as broken. They are the same white the rest of the app uses for a heading now, with the description below in the same grey Settings uses.","The rows are proper theme styling rather than one-off inline values: they match the app’s corner rounding and text size instead of the browser’s defaults, they light up in brass as the pointer crosses them so it is clear they can be clicked, and they take a visible outline when reached by keyboard.","The same popup opened from a character, a persona or a lorebook came out in the dark theme’s colours whatever theme you were using — in the light theme, a dark navy panel with white text in an otherwise white app. The area behind the banner picture at the top of those pages deliberately forces dark colours so the writing over the picture stays readable, and the popup was being treated as part of it. It is now drawn against the app itself, so it takes your theme. Checked on all seven of these popups in all three themes."]
 }, {
   heading: "1.137",
   notes: ["Import and export are one button now, on every screen that had them. They had grown into a row of their own — a lorebook carried “Import entry”, “Sample”, “Export JSON”, “Export text only” and “Export for CharSnap” side by side, and a character page four export buttons — all crowding out the things you actually came to the page to do. That book’s toolbar is down from nine buttons to five.","Behind the button is a popup laid out like Settings: the choices split into “Bring in” and “Send out”, each with a line under it saying what it actually does and when you would want it. The bare labels never said whether “Export JSON” included your pictures, or which of the two CharSnap exports to use — now they do.","It also says what applies. The menu on a character tells you which version it is about to export; the one inside a lorebook says that importing there always lands in that book whatever the file claims; the whole-library ones point you at the record itself if you only wanted one."]
@@ -1958,7 +1958,14 @@ function FilesMenu({ label, title, note, groups }) {
     items: (g.items || []).filter(Boolean)
   })).filter(g => g.items.length);
   if (!live.length) return null;
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+  /* The popup is rendered at the theme root rather than where the button sits.
+     ".rcv .hero" re-declares the whole dark palette — deliberately, so text over
+     a banner picture stays readable — and three of these buttons live in a hero.
+     A modal that happened to be their DOM descendant inherited that override and
+     came out dark navy in the light theme, in an otherwise white app. Floating
+     above everything, it should take the app's theme, not its trigger's. */
+  const portalTo = typeof document !== "undefined" && document.querySelector(".rcv");
+  const shell = /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setOpen(true),
     title: title || "Import and export"
@@ -1971,7 +1978,8 @@ function FilesMenu({ label, title, note, groups }) {
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 13
-  }), " " + (label || "Import / Export"))), open && /*#__PURE__*/React.createElement("div", {
+  }), " " + (label || "Import / Export")));
+  const sheet = open && /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
     style: {
       zIndex: 74
@@ -2027,7 +2035,8 @@ function FilesMenu({ label, title, note, groups }) {
       marginTop: 14,
       lineHeight: 1.5
     }
-  }, note))));
+  }, note)));
+  return /*#__PURE__*/React.createElement(React.Fragment, null, shell, sheet ? portalTo ? ReactDOM.createPortal(sheet, portalTo) : sheet : null);
 }
 
 /* Closing a record meant finding a button called "Close" at the end of a row of
