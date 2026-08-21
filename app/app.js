@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.146";
+const APP_VERSION = "1.147";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.146";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.146 — current",
+  heading: "1.147 — current",
+  notes: ["There is a Guide in the left-hand column now, between Lock vault and Settings. It opens a contents page of fifteen sections; picking one opens it on top, so closing a section puts you back at the contents rather than at the beginning.","It covers the whole app: what each character field is for and which of them the AI actually reads, how versions of a character work and what they share, pictures and which version they belong to, personas, lorebooks and triggers, prompts, buckets and tags, tokens and how much room you have, importing and exporting, publishing to CharSnap, version history and the bin, moving to another device, passwords, and updates.","There is a search box at the top. It looks through the writing itself rather than only the headings, since the thing you half-remember is usually a phrase rather than a title. Searching “trigger”, for example, finds both Lorebooks and Tokens.","The guide states CharSnap’s own rules where they matter — the limit of five versions, three lorebooks to a bot, 1,500 characters to an entry, what counts as permanent memory, and the fact that no CharSnap file has ever carried pictures."]
+}, {
+  heading: "1.146",
   notes: ["Prompt collections now have Stats and a text-only export, which lorebooks have always had. They are the same page with different words on it, and the prompt half had been left behind.","Prompts can be exported. There has been an “Import JSON” on the Prompt Vault screen for a while with nothing to export in the first place — characters, personas and lorebooks all had one. Now prompts do too.","Personas can be exported as text all at once. A single persona could already go out as text; the whole set could not, though characters could.","Deleting a version left its portrait behind in the vault forever, with nothing pointing at it — invisible, and carried in every backup and transfer from then on. It is removed with the version now, unless the same picture is used somewhere else in that character.","Removing or replacing a banner left behind the note recording which album it was filed under. Those notes piled up the same way the blurred-picture list used to.","Renaming a lorebook said how many characters and personas had followed it before the change had actually been saved. If the save failed you were told it worked. It waits for the save now.","A character named after one of the handful of names Windows reserves — CON, NUL, PRN and so on — produced a folder inside “Download all images” that Windows refuses to unpack. Those names get an underscore now.","Searchable terms with a space in them were sent to CharSnap exactly as typed, and CharSnap does not allow spaces there. The space becomes a hyphen on the way out, which is what CharSnap itself suggests; what you typed is kept in the vault.","A number with a decimal point in it was formatted as “1,234.5,678”, grouping the digits after the point as well. Nothing shows a fraction today, so this was waiting rather than happening."]
 }, {
   heading: "1.145",
@@ -1709,7 +1712,234 @@ const Ic = ({
 }, /*#__PURE__*/React.createElement("path", {
   d: d
 }));
+/* The in-app guide. Data rather than markup so the index, the section popup and
+   the search all read from one place, and so a wording fix is a wording fix. */
+const GUIDE = [
+  {
+    "id": "start",
+    "title": "Getting started",
+    "summary": "What the vault is, and how the app is laid out.",
+    "body": [
+      "Rolecraft Vault is a private library for the writing behind your roleplay: characters, the personas you play as, lorebooks, and reusable prompts. It keeps them together, lets you edit them properly, and hands them to CharSnap when you want to publish.",
+      "Nothing leaves this device. The interface has no way of reaching the internet at all — it cannot sync, phone home, or send a crash report, because the code that would do it is not there. The one exception is the device transfer you start yourself, covered later in this guide.",
+      [
+        "The column on the left moves between the four libraries: Characters, Personas, Lorebooks and Prompts.",
+        "Stats, the theme, locking the vault, this guide and Settings sit at the bottom of that column.",
+        "Escape closes whatever is open, and every window also has an X in its top corner.",
+        "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
+      ]
+    ]
+  },
+  {
+    "id": "characters",
+    "title": "Characters",
+    "summary": "The fields, and which of them the AI actually reads.",
+    "body": [
+      "A character is one bot. New character opens the editor, and everything about that character lives on that one screen.",
+      "The fields are not interchangeable. The AI treats them differently, and knowing which is which is the difference between a character that works and one that quietly eats your context:",
+      [
+        "Description and Personality are the substance. They are sent with every single message, so everything here is paid for again on every reply. CharSnap reads them as one thing, so the split is for your convenience.",
+        "First message opens the chat, Scenario sets the scene, and Example messages show how the character speaks. These fade out of the conversation as it grows long.",
+        "System prompt and Always-active system prompt are instructions rather than writing. The always-active one is very strong — good for a rule like never speaking for the user, bad for personality.",
+        "Creator memo is never sent to the AI. It is the right place for notes to yourself, especially if you have hidden your guts.",
+        "Tagline shows on the card and in listings, and is not sent to the AI either."
+      ],
+      "Custom sections are yours to name — appearance, rules of the world, anything. CharSnap has no such field, so when you export they are folded into the description with their titles above them."
+    ]
+  },
+  {
+    "id": "versions",
+    "title": "Versions of a character",
+    "summary": "Variants: what they hold, what they share, and the limit of five.",
+    "body": [
+      "A character can carry several versions of itself — CharSnap calls them variants. Use them for the same character at a different age, in another setting, or written a different way. Switch between them with the tabs in the editor and the chips on the character page.",
+      "A version only needs to hold what differs. Leave a field blank and it falls back to the Default's — the box shows what it will inherit, in grey.",
+      [
+        "Each version has its own: age, gender, pronouns, tagline, and all the writing.",
+        "Shared by every version: tags, searchable terms, custom sections, the bucket, and the lorebooks attached.",
+        "Pictures belong to whichever version was open when you added them, and the gallery in the editor shows only that version's.",
+        "Copy from Default fills a new version with the Default's writing, so you can edit rather than start over."
+      ],
+      "CharSnap accepts at most five versions of one character, and ignores any beyond the fifth. You can keep more here — the export tells you how many will actually travel."
+    ]
+  },
+  {
+    "id": "pictures",
+    "title": "Pictures",
+    "summary": "Portraits, banners, galleries, albums, blurring and downloads.",
+    "body": [
+      "Characters have a portrait, an optional page banner, and a gallery. Personas have a portrait and a gallery. Lorebook entries and prompts can carry pictures too.",
+      [
+        "A picture added while a version is open belongs to that version and shows only there.",
+        "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
+        "Albums group pictures inside one character — a set of outfits, a set of expressions.",
+        "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
+        "Download all images saves the originals as a zip, one folder per character. Large libraries are written to disk as they go, so there is no practical size limit."
+      ],
+      "Removing a picture is immediate and cannot be undone — unlike a character, a picture does not go to the bin. That is why every button that removes one asks twice.",
+      "Pictures are never inside a CharSnap file. CharSnap cannot read images out of a file at all, so you upload your art there after importing. They are inside this app's own exports, which is why those files are large."
+    ]
+  },
+  {
+    "id": "personas",
+    "title": "Personas",
+    "summary": "Who you play as, and why length matters here most.",
+    "body": [
+      "A persona is you — who you are playing as, rather than who you are talking to. Pick one when you start a chat on CharSnap.",
+      "Every word of a persona description is sent with every message, exactly like a character's description. A long persona costs the same as a long character, on top of it. This is the single easiest place to waste your context, so keep it to what actually matters in play.",
+      "Personas have their own portraits, galleries, buckets and attached lorebooks, and can be exported and brought back the same way characters can."
+    ]
+  },
+  {
+    "id": "lorebooks",
+    "title": "Lorebooks",
+    "summary": "Facts that appear only when their triggers do.",
+    "body": [
+      "A lorebook is a set of facts the AI pulls in only when they come up. It is how you keep a large world out of the description, where it would be paid for on every single message.",
+      "Each entry has triggers — the words that bring it up. When one appears in the recent conversation, that entry joins the next reply and then drops out again. There is no clever matching: if the trigger word is not used, the entry does not appear.",
+      [
+        "An entry with no triggers can never appear at all. The editor warns you.",
+        "Keep an entry under 1,500 characters — that is CharSnap's limit — and around 500 is a comfortable size.",
+        "Up to 25 entries can fire on a single message.",
+        "A bot can have at most three lorebooks attached on CharSnap. The editor warns you past that.",
+        "Entry types — Character, Location, Item, PlotEvent, Other — are for your own sorting and barely affect the AI."
+      ],
+      "Importing inside a book puts everything into that book, whatever the file claims. Importing from the Lorebooks screen instead files entries by the world named in the file."
+    ]
+  },
+  {
+    "id": "prompts",
+    "title": "Prompts",
+    "summary": "Reusable openers and instructions, kept in collections.",
+    "body": [
+      "The Prompt Vault holds reusable openers, scene-setters and instruction blocks, grouped into collections. They are yours to copy out and paste wherever you want them — they are not attached to a character and are not sent anywhere on their own.",
+      "A collection behaves like a lorebook: rename it, give it a cover, look at its Stats, export it as JSON or as plain text, and import prompts straight into it."
+    ]
+  },
+  {
+    "id": "organise",
+    "title": "Buckets, tags and searching",
+    "summary": "Keeping a large library findable.",
+    "body": [
+      [
+        "Buckets are folders. A character or persona sits in one bucket, and a bucket can have its own cover picture.",
+        "Tags describe a character and are how you filter your own library. They may contain spaces.",
+        "Searchable terms are extra words that help a character be found. CharSnap does not allow spaces in these, so a space becomes a hyphen when exporting — what you typed stays here unchanged.",
+        "The search box on each library screen looks through names, tags, terms and the writing itself.",
+        "The dashboard can be reordered, and Spotlight picks a character at random each time you open it."
+      ]
+    ]
+  },
+  {
+    "id": "tokens",
+    "title": "Tokens, and why they matter",
+    "summary": "Permanent versus temporary, and the numbers to aim for.",
+    "body": [
+      "Everything you write costs tokens, and the AI has limited room. Stats on any character breaks this down.",
+      [
+        "Permanent — description, personality, system prompts, and your persona. Sent with every message, so this is the figure worth keeping down.",
+        "Temporary — first message, scenario, example messages. Sent at the start and trimmed as the chat grows.",
+        "Never sent — creator memo, tagline, tags and searchable terms. These cost you nothing."
+      ],
+      "CharSnap suggests keeping the permanent fields under 2,000 tokens, and warns that quality drops noticeably approaching 3,000. Stats tells you where you stand against that.",
+      "A token is roughly four characters of English. Cyrillic, Chinese, Japanese and Korean are usually counted about one token per character, so for those the estimate here reads low.",
+      "If a character is too heavy, a lorebook is usually the answer: move the parts that only matter sometimes into entries with triggers."
+    ]
+  },
+  {
+    "id": "files",
+    "title": "Importing and exporting",
+    "summary": "One button per screen, and which files carry your pictures.",
+    "body": [
+      "Every screen has a single Import / Export button. The popup says what each choice does and whether your pictures go with it.",
+      [
+        "Export JSON is this app's own format and includes pictures. This is the one to keep as a backup.",
+        "Export text only leaves the pictures out — small enough to read or paste elsewhere. For characters, any linked lore travels with it.",
+        "Exporting all lorebooks at once leaves the pictures behind. Export a single book to keep them.",
+        "Import accepts this app's own files, CharSnap files, and Tavern v1 and v2 character cards.",
+        "Download a sample file gives you a blank file listing every field an import will accept."
+      ],
+      "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
+      "Backups live in Settings. Export backup writes everything — every record and every picture — as one file, and Import backup brings it back."
+    ]
+  },
+  {
+    "id": "charsnap",
+    "title": "Publishing to CharSnap",
+    "summary": "Two import buttons, two different files, and what never travels.",
+    "body": [
+      "CharSnap has two separate import buttons that take two different files. This catches people out, so the app names which is which.",
+      [
+        "Export for CharSnap makes a whole character. On CharSnap use Import JSON, on the Basics tab.",
+        "Export as a CharSnap variant file makes one version on its own. On CharSnap use Import Variant, on the Details tab — it drops into the variant slot you have open there.",
+        "Export every version for CharSnap puts up to five versions into a single file."
+      ],
+      "That middle one is how you build a character up in pieces: send the Default across to create the character, then add each further version to it later, instead of replacing the whole thing every time.",
+      [
+        "No CharSnap file contains pictures. Upload those on CharSnap after importing.",
+        "A file is only marked adult if you have ticked NSFW on the character here. NSFW picture is the separate setting that blurs your art there.",
+        "CharSnap requires a personality, a description, a first message and an age. If any are blank the export says so before you send it, rather than leaving CharSnap to refuse it.",
+        "Gender is sent as male, female or others, which is all CharSnap accepts."
+      ]
+    ]
+  },
+  {
+    "id": "history",
+    "title": "Version history and the bin",
+    "summary": "Undoing a change, and what deleting really does.",
+    "body": [
+      "Every character keeps up to twenty snapshots of its writing. Open History in the editor to look through them and restore one.",
+      "A snapshot holds words only. Restoring an old draft never changes, removes or brings back a picture — your artwork is left exactly as it is, on purpose.",
+      "Deleting a character, persona, lorebook or prompt moves it to Recently deleted in Settings, where it waits for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
+      "Pictures are the exception: removing one is immediate and permanent, which is why those buttons ask twice."
+    ]
+  },
+  {
+    "id": "transfer",
+    "title": "Moving to another device",
+    "summary": "Copying your vault across your own network.",
+    "body": [
+      "Settings has a device transfer that copies your vault to another computer over your own network. Nothing goes to the internet — the two machines talk directly, and only while you have that panel open.",
+      [
+        "Start on the device you are copying from. It shows a one-time code.",
+        "On the other device, type that code. What is sent is encrypted with a key made from it.",
+        "Before anything is written you get a summary: which device is sending, which is receiving, and how many records will be added, overwritten or removed. Nothing happens until you confirm."
+      ],
+      "Mirroring is off unless you turn it on. With it on, the receiving device also loses anything the sending one does not have, and the tick box names which device that is. Left off, a transfer only ever adds and updates."
+    ]
+  },
+  {
+    "id": "security",
+    "title": "Passwords and safety",
+    "summary": "Encryption, the PIN, and the one thing that cannot be recovered.",
+    "body": [
+      "A master password encrypts every value in the vault. Without it the vault cannot be opened — there is no recovery and no reset, because there is nobody holding a copy to ask.",
+      [
+        "Set it in Settings. The PIN is only a convenience for unlocking quickly on a machine you already trust; it is not a second password.",
+        "On Windows the encryption is also tied to your account, so the files are not readable by simply copying them to another machine.",
+        "Exports are deliberately not encrypted, so other tools can read them. Anyone who gets hold of an export can read it — keep them somewhere you trust, and delete copies you no longer need."
+      ],
+      "If you forget the master password, an export you made earlier is the only way back. That is the reason to make one."
+    ]
+  },
+  {
+    "id": "updates",
+    "title": "Updates",
+    "summary": "How new versions arrive, and which file you need.",
+    "body": [
+      "Updates arrive as a signed file that you pick yourself in Settings. The app installs nothing on its own and never checks for anything.",
+      [
+        "A .rcvup file updates the interface, which covers almost every release.",
+        "A setup .exe is needed when a release changes the part of the app a patch cannot reach. The release notes always say which you need.",
+        "Only the newest file matters — each one contains everything before it."
+      ],
+      "Version history in Settings lists what changed in each release. If an update ever misbehaves the app falls back to the version it shipped with, and Ctrl+Shift+F12 forces that at any time."
+    ]
+  }
+];
 const icons = {
+  // a question mark in a circle, for the guide
+  help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4 M12 17.2v.01",
   chart: "M3 3v18h18M8 17V9m5 8V5m5 12v-6",
   dash: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
   char: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
@@ -2187,6 +2417,160 @@ function CloseX({ onClose, label, fixed }) {
     d: icons.x,
     size: 16
   }));
+}
+
+/* The guide. Two levels on purpose: the first window is a contents page you can
+   scan, and a section opens on top of it rather than replacing it, so closing a
+   section puts you back where you were rather than at the beginning. The search
+   looks through the writing itself, not just the headings, because the thing you
+   half-remember is usually a phrase from the body. */
+function GuideModal({ onClose }) {
+  const [openId, setOpenId] = useState(null);
+  const [q, setQ] = useState("");
+  const section = openId ? GUIDE.find(g => g.id === openId) : null;
+  useEffect(() => {
+    const h = ev => {
+      if (ev.key !== "Escape") return;
+      // a section closes back to the contents; the contents closes the guide
+      if (openId) setOpenId(null);else onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose, openId]);
+  const needle = q.trim().toLowerCase();
+  const textOf = g => [g.title, g.summary].concat(g.body.map(b => Array.isArray(b) ? b.join(" ") : b)).join(" ").toLowerCase();
+  const shown = needle ? GUIDE.filter(g => textOf(g).includes(needle)) : GUIDE;
+  const para = (b, i) => Array.isArray(b) ? /*#__PURE__*/React.createElement("ul", {
+    key: i,
+    style: {
+      margin: "0 0 12px",
+      paddingLeft: 20,
+      color: "var(--mut)",
+      fontSize: 13.5,
+      lineHeight: 1.65
+    }
+  }, b.map((li, j) => /*#__PURE__*/React.createElement("li", {
+    key: j,
+    style: {
+      marginBottom: 5
+    }
+  }, li))) : /*#__PURE__*/React.createElement("p", {
+    key: i,
+    style: {
+      margin: "0 0 12px",
+      color: "var(--mut)",
+      fontSize: 13.5,
+      lineHeight: 1.7
+    }
+  }, b);
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: {
+      zIndex: 76
+    },
+    onMouseDown: ev => {
+      if (ev.target === ev.currentTarget) onClose();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: {
+      position: "relative",
+      maxWidth: 620,
+      background: "var(--panel)",
+      boxShadow: "var(--shadow)"
+    },
+    role: "dialog",
+    "aria-label": "Guide"
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    label: "Close guide"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Guide"), /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: {
+      fontSize: 24,
+      margin: "2px 0 6px",
+      paddingRight: 44
+    }
+  }, "How to use Rolecraft Vault"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      lineHeight: 1.6,
+      marginBottom: 12
+    }
+  }, "Pick a section to read it. Everything here describes this app as it is now."), /*#__PURE__*/React.createElement("input", {
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Search the guide\u2026",
+    "aria-label": "Search the guide",
+    style: {
+      width: "100%",
+      marginBottom: 14
+    }
+  }), shown.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: "var(--dim)",
+      padding: "18px 0"
+    }
+  }, "Nothing in the guide matches \u201c" + q.trim() + "\u201d.") : shown.map(g => /*#__PURE__*/React.createElement("button", {
+    key: g.id,
+    className: "filerow",
+    onClick: () => setOpenId(g.id)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, g.title), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, g.summary))))), section && /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: {
+      zIndex: 78
+    },
+    onMouseDown: ev => {
+      if (ev.target === ev.currentTarget) setOpenId(null);
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: {
+      position: "relative",
+      maxWidth: 620,
+      background: "var(--panel)",
+      boxShadow: "var(--shadow)"
+    },
+    role: "dialog",
+    "aria-label": section.title
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: () => setOpenId(null),
+    label: "Back to the guide"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Guide"), /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: {
+      fontSize: 24,
+      margin: "2px 0 12px",
+      paddingRight: 44
+    }
+  }, section.title), section.body.map(para), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 10,
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setOpenId(null)
+  }, "\u2190 All sections"), (() => {
+    const i = GUIDE.findIndex(g => g.id === section.id);
+    const next = GUIDE[i + 1];
+    return next ? /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      onClick: () => setOpenId(next.id)
+    }, next.title + " \u2192") : null;
+  })()))));
 }
 
 /* A delete that asks twice. Characters, personas, lore and prompts go to the
@@ -9585,6 +9969,7 @@ function RolecraftVault() {
     next[j] = t;
     setDashOrder(next);
   };
+  const [showGuide, setShowGuide] = useState(false);
   const [statsOpen, setStatsOpen] = useState(null); // null | { title, subtitle?, rows, note?, loading }
   /* Adds up what a set of pictures takes on disk. Sizes recorded at save time
      cost a few bytes each to read; anything from before that (or from an
@@ -10990,6 +11375,16 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
   }, "Lock vault")), /*#__PURE__*/React.createElement("button", {
+    className: "navitem",
+    title: "Guide",
+    "aria-label": "Guide",
+    onClick: () => setShowGuide(true)
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.help,
+    size: 16
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "navlabel"
+  }, "Guide")), /*#__PURE__*/React.createElement("button", {
     className: "navitem",
     title: "Settings",
     "aria-label": "Settings",
@@ -14086,6 +14481,8 @@ function RolecraftVault() {
       toast("Pick characters below, type a bucket name, then hit Assign");
     },
     onClose: () => setNewBucketOpen(false)
+  }), showGuide && /*#__PURE__*/React.createElement(GuideModal, {
+    onClose: () => setShowGuide(false)
   }), statsOpen && /*#__PURE__*/React.createElement(StatsModal, {
     title: statsOpen.title,
     subtitle: statsOpen.subtitle,
