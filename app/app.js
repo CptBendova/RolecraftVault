@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.144";
+const APP_VERSION = "1.145";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.144";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.144 — current",
+  heading: "1.145 — current",
+  notes: ["The device transfer overstated how much was in your vault. Since the picture sizes started being recorded alongside each image, those entries were being counted as records — so a vault with five hundred pictures announced roughly five hundred more “records” than you have. The figure you see before confirming a transfer is your characters, personas, lore and prompts again, as it was meant to be.","Exporting a version that had since been deleted wrote a file with no versions in it at all, which CharSnap rejects outright. It falls back to the Default now rather than handing you a file that cannot be used.","“Export for CharSnap” now says when CharSnap will refuse the file, and why. It requires a personality, a description, a first message and an age, and a half-written character would be turned away with nothing to explain it. The button now reads, for example, “CharSnap will refuse this until personality, description, first message are filled in” — before you send it rather than after."]
+}, {
+  heading: "1.144",
   notes: ["Your own sections were missing from a version’s description when that version had writing of its own. CharSnap has no place for custom sections, so they are folded into the description on the way out — the Default has always done this, but a variant with its own backstory took only the backstory and left the sections behind. Every version now carries them, in the whole-character file and in the variant-only file alike.","A section whose title matches one of CharSnap’s own fields still goes to that field rather than into the description — “System override”, “NSFW system override”, “Prefill instructions” and “Additional first messages”. Everything else is yours, so it goes into the description with its title above it. That was already the rule; it now holds for every version rather than only the Default.","A version with no writing of its own still falls back to the Default’s, sections included, exactly as before."]
 }, {
   heading: "1.143",
@@ -1289,8 +1292,13 @@ function charToCharSnap(c, scope) {
     return out;
   };
   const scopeAll = scope === undefined || scope === "all";
-  const variants = scopeAll || scope === null ? [variantOf(c, baseDescription, "", "")] : [];
-  (scopeAll ? (c.variants || []).slice(0, 4) : (c.variants || []).filter(v => v.id === scope)).forEach((v, i) => {
+  /* A scope naming a version that has since been deleted matched nothing and
+     produced an empty variants array, which is a file CharSnap will not take —
+     it requires at least one. Fall back to the Default rather than write it. */
+  const picked = scopeAll ? (c.variants || []).slice(0, 4) : (c.variants || []).filter(v => v.id === scope);
+  const useDefault = scopeAll || scope === null || !picked.length;
+  const variants = useDefault ? [variantOf(c, baseDescription, "", "")] : [];
+  picked.forEach((v, i) => {
     // required fields fall back to the Default so each variant is complete.
     // The tagline is NOT inherited: variant_tagline is an override, and filling it
     // with the character's own tagline would set an override that says nothing.
@@ -1342,6 +1350,19 @@ function charToCharSnap(c, scope) {
    fields and never looks inside variants[]. Key order follows their sample.
    alternate_greetings is left out when empty rather than sent as [["",""]],
    which would land as a blank greeting. */
+/* CharSnap refuses a file whose required fields are blank. The app knows the
+   contract now, so it can say which ones are missing before you send it rather
+   than leaving you to work it out from a rejection. */
+function charSnapMissing(c, scope) {
+  const file = charToCharSnap(c, scope).main;
+  const v = file.variants[0] || {};
+  const gaps = [];
+  if (!String(file.name || "").trim()) gaps.push("name");
+  if (!String(file.tagline || "").trim()) gaps.push("tagline");
+  [["personality", "personality"], ["description", "description"], ["first_message", "first message"], ["age", "age"]]
+    .forEach(([k, label]) => { if (!String(v[k] || "").trim()) gaps.push(label); });
+  return gaps;
+}
 function charToCharSnapVariant(c, scope) {
   const built = charToCharSnap(c, scope).main.variants[0] || {};
   const v = (c.variants || []).find(x => x.id === scope) || null;
@@ -4528,6 +4549,12 @@ function CharacterPage({
      can remove one, and rule 2 forbids a restore from editing the gallery — would
      otherwise match nothing and the picture would silently stop rendering. Treat
      those as shared so the image stays reachable without rewriting its record. */
+  /* What CharSnap would refuse about the version on screen. name and tagline are
+     character-level, so they matter to the whole-character file and not to a
+     variant-only one — the two exports are checked separately. */
+  const csGaps = charSnapMissing(c, activeVar);
+  const csVariantGaps = csGaps.filter(g => g !== "name" && g !== "tagline");
+  const refuses = list => list.length ? "CharSnap will refuse this until " + list.join(", ") + (list.length === 1 ? " is filled in. " : " are filled in. ") : "";
   const liveVid = id => id === DEFAULT_VID || variants.some(v => v.id === id);
   const visGallery = (c.gallery || []).map((g, oi) => ({ g, oi })).filter(x => {
     const vid = (x.g.variantId || "").trim();
@@ -4956,11 +4983,11 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: "For CharSnap's “Import JSON” button, on the Basics tab — this file is a whole character. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
+        hint: refuses(csGaps) + "For CharSnap's “Import JSON” button, on the Basics tab — this file is a whole character. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
         onClick: () => onExportCharSnap(activeVar)
       }, onExportCharSnapVariant && {
         label: "Export as a CharSnap variant file",
-        hint: "For CharSnap's “Import Variant” button, on the Details tab — it drops this version into the variant slot you have open there. A whole-character file will not work with that button, which is why this one is separate.",
+        hint: refuses(csVariantGaps) + "For CharSnap's “Import Variant” button, on the Details tab — it drops this version into the variant slot you have open there. A whole-character file will not work with that button, which is why this one is separate.",
         onClick: () => onExportCharSnapVariant(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",

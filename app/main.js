@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.144";
+const FACTORY_BUILD = "1.145";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -270,7 +270,8 @@ function deviceName() {
 function countRecords(manifest) {
   // only the things a person would recognise as "their stuff"
   let n = 0;
-  for (const k of Object.keys(manifest)) if (!/^(img:|th:|ui:)/.test(k)) n++;
+  // sz: is the recorded byte size beside each picture, not a record of yours
+  for (const k of Object.keys(manifest)) if (!/^(img:|th:|sz:|ui:)/.test(k)) n++;
   return n;
 }
 const transferPlainPath = () => path.join(updatesDir, "transfer.plain");
