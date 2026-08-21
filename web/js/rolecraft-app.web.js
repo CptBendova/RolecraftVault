@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.145";
+const APP_VERSION = "1.146";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.145";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.145 — current",
+  heading: "1.146 — current",
+  notes: ["Prompt collections now have Stats and a text-only export, which lorebooks have always had. They are the same page with different words on it, and the prompt half had been left behind.","Prompts can be exported. There has been an “Import JSON” on the Prompt Vault screen for a while with nothing to export in the first place — characters, personas and lorebooks all had one. Now prompts do too.","Personas can be exported as text all at once. A single persona could already go out as text; the whole set could not, though characters could.","Deleting a version left its portrait behind in the vault forever, with nothing pointing at it — invisible, and carried in every backup and transfer from then on. It is removed with the version now, unless the same picture is used somewhere else in that character.","Removing or replacing a banner left behind the note recording which album it was filed under. Those notes piled up the same way the blurred-picture list used to.","Renaming a lorebook said how many characters and personas had followed it before the change had actually been saved. If the save failed you were told it worked. It waits for the save now.","A character named after one of the handful of names Windows reserves — CON, NUL, PRN and so on — produced a folder inside “Download all images” that Windows refuses to unpack. Those names get an underscore now.","Searchable terms with a space in them were sent to CharSnap exactly as typed, and CharSnap does not allow spaces there. The space becomes a hyphen on the way out, which is what CharSnap itself suggests; what you typed is kept in the vault.","A number with a decimal point in it was formatted as “1,234.5,678”, grouping the digits after the point as well. Nothing shows a fraction today, so this was waiting rather than happening."]
+}, {
+  heading: "1.145",
   notes: ["The device transfer overstated how much was in your vault. Since the picture sizes started being recorded alongside each image, those entries were being counted as records — so a vault with five hundred pictures announced roughly five hundred more “records” than you have. The figure you see before confirming a transfer is your characters, personas, lore and prompts again, as it was meant to be.","Exporting a version that had since been deleted wrote a file with no versions in it at all, which CharSnap rejects outright. It falls back to the Default now rather than handing you a file that cannot be used.","“Export for CharSnap” now says when CharSnap will refuse the file, and why. It requires a personality, a description, a first message and an age, and a half-written character would be turned away with nothing to explain it. The button now reads, for example, “CharSnap will refuse this until personality, description, first message are filled in” — before you send it rather than after."]
 }, {
   heading: "1.144",
@@ -677,7 +680,12 @@ const extOf = u => {
    such character exported as "untitled", each file overwriting the last.
    Letters and digits of any script are kept; anything that could confuse a file
    path still goes. */
+/* Windows refuses these names outright, whatever the extension, so a zip
+   folder called CON/ cannot be unpacked there and a file called NUL.json
+   cannot be written. A trailing underscore keeps the name readable. */
+const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 const sanitizeName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
+const safeFileName = s => { const n = sanitizeName(s); return WINDOWS_RESERVED.test(n) ? n + "_" : n; };
 
 /* ---------- JSON import normalizers ---------- */
 /* Term lists (searchables) arrive in whatever shape produced the file. Anything
@@ -1331,7 +1339,10 @@ function charToCharSnap(c, scope) {
     gender: gender,
     tagline: scopedV && (scopedV.tagline || "").trim() ? scopedV.tagline : tagline,
     tags: (c.tags || []).slice(),
-    searchables: (c.searchables || []).slice(),
+    /* CharSnap: searchables "cannot contain spaces (use squishing, hyphens, or
+       underscores)". Sent as typed they are refused, so spaces become hyphens
+       on the way out — their own suggestion. The vault keeps what you wrote. */
+    searchables: (c.searchables || []).map(t => String(t).trim().replace(/\s+/g, "-")).filter(Boolean),
     nsfw: !!c.nsfw,
     nsfw_picture: !!c.nsfwPicture,
     variants: variants
@@ -2426,7 +2437,9 @@ function fmtBytes(n) {
   if (n >= 1024) return (n / 1024).toFixed(1) + " KB";
   return n + " B";
 }
-const fmtNum = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+/* Grouping was applied to the whole string, so 1234.5678 came out as
+   "1,234.5,678". Only the part before the point is grouped now. */
+const fmtNum = n => { const s = String(n); const i = s.indexOf("."); const head = i < 0 ? s : s.slice(0, i); const tail = i < 0 ? "" : s.slice(i); return head.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + tail; };
 function StatsModal({
   title,
   subtitle,
@@ -6286,10 +6299,16 @@ function CharacterEditor({
      being shared is a fact rather than a side effect of a dangling id. */
   const removeVariant = i => {
     const gone = variants[i];
+    const orphan = gone && gone.profileImg;
+    const stillUsed = orphan && (c.profileImg === orphan || c.banner === orphan
+      || (c.gallery || []).some(g => g.imgId === orphan)
+      || variants.some((v, j) => j !== i && v.profileImg === orphan));
+    if (orphan && !stillUsed) dropImage(orphan);
     setC(p => ({
       ...p,
       variants: (p.variants || []).filter((_, j) => j !== i),
-      gallery: (p.gallery || []).map(g => gone && g.variantId === gone.id ? { ...g, variantId: "" } : g)
+      gallery: (p.gallery || []).map(g => gone && g.variantId === gone.id ? { ...g, variantId: "" } : g),
+      imgMeta: orphan && !stillUsed ? withoutImgMeta(p.imgMeta, new Set([orphan])) : p.imgMeta
     }));
     setVIdx(-1);
     setConfirmVar(false);
@@ -6411,7 +6430,10 @@ function CharacterEditor({
       toast("Couldn't save that image — the vault may be out of room");
       return;
     }
-    if (c.banner) dropImage(c.banner);
+    if (c.banner) {
+      dropImage(c.banner);
+      set("imgMeta", withoutImgMeta(c.imgMeta, new Set([c.banner])));
+    }
     set("banner", imgId);
     toast("Banner updated");
   };
@@ -6707,7 +6729,7 @@ function CharacterEditor({
     armedLabel: "Click again — the banner is gone",
     onConfirm: () => {
       dropImage(c.banner);
-      set("banner", null);
+      setC(p => ({ ...p, banner: null, imgMeta: withoutImgMeta(p.imgMeta, new Set([c.banner])) }));
     }
   })), /*#__PURE__*/React.createElement("div", {
     className: "card",
@@ -10054,7 +10076,7 @@ function RolecraftVault() {
   /* Move every character and persona that had the old book attached onto the new
      name. Returns how many moved, so the toast can say so — a rename that
      silently reaches into other records should tell you it did. */
-  const renameAttachedBook = (from, to) => {
+  const renameAttachedBook = async (from, to) => {
     const was = String(from || "").trim();
     if (!was || was === to) return 0;
     let moved = 0;
@@ -10074,8 +10096,7 @@ function RolecraftVault() {
     if (!moved) return 0;
     setChars(nextChars);
     setPersonas(nextPersonas);
-    sSet("chars:all", JSON.stringify(nextChars));
-    sSet("personas:all", JSON.stringify(nextPersonas));
+    await Promise.all([sSet("chars:all", JSON.stringify(nextChars)), sSet("personas:all", JSON.stringify(nextPersonas))]);
     return moved;
   };
   const deleteRecord = async (type, r) => {
@@ -10505,6 +10526,27 @@ function RolecraftVault() {
     }, "rolecraft-personas.json");
     toast("Personas exported");
   };
+  const exportPersonasTextJson = async () => {
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "personas",
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      textOnly: true,
+      personas: personas.map(textOnlyPersona)
+    }, "rolecraft-personas-text.json");
+    toast("Personas exported as text");
+  };
+  const exportPromptsJson = async () => {
+    downloadJSON({
+      app: "rolecraft-vault",
+      type: "prompts",
+      version: 3,
+      exportedAt: new Date().toISOString(),
+      prompts
+    }, "rolecraft-prompts.json");
+    toast("Prompts exported");
+  };
   const exportLoreJson = async () => {
     downloadJSON({
       app: "rolecraft-vault",
@@ -10559,7 +10601,7 @@ function RolecraftVault() {
        without a guard, unlike the persona line below it. */
     const usedFolders = new Set();
     const folderFor = name => {
-      const base = sanitizeName(name);
+      const base = safeFileName(name);
       let out = base, i = 2;
       while (usedFolders.has(out.toLowerCase())) out = base + "-" + i++;
       usedFolders.add(out.toLowerCase());
@@ -12154,6 +12196,10 @@ function RolecraftVault() {
           label: "Export JSON",
           hint: "Every persona, with their portraits and gallery pictures. This is the one to keep as a backup.",
           onClick: () => askExport("your personas (including portraits)", exportPersonasJson)
+        }, {
+          label: "Export text only",
+          hint: "No pictures — small enough to read or paste elsewhere.",
+          onClick: () => askExport("your personas as text, with no pictures", exportPersonasTextJson)
         }]
       }]
     }), /*#__PURE__*/React.createElement("button", {
@@ -12793,6 +12839,13 @@ function RolecraftVault() {
           hint: "A blank file showing every field an import accepts.",
           onClick: () => downloadJSON(SAMPLE_PROMPT_JSON, "rolecraft-prompt-template.json")
         }]
+      }, {
+        heading: "Send out",
+        items: [{
+          label: "Export JSON",
+          hint: "Every prompt in the vault, in this app's own format. Import it back here or on another machine.",
+          onClick: () => askExport("your prompts", exportPromptsJson)
+        }]
       }]
     }))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
       className: "card",
@@ -13178,7 +13231,7 @@ function RolecraftVault() {
            entries and the cover but left every record still pointing at the old
            name, so the book quietly detached itself from everyone who had it —
            the link stayed on the page and opened nothing. */
-        const moved = renameAttachedBook(viewLoreBook, nm);
+        const moved = await renameAttachedBook(viewLoreBook, nm);
         setViewLoreBook(nm);
         toast("Book renamed" + (moved ? " · " + moved + (moved === 1 ? " record follows it" : " records follow it") : ""));
       },
@@ -13381,6 +13434,18 @@ function RolecraftVault() {
         }
       }),
       onImportEntry: () => triggerJsonImport("prompts", viewPromptBook || ""),
+      onStats: () => openRecordStats(viewPromptBook || "Prompts", entries.map(e => [e.title, e.content].filter(Boolean).join("\n")).join("\n"), entries.flatMap(e => (e.images || []).map(im => im.imgId))),
+      onExportBookText: () => askExport("this collection as text, with no pictures", () => {
+        downloadJSON({
+          app: "rolecraft-vault",
+          type: "prompts",
+          version: 4,
+          exportedAt: new Date().toISOString(),
+          textOnly: true,
+          prompts: entries.map(e => ({ title: e.title || "", content: e.content || "", collection: e.collection || "" }))
+        }, sanitizeName(viewPromptBook || "unfiled") + "-collection-text.json");
+        toast("Collection exported as text");
+      }),
       sampleJson: SAMPLE_PROMPT_JSON,
       sampleName: "rolecraft-prompt-template.json",
       onRename: async name => {
