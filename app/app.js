@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.149";
+const APP_VERSION = "1.150";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.149";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.149 — current",
+  heading: "1.150 — current",
+  notes: ["An update that needs the installer now says so, instead of installing and quietly not working. A .rcvup only ever replaces the interface; when a release also changes the part of the app underneath it, applying the patch on its own left the new interface running on the old foundation. It looked installed, and then misbehaved in ways nothing on screen explained. Hand the app such a file now and it refuses by name — telling you which installer to run and which build you are currently on — and leaves your copy exactly as it was.","This can only help from here onwards. The check lives in the part of the app a patch cannot reach, so it arrives with this installer and guards the release after it. A patch applied to an older copy still cannot warn you, because the older copy has nothing in it to do the warning with.","The release notes have always said which file you need. Now the app knows as well, and it is no longer a matter of anyone remembering: the signing step compares the release against the previous one and marks the package itself, ignoring the version stamp that changes every time regardless.","Nothing about your vault, your characters or your settings is touched by any of this. An update that is refused simply does not happen."]
+}, {
+  heading: "1.149",
   notes: ["Custom sections now carry a token count of their own, under each box. A section is folded into the description when the character reaches CharSnap, so its words are permanent memory — paid for again on every single reply — and it is now shown in brass alongside everything else that is. The four titles CharSnap reserves are marked differently, because they do not go into the description at all: “System override”, “NSFW system override” and “Prefill instructions” become prompt overrides, counted against their own separate allowance, and “Additional first messages” is temporary. Renaming a section to one of those changes where its writing goes, which the counter now makes visible as it happens.","A persona’s sections say “not sent”. A persona reaches the AI as its description alone; nothing folds its sections in the way a character’s are folded, so they cost nothing and are no longer counted as though they did.","The Backstory now carries its own heading in the CharSnap file. Every section travelled under a title while the backstory — which leads the description — arrived unlabelled, so the file opened with one anonymous block and only then started naming things.","Headings now run straight into their own writing — “Backstory: she was born in the reef” — instead of sitting on a line above it.","Sections are single-spaced inside themselves. There is no blank line under a heading and none between the paragraphs beneath it, so a section arrives as one solid block; lines of nothing but spaces go as well. A blank line still parts one section from the next, since that gap is what marks where one ends. What you have written in the app is untouched — this is only how it is laid out in the file.","Every CharSnap export is now offered twice: as it was, and again with the guts hidden. That goes for all three — the whole character, a single version, and every version in one file.","The hidden one wraps the backstory and personality in CharSnap’s |~ and ~| marks, which is exactly what their own “Hide Guts from other Users” toggle does. There is no flag for it in an import file, so a character sent from here has always arrived with its writing on show whatever you had set on CharSnap, and you had to go and switch it on again by hand. Readers now see only the name, tagline and pictures; the AI still reads every word, and so do you.","It is chosen at the moment you export rather than set on the character, because on CharSnap’s side the setting is nothing more than those marks in the text. The two files are named differently, so a hidden export will not quietly replace a plain one in your Downloads folder.","Bringing one home again gives back the writing rather than the punctuation: a description or personality that arrives wrapped has the marks taken off on the way in. A field where you have hidden two separate passages by hand is left exactly as it is."]
 }, {
   heading: "1.148",
@@ -2054,7 +2057,7 @@ const GUIDE = [
       "Updates arrive as a signed file that you pick yourself in Settings. The app installs nothing on its own and never checks for anything.",
       [
         "A .rcvup file updates the interface, which covers almost every release.",
-        "A setup .exe is needed when a release changes the part of the app a patch cannot reach. The release notes always say which you need.",
+        "A setup .exe is needed when a release changes the part of the app a patch cannot reach. The release notes always say which you need, and from 1.150 the app checks too: hand it a .rcvup that needs the installer and it will tell you, rather than installing something that cannot work.",
         "Only the newest file matters — each one contains everything before it."
       ],
       "Version history in Settings lists what changed in each release. If an update ever misbehaves the app falls back to the version it shipped with, and Ctrl+Shift+F12 forces that at any time."

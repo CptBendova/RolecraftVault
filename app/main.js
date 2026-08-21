@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.149";
+const FACTORY_BUILD = "1.150";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -45,7 +45,13 @@ function verifyUpdatePackage(pkg) {
       crypto.createPublicKey(UPDATE_PUBKEY), Buffer.from(pkg.sig, "base64"));
   } catch { sigOk = false; }
   if (!sigOk) return { ok: false, error: "Signature check failed — not an authentic update" };
-  return { ok: true, appJs, version: pkg.version, notes: typeof pkg.notes === "string" ? pkg.notes : "" };
+  /* Outside the signature deliberately: the signed form is {version, hashes} and
+     always has been, so adding to it would stop every installed copy from being
+     able to verify any future patch. These two steer a helpful refusal rather
+     than a security decision, and nothing installs without a valid signature. */
+  return { ok: true, appJs, version: pkg.version, notes: typeof pkg.notes === "string" ? pkg.notes : "",
+    needsShell: pkg.needsShell === true,
+    shellBuild: typeof pkg.shellBuild === "string" ? pkg.shellBuild : "" };
 }
 function activeUpdate() {
   try {
@@ -838,6 +844,14 @@ function setupAuthIpc() {
     try { pkg = JSON.parse(text); } catch { return { ok: false, error: "Not a valid update file" }; }
     const v = verifyUpdatePackage(pkg);
     if (!v.ok) return v;
+    /* A patch swaps app.js and nothing else. When the release also changed the
+       shell, applying it would leave the new interface running on the old one —
+       it would look installed and then misbehave in ways nothing explains. Say
+       so instead, and leave the working copy alone. Packages predating these
+       fields carry no claim either way and are installed as before. */
+    if (v.needsShell && v.shellBuild && v.shellBuild !== FACTORY_BUILD) {
+      return { ok: false, error: "Version " + v.version + " changes the app itself, not just the interface, so it cannot arrive as a patch. Run Rolecraft-Vault-Setup-" + v.version + ".exe instead — it keeps your vault and settings exactly as they are. This copy is build " + FACTORY_BUILD + "." };
+    }
     try {
       const cur = path.join(updatesDir, "current");
       fs.mkdirSync(cur, { recursive: true });
