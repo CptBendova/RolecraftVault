@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.153";
+const APP_VERSION = "1.154";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.153";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.153 — current",
+  heading: "1.154 — current",
+  notes: ["The bar showing a vault being got ready to share was in the wrong half of the panel. There is one progress bar and it lives with the receiving controls, so pressing Share put the spinner on the button at the top and the bar itself down beside the code box, which is not where you are looking. It now sits directly under the button you pressed, with a line saying what it is doing and why a large library takes a moment.","Pressing Share also made the receiving button say “Checking what would change”, because both halves of the panel shared one idea of being busy. They are separate now. You still cannot receive while a share is starting; the button simply stops claiming to be working on something you did not ask for."]
+}, {
+  heading: "1.153",
   notes: ["Sharing a vault timed out before it ever started. The listing the other device asks for is built by reading and decrypting every record you own, pictures included, and hashing each one. That was left until the other device asked for it, and the other device only waits thirty seconds, so on a vault of any real size the first thing that happened was a failure saying the other device did not answer. It had answered; it was still reading.","The work now happens the moment you press Share this vault, with the button telling you it is getting ready and a bar showing how far along it is. The code appears only once this device can answer immediately. The reading is done in small pieces so the window keeps responding rather than freezing while it works.","The device receiving also waits three minutes instead of thirty seconds now, in case it is asking a copy that has not warmed up yet. A device that is not there still fails straight away, because that fails when connecting rather than when waiting.","Opening a character on a large screen left the library showing around it. A character, a persona or the editor opens as a sheet over everything else, but it was sharing the same width limit as the page underneath, so on a 4K monitor it was narrower than the screen. Worse, the two were centred against different things, so the grid of characters poked out past its edge and stayed visible. A sheet now covers the screen it is covering.","Nothing is capped to a narrow column in the middle of a big monitor any more. The libraries, the galleries and anything else built from a grid now use the whole width and simply fit more per row: a 4K screen shows eighteen characters across where it used to show eight. The dashboard keeps a limit of its own, because a heading on the far left with its counts three thousand pixels away stopped reading as one thing.","The reading column inside a record is wider too, but still stops well short of the full width of a large monitor, because a line of text that long is genuinely hard to read. Characters with a gallery keep the two-column layout and now have considerably more room for it."]
 }, {
   heading: "1.152",
@@ -8654,6 +8657,8 @@ function SettingsModal({
   const [pendingImport, setPendingImport] = useState(null);
   const [xfer, setXfer] = useState(null);
   const [xferBusy, setXferBusy] = useState(false);
+  // which half of the panel is working, so the other one does not claim to be
+  const [xferSharing, setXferSharing] = useState(false);
   const spinner = label => React.createElement("span", {
     style: { display: "inline-flex", gap: 8, alignItems: "center" }
   }, React.createElement("span", { className: "spin" }), label);
@@ -9479,15 +9484,21 @@ function SettingsModal({
     style: { marginBottom: 10 },
     onClick: async () => {
       setXferBusy(true);
+      setXferSharing(true);
       setXferMsg(null);
       const r = await window.transfer.start();
       setXferBusy(false);
+      setXferSharing(false);
       if (r && r.ok) {
         setXfer(r);
         if (r.device) setThisDevice(r.device);
       } else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
     }
   }, xferBusy ? spinner(xferProg && xferProg.phase === "preparing" ? "Getting ready\u2026" : "Starting\u2026") : "Share this vault"),
+  xferProg && xferProg.phase === "preparing" && xferBar(),
+  xferProg && xferProg.phase === "preparing" && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginTop: -4, marginBottom: 8 }
+  }, "Reading through the vault so the other device gets an answer straight away. A large library takes a moment, and the code appears when it is ready."),
   /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
   }, "Receive onto ", here),
@@ -9567,12 +9578,12 @@ function SettingsModal({
         }
       } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
     }
-  }, xferBusy ? spinner(xferPlan ? "Syncing\u2026" : "Checking what would change\u2026") : xferPlan ? (xferReplace ? "Confirm \u2014 mirror onto " + (xferPlan.thisDevice || "this device") : "Confirm \u2014 merge onto " + (xferPlan.thisDevice || "this device")) : "Check what would change"),
+  }, xferBusy && !xferSharing ? spinner(xferPlan ? "Syncing\u2026" : "Checking what would change\u2026") : xferPlan ? (xferReplace ? "Confirm \u2014 mirror onto " + (xferPlan.thisDevice || "this device") : "Confirm \u2014 merge onto " + (xferPlan.thisDevice || "this device")) : "Check what would change"),
   xferPlan && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     disabled: xferBusy,
     onClick: () => setXferPlan(null)
-  }, "Cancel")), xferBar()),
+  }, "Cancel")), (!xferProg || xferProg.phase !== "preparing") && xferBar()),
   /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
