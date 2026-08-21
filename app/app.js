@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.147";
+const APP_VERSION = "1.148";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.147";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.147 — current",
+  heading: "1.148 — current",
+  notes: ["Every writing field now shows what it costs and when it is sent, right above the box you are typing in. Stats has always broken this down, but only after the fact — the number is most useful while you are deciding how much to write.","The label matters more than the figure. “Permanent” is re-sent with every single reply, so it is shown in brass: backstory, personality and the two system prompts. “Temporary” is sent at the start and trimmed away as a chat grows: scenario, first message, example messages. The creator memo says “not sent”, because it never reaches the AI at all.","A version that has left a field blank shows the Default’s figure marked “inherited”, since those words are what will actually be sent and they cost exactly the same.","The character page now shows the totals for the version you are looking at — permanent and temporary side by side — and follows you as you switch versions, because only one version is ever in play at a time.","Personas show their total too, with no temporary half: every word of a persona is sent with every message. Lorebook entries are marked “only when triggered”, since an entry uses context only while one of its triggers is being matched, and the book itself reports what it would cost if every entry fired at once. Prompts are marked “wherever you use it”, because what a prompt costs depends on the field you paste it into."]
+}, {
+  heading: "1.147",
   notes: ["There is a Guide in the left-hand column now, between Lock vault and Settings. It opens a contents page of fifteen sections; picking one opens it on top, so closing a section puts you back at the contents rather than at the beginning.","It covers the whole app: what each character field is for and which of them the AI actually reads, how versions of a character work and what they share, pictures and which version they belong to, personas, lorebooks and triggers, prompts, buckets and tags, tokens and how much room you have, importing and exporting, publishing to CharSnap, version history and the bin, moving to another device, passwords, and updates.","There is a search box at the top. It looks through the writing itself rather than only the headings, since the thing you half-remember is usually a phrase rather than a title. Searching “trigger”, for example, finds both Lorebooks and Tokens.","The guide states CharSnap’s own rules where they matter — the limit of five versions, three lorebooks to a bot, 1,500 characters to an entry, what counts as permanent memory, and the fact that no CharSnap file has ever carried pictures."]
 }, {
   heading: "1.146",
@@ -1712,6 +1715,57 @@ const Ic = ({
 }, /*#__PURE__*/React.createElement("path", {
   d: d
 }));
+/* What a field costs, and when it is sent. The class matters more than the
+   number: permanent text is re-sent with every reply, temporary text is trimmed
+   away as a chat grows, and some fields never reach the AI at all. Stats has
+   always shown this, but only after the fact — it belongs where the writing is.
+   "inherited" means a version has left the field blank and is using the
+   Default's words, which cost exactly the same. */
+const MEMORY_KIND = {
+  permanent: { word: "permanent", why: "Sent with every message, so it is paid for again on every reply." },
+  temporary: { word: "temporary", why: "Sent at the start of a chat and trimmed away as it gets long." },
+  unsent: { word: "not sent", why: "Never reaches the AI, so it costs nothing." },
+  override: { word: "override", why: "A CharSnap prompt override, counted against their separate allowance." },
+  triggered: { word: "only when triggered", why: "A lorebook entry uses context only while one of its triggers is being matched, then drops out again." },
+  pasted: { word: "wherever you use it", why: "A prompt is yours to copy out. What it costs depends on the field you paste it into." }
+};
+function tokenLabel(text, kind, inherited) {
+  const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
+  const n = estTokens(text);
+  return (n ? "~" + fmtNum(n) + " \u00b7 " : "") + info.word + (inherited && n ? " \u00b7 inherited" : "");
+}
+function FieldMeter({ label, text, kind, inherited, as }) {
+  const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
+  const heavy = kind === "permanent" && estTokens(text) > 0;
+  return /*#__PURE__*/React.createElement("div", {
+    className: as || "eyebrow",
+    style: {
+      marginBottom: 10,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "baseline",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", null, label), /*#__PURE__*/React.createElement("span", {
+    title: info.why + (inherited ? " This version has left it blank, so the Default's words are used." : ""),
+    style: {
+      letterSpacing: "normal",
+      textTransform: "none",
+      fontWeight: 600,
+      fontSize: 11,
+      whiteSpace: "nowrap",
+      color: heavy ? "var(--brass)" : "var(--dim)"
+    }
+  }, tokenLabel(text, kind, inherited)));
+}
+/* The same figure for a record editor, which lays its fields out with a plain
+   label and takes an optional hint underneath. */
+const tokenHint = (key, kind, extra) => rec => {
+  const own = tokenLabel(String(rec[key] || ""), kind);
+  const more = extra ? extra(rec) : null;
+  return more ? own + " \u00b7 " + more : own;
+};
+
 /* The in-app guide. Data rather than markup so the index, the section popup and
    the search all read from one place, and so a wording fix is a wording fix. */
 const GUIDE = [
@@ -4625,7 +4679,19 @@ function LorebookPage({
       fontSize: 14,
       marginBottom: 16
     }
-  }, entries.length, " ", entries.length === 1 ? entryNoun : entriesNoun, " ", inLabel, "."), /*#__PURE__*/React.createElement("div", {
+  }, entries.length, " ", entries.length === 1 ? entryNoun : entriesNoun, " ", inLabel, ".", (() => {
+    const tok = entries.reduce((n, e) => n + estTokens([e.title, e.content, (e.triggers || []).join(" ")].filter(Boolean).join("\n")), 0);
+    if (!tok) return null;
+    return /*#__PURE__*/React.createElement("span", {
+      title: bookNoun === "collection"
+        ? "Prompts are yours to copy out, so what they cost depends on where you paste them."
+        : "An entry only uses context while one of its triggers is being matched, so this is the whole book rather than what you are paying at any moment.",
+      style: {
+        color: "var(--dim)",
+        marginLeft: 8
+      }
+    }, "~", fmtNum(tok), " tokens ", bookNoun === "collection" ? "in total" : "if every entry fired at once");
+  })()), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -4965,7 +5031,12 @@ function CharacterPage({
   const F = k => av && (av[k] || "").trim() ? av[k] : c[k] || ""; // variant field with Default fallback
   /* These three read straight off the character, so an open variant with its own
      age still showed the Default's. Bucket is shared and stays as it is. */
-  const details = [["Age", F("age")], ["Gender", F("gender")], ["Pronouns", F("pronouns")], ["Bucket", c.bucket]].filter(x => x[1]);
+  /* The figures for the version being looked at, not the character as a whole —
+     only one version is ever in play at a time. Permanent is the one that is
+     re-sent with every reply, so it leads. */
+  const shownBudget = promptBudget(Object.assign({}, c, av ? Object.fromEntries(VARIANT_FIELDS.map(k => [k, F(k)])) : {}));
+  const details = [["Age", F("age")], ["Gender", F("gender")], ["Pronouns", F("pronouns")], ["Bucket", c.bucket],
+    ["Tokens", "~" + fmtNum(shownBudget.permanent.total) + " permanent \u00b7 ~" + fmtNum(shownBudget.temporary.total) + " temporary"]].filter(x => x[1]);
   const memo = (F("creatorMemo") || "").trim(); // shown in the header, not with the prose
   const blocks = [{
     key: "story",
@@ -5797,7 +5868,10 @@ function PersonaPage({
     return () => window.removeEventListener("keydown", h);
   }, [onClose, lb, ss, grid, escOff]);
   const portrait = p.avatar ? fullCache[p.avatar] || imgCache[p.avatar] : null;
-  const details = [["Role", p.role], ["Pronouns", p.pronouns]].filter(x => x[1]);
+  /* Every word of a persona is sent with every message, so there is no
+     temporary half to report here. */
+  const pBudget = personaBudget(p);
+  const details = [["Role", p.role], ["Pronouns", p.pronouns], ["Tokens", "~" + fmtNum(pBudget.permanent.total) + " permanent"]].filter(x => x[1]);
   const pTagline = p.tagline || "";
   const pBooks = p.lorebooks || [];
   const hasAside = gallery.length > 0 || !!p.avatar;
@@ -6660,6 +6734,10 @@ function CharacterEditor({
   }));
   const variants = c.variants || [];
   const getF = k => vIdx < 0 ? c[k] || "" : (variants[vIdx] || {})[k] || "";
+  /* What the field is worth when actually sent: a version that has left one
+     blank is using the Default's words, and those cost the same. */
+  const effF = k => vIdx < 0 ? c[k] || "" : (variants[vIdx] || {})[k] || c[k] || "";
+  const inhF = k => vIdx >= 0 && !((variants[vIdx] || {})[k] || "").trim() && !!(c[k] || "").trim();
   const setF = (k, v) => {
     if (vIdx < 0) set(k, v);else set("variants", variants.map((x, j) => j === vIdx ? {
       ...x,
@@ -7429,11 +7507,12 @@ function CharacterEditor({
       minWidth: 300
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "eyebrow",
-    style: {
-      marginBottom: 10
-    }
-  }, "Backstory"), /*#__PURE__*/React.createElement("textarea", {
+  }, /*#__PURE__*/React.createElement(FieldMeter, {
+    label: "Backstory",
+    text: effF("story"),
+    kind: "permanent",
+    inherited: inhF("story")
+  })), /*#__PURE__*/React.createElement("textarea", {
     rows: 9,
     value: getF("story"),
     onChange: e => setF("story", e.target.value),
@@ -7446,11 +7525,12 @@ function CharacterEditor({
       minWidth: 300
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "eyebrow",
-    style: {
-      marginBottom: 10
-    }
-  }, "Personality"), /*#__PURE__*/React.createElement("textarea", {
+  }, /*#__PURE__*/React.createElement(FieldMeter, {
+    label: "Personality",
+    text: effF("personality"),
+    kind: "permanent",
+    inherited: inhF("personality")
+  })), /*#__PURE__*/React.createElement("textarea", {
     rows: 9,
     value: getF("personality"),
     onChange: e => setF("personality", e.target.value),
@@ -7470,11 +7550,12 @@ function CharacterEditor({
       minWidth: 300
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "eyebrow",
-    style: {
-      marginBottom: 10
-    }
-  }, "Scenario"), /*#__PURE__*/React.createElement("textarea", {
+  }, /*#__PURE__*/React.createElement(FieldMeter, {
+    label: "Scenario",
+    text: effF("scenario"),
+    kind: "temporary",
+    inherited: inhF("scenario")
+  })), /*#__PURE__*/React.createElement("textarea", {
     rows: 6,
     value: getF("scenario"),
     onChange: e => setF("scenario", e.target.value),
@@ -7487,11 +7568,12 @@ function CharacterEditor({
       minWidth: 300
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "eyebrow",
-    style: {
-      marginBottom: 10
-    }
-  }, "First message"), /*#__PURE__*/React.createElement("textarea", {
+  }, /*#__PURE__*/React.createElement(FieldMeter, {
+    label: "First message",
+    text: effF("firstMessage"),
+    kind: "temporary",
+    inherited: inhF("firstMessage")
+  })), /*#__PURE__*/React.createElement("textarea", {
     rows: 6,
     value: getF("firstMessage"),
     onChange: e => setF("firstMessage", e.target.value),
@@ -7534,9 +7616,13 @@ function CharacterEditor({
     style: {
       marginBottom: 16
     }
-  }), /*#__PURE__*/React.createElement("label", {
-    className: "lbl"
-  }, "Creator memo — notes for readers; not used by the AI"), /*#__PURE__*/React.createElement("textarea", {
+  }), /*#__PURE__*/React.createElement(FieldMeter, {
+    as: "lbl",
+    label: "Creator memo",
+    text: effF("creatorMemo"),
+    kind: "unsent",
+    inherited: inhF("creatorMemo")
+  }), /*#__PURE__*/React.createElement("textarea", {
     rows: 4,
     value: getF("creatorMemo"),
     onChange: e => setF("creatorMemo", e.target.value),
@@ -7546,16 +7632,24 @@ function CharacterEditor({
     }
   }), /*#__PURE__*/React.createElement("div", {
     className: "row"
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    className: "lbl"
-  }, "System prompt"), /*#__PURE__*/React.createElement("textarea", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(FieldMeter, {
+    as: "lbl",
+    label: "System prompt",
+    text: effF("systemPrompt"),
+    kind: "permanent",
+    inherited: inhF("systemPrompt")
+  }), /*#__PURE__*/React.createElement("textarea", {
     rows: 6,
     value: getF("systemPrompt"),
     onChange: e => setF("systemPrompt", e.target.value),
     placeholder: "How the bot is set up behind the scenes"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    className: "lbl"
-  }, "Always-active system prompt — appended at the end; keep it short"), /*#__PURE__*/React.createElement("textarea", {
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(FieldMeter, {
+    as: "lbl",
+    label: "Always-active system prompt",
+    text: effF("alwaysActiveSystemPrompt"),
+    kind: "permanent",
+    inherited: inhF("alwaysActiveSystemPrompt")
+  }), /*#__PURE__*/React.createElement("textarea", {
     rows: 6,
     value: getF("alwaysActiveSystemPrompt"),
     onChange: e => setF("alwaysActiveSystemPrompt", e.target.value),
@@ -14394,6 +14488,8 @@ function RolecraftVault() {
       key: "description",
       label: "Description",
       type: "textarea",
+      // a persona is sent whole with every message, exactly like a description
+      hint: tokenHint("description", "permanent"),
       placeholder: "Identity, personality, writing preferences"
     }, {
       key: "sections",
@@ -14434,7 +14530,7 @@ function RolecraftVault() {
       placeholder: "Rules, factions, places, history…",
       /* CharSnap: Description "maximum 1500 characters, recommended ~500",
          and every entry needs at least one trigger or it can never fire. */
-      hint: rec => { const n = String(rec.content || "").length; return n > 1500 ? n.toLocaleString() + " characters — CharSnap caps an entry at 1,500, so this will not fit" : n > 500 ? n.toLocaleString() + " characters — CharSnap allows 1,500 and suggests about 500" : "CharSnap allows 1,500 characters per entry and suggests about 500"; },
+      hint: rec => { const n = String(rec.content || "").length; const cost = tokenLabel(String(rec.content || ""), "triggered"); const fit = n > 1500 ? n.toLocaleString() + " characters — CharSnap caps an entry at 1,500, so this will not fit" : n > 500 ? n.toLocaleString() + " characters — CharSnap allows 1,500 and suggests about 500" : "CharSnap allows 1,500 characters per entry and suggests about 500"; return cost + " · " + fit; },
       hintWarn: rec => String(rec.content || "").length > 1500
     }]
   }), editingRecord && editingRecord.type === "prompt" && /*#__PURE__*/React.createElement(RecordModal, {
@@ -14461,6 +14557,7 @@ function RolecraftVault() {
       key: "content",
       label: "Prompt",
       type: "textarea",
+      hint: tokenHint("content", "pasted"),
       rows: 9,
       placeholder: "The reusable prompt text"
     }]
