@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.143";
+const APP_VERSION = "1.144";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.143";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.143 — current",
+  heading: "1.144 — current",
+  notes: ["Your own sections were missing from a version’s description when that version had writing of its own. CharSnap has no place for custom sections, so they are folded into the description on the way out — the Default has always done this, but a variant with its own backstory took only the backstory and left the sections behind. Every version now carries them, in the whole-character file and in the variant-only file alike.","A section whose title matches one of CharSnap’s own fields still goes to that field rather than into the description — “System override”, “NSFW system override”, “Prefill instructions” and “Additional first messages”. Everything else is yours, so it goes into the description with its title above it. That was already the rule; it now holds for every version rather than only the Default.","A version with no writing of its own still falls back to the Default’s, sections included, exactly as before."]
+}, {
+  heading: "1.143",
   notes: ["Sending a single version to CharSnap now works. CharSnap has two import buttons and they take different files: “Import JSON” on the Basics tab wants a whole character, while “Import Variant” on the Details tab wants a version on its own, with its fields at the top of the file. This app only ever wrote the first kind, so feeding it to “Import Variant” imported nothing at all — that button ignores the outer fields and never looks inside for the version.","There is a new “Export as a CharSnap variant file” beside the existing one, and both now say which of CharSnap’s two buttons they are for. The new file matches CharSnap’s own blank variant template exactly, field for field and in the same order.","This is what lets you build a character up a piece at a time: send the Default over with “Import JSON” to create the character, then export any other version and drop it into a variant slot with “Import Variant”, rather than replacing the whole thing each time."]
 }, {
   heading: "1.142",
@@ -1198,6 +1201,17 @@ const CHARSNAP_SECTIONS = {
   "prefill instructions": "prefillInstructionOverride",
   "additional first messages": "__afms"
 };
+/* Custom sections are shared by every version and CharSnap has nowhere to put
+   them, so they are folded into the description on the way out. One folder,
+   used by the Default and by every variant, so the two cannot diverge. */
+function foldSections(text, extras) {
+  let out = text || "";
+  (extras || []).forEach(s => {
+    if (!(s.content || "").trim()) return;
+    out += (out ? "\n\n" : "") + "[" + (s.title || "Section") + "]\n" + s.content;
+  });
+  return out;
+}
 function splitCharSnapSections(c) {
   const mapped = {};
   const extras = [];
@@ -1206,12 +1220,7 @@ function splitCharSnapSections(c) {
     if (key && !mapped[key]) mapped[key] = s.content || "";else extras.push(s);
   });
   // anything that is not one of those is folded into the description on the way out
-  let description = c.story || "";
-  extras.forEach(s => {
-    if (!(s.content || "").trim()) return;
-    description += (description ? "\n\n" : "") + "[" + (s.title || "Section") + "]\n" + s.content;
-  });
-  return { mapped, extras, description };
+  return { mapped, extras, description: foldSections(c.story, extras) };
 }
 function charToCharSnap(c, scope) {
   const split = splitCharSnapSections(c);
@@ -1294,7 +1303,7 @@ function charToCharSnap(c, scope) {
       systemPrompt: v.systemPrompt,
       alwaysActiveSystemPrompt: v.alwaysActiveSystemPrompt,
       creatorMemo: v.creatorMemo
-    }, v.story || baseDescription, v.name || "Variant " + (i + 2), v.tagline || ""));
+    }, (v.story || "").trim() ? foldSections(v.story, split.extras) : baseDescription, v.name || "Variant " + (i + 2), v.tagline || ""));
   });
   /* The first variant becomes the character's default on import, so it must not
      carry overrides: variant_name "Default" renames the default to the word
