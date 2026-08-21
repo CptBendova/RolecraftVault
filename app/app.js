@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.142";
+const APP_VERSION = "1.143";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.142";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.142 — current",
+  heading: "1.143 — current",
+  notes: ["Sending a single version to CharSnap now works. CharSnap has two import buttons and they take different files: “Import JSON” on the Basics tab wants a whole character, while “Import Variant” on the Details tab wants a version on its own, with its fields at the top of the file. This app only ever wrote the first kind, so feeding it to “Import Variant” imported nothing at all — that button ignores the outer fields and never looks inside for the version.","There is a new “Export as a CharSnap variant file” beside the existing one, and both now say which of CharSnap’s two buttons they are for. The new file matches CharSnap’s own blank variant template exactly, field for field and in the same order.","This is what lets you build a character up a piece at a time: send the Default over with “Import JSON” to create the character, then export any other version and drop it into a variant slot with “Import Variant”, rather than replacing the whole thing each time."]
+}, {
+  heading: "1.142",
   notes: ["The gallery at the bottom of the character editor showed every picture in the character, whichever version you had open. Editing a variant showed the Default’s pictures and editing the Default showed the variants’ — while the button directly above promised that new ones would go to the version you were on. It now shows only the pictures belonging to the version you are editing, using the same rule the character page has always used.","Pictures that belong to no particular version still show on all of them, which is what being shared means. If a version has none of its own, the gallery now says so and points at the tabs, rather than looking empty as though the pictures had gone.","Opening a picture from that gallery still opens the right one. The pictures are addressed by their place in the whole character, so filtering the view could easily have opened the wrong one — the numbering you see now counts what is on screen while the picture itself is still found by its real position."]
 }, {
   heading: "1.141",
@@ -1320,6 +1323,38 @@ function charToCharSnap(c, scope) {
     main,
     variantFiles: []
   };
+}
+/* CharSnap has two importers and they take different files. "Import JSON" on the
+   Basics tab wants the whole character, which is what charToCharSnap builds.
+   "Import Variant" on the Details tab wants a variant on its own — their own
+   sample is a bare object, and their table says the per-variant fields are
+   "required in each variant object, and at the root of a variant-only JSON".
+   Handing it a character file gets nothing imported: it ignores the top-level
+   fields and never looks inside variants[]. Key order follows their sample.
+   alternate_greetings is left out when empty rather than sent as [["",""]],
+   which would land as a blank greeting. */
+function charToCharSnapVariant(c, scope) {
+  const built = charToCharSnap(c, scope).main.variants[0] || {};
+  const v = (c.variants || []).find(x => x.id === scope) || null;
+  const S = x => (x == null ? "" : String(x));
+  const out = {
+    variant_name: S(v ? v.name : ""),
+    variant_tagline: S(v ? v.tagline : ""),
+    age: S(built.age),
+    personality: S(built.personality),
+    description: S(built.description),
+    first_message: S(built.first_message),
+    scenario: S(built.scenario)
+  };
+  if (Array.isArray(built.alternate_greetings) && built.alternate_greetings.length) out.alternate_greetings = built.alternate_greetings;
+  out.creator_comment = S(built.creator_comment);
+  out.example_message = S(built.example_message);
+  out.system_prompt = S(built.system_prompt);
+  out.always_active_system_prompt = S(built.always_active_system_prompt);
+  out.base_system_override = S(built.base_system_override);
+  out.nsfw_system_override = S(built.nsfw_system_override);
+  out.prefill_instruction_override = S(built.prefill_instruction_override);
+  return out;
 }
 const timeAgo = ts => {
   if (!ts) return "";
@@ -4404,6 +4439,7 @@ function CharacterPage({
   onExportJson,
   onExportText,
   onExportCharSnap,
+  onExportCharSnapVariant,
   onOpenLorebook,
   onTagClick,
   onStats,
@@ -4911,8 +4947,12 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
+        hint: "For CharSnap's “Import JSON” button, on the Basics tab — this file is a whole character. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
         onClick: () => onExportCharSnap(activeVar)
+      }, onExportCharSnapVariant && {
+        label: "Export as a CharSnap variant file",
+        hint: "For CharSnap's “Import Variant” button, on the Details tab — it drops this version into the variant slot you have open there. A whole-character file will not work with that button, which is why this one is separate.",
+        onClick: () => onExportCharSnapVariant(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
         hint: variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " versions — CharSnap does not take more than five versions of a character." : "All " + (variants.length + 1) + " versions in one file, rather than just the one on screen.",
@@ -10263,6 +10303,13 @@ function RolecraftVault() {
     downloadJSON(out.main, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + "-charsnap.json");
     toast("CharSnap file exported" + (label ? " \u2014 " + label + " only" : " (" + out.main.variants.length + " variants)") + "; images upload separately");
   };
+  /* For CharSnap's "Import Variant" button, which takes a variant on its own
+     rather than a character containing one. */
+  const exportCharSnapVariant = (c, scope) => {
+    const label = scopeLabel(c, scope) || "Default";
+    downloadJSON(charToCharSnapVariant(c, scope), sanitizeName(c.name) + "-" + sanitizeName(label) + "-variant.json");
+    toast("Variant file exported — " + label + "; use “Import Variant” on CharSnap");
+  };
   const exportCharJson = async (c, scope) => {
     const sc = scopedChar(c, scope);
     const label = scopeLabel(c, scope);
@@ -13652,7 +13699,8 @@ function RolecraftVault() {
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
       onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)), // no tag warning: this export is not necessarily bound for CharSnap
       onExportText: scope => askExport("this character as text, with no pictures", () => exportCharTextJson(vc, scope)),
-      onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
+      onExportCharSnapVariant: scope => askExport("this version as a CharSnap variant file", () => exportCharSnapVariant(vc, scope)),
+    onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
         return persistChar({
