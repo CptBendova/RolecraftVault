@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.148";
+const APP_VERSION = "1.149";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.148";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.148 — current",
+  heading: "1.149 — current",
+  notes: ["Custom sections now carry a token count of their own, under each box. A section is folded into the description when the character reaches CharSnap, so its words are permanent memory — paid for again on every single reply — and it is now shown in brass alongside everything else that is. The four titles CharSnap reserves are marked differently, because they do not go into the description at all: “System override”, “NSFW system override” and “Prefill instructions” become prompt overrides, counted against their own separate allowance, and “Additional first messages” is temporary. Renaming a section to one of those changes where its writing goes, which the counter now makes visible as it happens.","A persona’s sections say “not sent”. A persona reaches the AI as its description alone; nothing folds its sections in the way a character’s are folded, so they cost nothing and are no longer counted as though they did.","The Backstory now carries its own heading in the CharSnap file. Every section travelled under a title while the backstory — which leads the description — arrived unlabelled, so the file opened with one anonymous block and only then started naming things.","Headings now run straight into their own writing — “Backstory: she was born in the reef” — instead of sitting on a line above it.","Sections are single-spaced inside themselves. There is no blank line under a heading and none between the paragraphs beneath it, so a section arrives as one solid block; lines of nothing but spaces go as well. A blank line still parts one section from the next, since that gap is what marks where one ends. What you have written in the app is untouched — this is only how it is laid out in the file.","Every CharSnap export is now offered twice: as it was, and again with the guts hidden. That goes for all three — the whole character, a single version, and every version in one file.","The hidden one wraps the backstory and personality in CharSnap’s |~ and ~| marks, which is exactly what their own “Hide Guts from other Users” toggle does. There is no flag for it in an import file, so a character sent from here has always arrived with its writing on show whatever you had set on CharSnap, and you had to go and switch it on again by hand. Readers now see only the name, tagline and pictures; the AI still reads every word, and so do you.","It is chosen at the moment you export rather than set on the character, because on CharSnap’s side the setting is nothing more than those marks in the text. The two files are named differently, so a hidden export will not quietly replace a plain one in your Downloads folder.","Bringing one home again gives back the writing rather than the punctuation: a description or personality that arrives wrapped has the marks taken off on the way in. A field where you have hidden two separate passages by hand is left exactly as it is."]
+}, {
+  heading: "1.148",
   notes: ["Every writing field now shows what it costs and when it is sent, right above the box you are typing in. Stats has always broken this down, but only after the fact — the number is most useful while you are deciding how much to write.","The label matters more than the figure. “Permanent” is re-sent with every single reply, so it is shown in brass: backstory, personality and the two system prompts. “Temporary” is sent at the start and trimmed away as a chat grows: scenario, first message, example messages. The creator memo says “not sent”, because it never reaches the AI at all.","A version that has left a field blank shows the Default’s figure marked “inherited”, since those words are what will actually be sent and they cost exactly the same.","The character page now shows the totals for the version you are looking at — permanent and temporary side by side — and follows you as you switch versions, because only one version is ever in play at a time.","Personas show their total too, with no temporary half: every word of a persona is sent with every message. Lorebook entries are marked “only when triggered”, since an entry uses context only while one of its triggers is being matched, and the book itself reports what it would cost if every entry fired at once. Prompts are marked “wherever you use it”, because what a prompt costs depends on the field you paste it into."]
 }, {
   heading: "1.147",
@@ -903,8 +906,9 @@ function normalizeCharacterImport(obj) {
     sec("Prefill instructions", anyOf("prefillInstructionOverride", "prefill_instruction_override", "post_history_instructions"));
     const contentOf = v => ({
       tagline: S(v.tagline || v.variant_tagline || v.shortMessage),
-      story: v.story || v.backstory || v.description || "",
-      personality: v.personality || "",
+      // a hidden character brought home keeps its writing, not the marks
+      story: showGutsIn(v.story || v.backstory || v.description || ""),
+      personality: showGutsIn(v.personality || ""),
       scenario: S(v.scenario),
       firstMessage: S(v.first_mes || v.firstMessage || v.first_message || v.greeting),
       exampleMessage: S(v.mes_example || v.exampleMessage || v.example_message || v.example_dialogs),
@@ -1221,13 +1225,67 @@ const CHARSNAP_SECTIONS = {
 /* Custom sections are shared by every version and CharSnap has nowhere to put
    them, so they are folded into the description on the way out. One folder,
    used by the Default and by every variant, so the two cannot diverge. */
+/* Every section reaches CharSnap under a heading, but the Backstory — which
+   leads the description — arrived unlabelled, so the file opened with one
+   anonymous block and only then started naming things. It is labelled like the
+   rest now.
+
+   The heading runs straight into its own writing — "Backstory: she was born" —
+   rather than sitting on a line above it, so there is nothing between a title
+   and the text it belongs to. Content is trimmed as well, so a blank line left
+   at the top of a section cannot put a gap back. Blocks are still parted by a
+   blank line, which is what tells one section from the next. */
 function foldSections(text, extras) {
-  let out = text || "";
+  /* Inside a section every blank line comes out, so a heading runs straight into
+     its writing and the paragraphs under it sit on consecutive lines. Between
+     one section and the next a blank line stays, because that gap is the only
+     thing marking where one ends and the next begins. Trailing spaces go with
+     the blank lines, since a line of nothing but spaces reads as an empty one. */
+  const LF = String.fromCharCode(10), CR = String.fromCharCode(13);
+  const flat = t => String(t == null ? "" : t).split(CR).join("").split(LF).map(x => x.trim()).filter(Boolean).join(LF);
+  const blocks = [];
+  const body = flat(text);
+  if (body) blocks.push("Backstory: " + body);
   (extras || []).forEach(s => {
-    if (!(s.content || "").trim()) return;
-    out += (out ? "\n\n" : "") + "[" + (s.title || "Section") + "]\n" + s.content;
+    const content = flat(s.content);
+    if (content) blocks.push((s.title || "Section") + ": " + content);
   });
-  return out;
+  return blocks.join(LF + LF);
+}
+
+/* CharSnap's "Hide Guts from other Users" toggle has no counterpart in the
+   import file: it works by wrapping the field's own text. Their tooltip says you
+   "can also manually add |~ and ~| symbols around text to hide specific parts",
+   and the toggle does that to the Description and Personality. So the only way
+   for a character to arrive already hidden is to send the squigglies. */
+const GUTS_OPEN = "|~";
+const GUTS_CLOSE = "~|";
+function gutsHidden(text) {
+  const t = (text == null ? "" : String(text)).trim();
+  if (!(t.length > GUTS_OPEN.length + GUTS_CLOSE.length && t.startsWith(GUTS_OPEN) && t.endsWith(GUTS_CLOSE))) return false;
+  /* Their tooltip invites marking specific parts by hand, so a field can hold
+     several hidden spans. One that opens and closes twice is not a wholly
+     hidden field, and stripping its outermost marks would tear the middle out
+     of the writing — so the closing mark at the end must be the first one. */
+  return t.indexOf(GUTS_CLOSE) === t.length - GUTS_CLOSE.length;
+}
+function hideGutsIn(text) {
+  const t = (text == null ? "" : String(text)).trim();
+  // wrapping twice would show one pair of marks to readers instead of hiding
+  if (!t || gutsHidden(t)) return t;
+  return GUTS_OPEN + " " + t + " " + GUTS_CLOSE;
+}
+function showGutsIn(text) {
+  const t = (text == null ? "" : String(text)).trim();
+  return gutsHidden(t) ? t.slice(GUTS_OPEN.length, -GUTS_CLOSE.length).trim() : (text || "");
+}
+/* What a section costs, and when. A title CharSnap reserves stops being part of
+   the description and becomes that field instead — worth showing, because
+   renaming a section to "System override" quietly changes where its words go. */
+function sectionKind(title) {
+  const key = CHARSNAP_SECTIONS[(title || "").trim().toLowerCase()];
+  if (!key) return "permanent";
+  return key === "__afms" ? "temporary" : "override";
 }
 function splitCharSnapSections(c) {
   const mapped = {};
@@ -1239,7 +1297,7 @@ function splitCharSnapSections(c) {
   // anything that is not one of those is folded into the description on the way out
   return { mapped, extras, description: foldSections(c.story, extras) };
 }
-function charToCharSnap(c, scope) {
+function charToCharSnap(c, scope, hide) {
   const split = splitCharSnapSections(c);
   const mapped = split.mapped;
   let baseDescription = split.description;
@@ -1289,6 +1347,13 @@ function charToCharSnap(c, scope) {
       // a variant with its own age exports it; otherwise the character's stands in
       age: String(srcC.age == null ? "" : srcC.age).trim() || ageStr
     };
+    /* Only these two fields. CharSnap's toggle hides the Description and the
+       Personality and nothing else — the name, tagline and pictures stay
+       visible, which is the point of it. */
+    if (hide) {
+      out.description = hideGutsIn(out.description);
+      out.personality = hideGutsIn(out.personality);
+    }
     const opt = (k, v) => {
       if (v != null && String(v).trim()) out[k] = v;
     };
@@ -1380,8 +1445,8 @@ function charSnapMissing(c, scope) {
     .forEach(([k, label]) => { if (!String(v[k] || "").trim()) gaps.push(label); });
   return gaps;
 }
-function charToCharSnapVariant(c, scope) {
-  const built = charToCharSnap(c, scope).main.variants[0] || {};
+function charToCharSnapVariant(c, scope, hide) {
+  const built = charToCharSnap(c, scope, hide).main.variants[0] || {};
   const v = (c.variants || []).find(x => x.id === scope) || null;
   const S = x => (x == null ? "" : String(x));
   const out = {
@@ -1897,7 +1962,9 @@ const GUIDE = [
       ],
       "CharSnap suggests keeping the permanent fields under 2,000 tokens, and warns that quality drops noticeably approaching 3,000. Stats tells you where you stand against that.",
       "A token is roughly four characters of English. Cyrillic, Chinese, Japanese and Korean are usually counted about one token per character, so for those the estimate here reads low.",
-      "If a character is too heavy, a lorebook is usually the answer: move the parts that only matter sometimes into entries with triggers."
+      "If a character is too heavy, a lorebook is usually the answer: move the parts that only matter sometimes into entries with triggers.",
+      "Every field shows its own count while you write, just above the box, and each custom section shows one underneath it. A section counts as permanent, because it is folded into the description when the character reaches CharSnap. The four titles CharSnap reserves are the exception: “System override”, “NSFW system override” and “Prefill instructions” become prompt overrides, which have their own separate allowance, and “Additional first messages” is temporary. Renaming a section to one of those changes where its writing goes, and the counter changes with it.",
+      "A persona’s sections say “not sent”. A persona reaches the AI as its description alone, so nothing else you put on one costs anything."
     ]
   },
   {
@@ -1933,7 +2000,10 @@ const GUIDE = [
         "No CharSnap file contains pictures. Upload those on CharSnap after importing.",
         "A file is only marked adult if you have ticked NSFW on the character here. NSFW picture is the separate setting that blurs your art there.",
         "CharSnap requires a personality, a description, a first message and an age. If any are blank the export says so before you send it, rather than leaving CharSnap to refuse it.",
-        "Gender is sent as male, female or others, which is all CharSnap accepts."
+        "Gender is sent as male, female or others, which is all CharSnap accepts.",
+        "Your own sections travel inside the description, each under its own heading — “Appearance: tall, blue-grey” — and the backstory is labelled the same way. CharSnap has no sections of its own, so this is how yours survive the trip. Each section is single-spaced inside itself, with a blank line between one section and the next.",
+        "Every CharSnap export is offered twice: once plainly, and once with the guts hidden. The hidden one wraps the backstory and personality in CharSnap’s |~ ~| marks, so readers there see only the name, tagline and pictures — the AI still reads every word, and so do you. It is chosen when you export rather than set on the character, because on CharSnap’s side the setting is nothing more than those marks in the text.",
+        "The two files are named differently, so a hidden export does not quietly replace a plain one in your Downloads folder."
       ]
     ]
   },
@@ -3336,7 +3406,8 @@ function DupeImportModal({
 /* ---------- editable sections list (used by record modals) ---------- */
 function SectionsField({
   sections,
-  onChange
+  onChange,
+  kindOf
 }) {
   return /*#__PURE__*/React.createElement("div", null, sections.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3384,7 +3455,22 @@ function SectionsField({
       ...x,
       content: e.target.value
     } : x))
-  }))), /*#__PURE__*/React.createElement("button", {
+  }), (() => {
+    const kind = kindOf ? kindOf(s.title) : sectionKind(s.title);
+    const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
+    return /*#__PURE__*/React.createElement("div", {
+      title: info.why,
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        marginTop: 6,
+        textAlign: "right",
+        letterSpacing: "normal",
+        textTransform: "none",
+        color: kind === "permanent" && estTokens(s.content) ? "var(--brass)" : "var(--dim)"
+      }
+    }, tokenLabel(s.content, kind));
+  })())), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => onChange([...sections, {
       id: uid(),
@@ -5017,6 +5103,12 @@ function CharacterPage({
      variant-only one — the two exports are checked separately. */
   const csGaps = charSnapMissing(c, activeVar);
   const csVariantGaps = csGaps.filter(g => g !== "name" && g !== "tagline");
+  /* Each CharSnap export is offered twice, plain and hidden, so what a pair has
+     in common is written once here rather than four times below. */
+  const charSnapWhole = "For CharSnap's “Import JSON” button, on the Basics tab — this file is a whole character. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be.");
+  const charSnapVariantWhy = "For CharSnap's “Import Variant” button, on the Details tab — it drops this version into the variant slot you have open there. A whole-character file will not work with that button, which is why this one is separate.";
+  const everyVersionWhy = variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " versions — CharSnap does not take more than five versions of a character." : "All " + (variants.length + 1) + " versions in one file, rather than just the one on screen.";
+  const hiddenWhy = "The backstory and personality go out wrapped in CharSnap's |~ ~| marks, so readers there see only the name, tagline and pictures. The AI still reads every word, and so do you.";
   const refuses = list => list.length ? "CharSnap will refuse this until " + list.join(", ") + (list.length === 1 ? " is filled in. " : " are filled in. ") : "";
   const liveVid = id => id === DEFAULT_VID || variants.some(v => v.id === id);
   const visGallery = (c.gallery || []).map((g, oi) => ({ g, oi })).filter(x => {
@@ -5451,16 +5543,28 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: refuses(csGaps) + "For CharSnap's “Import JSON” button, on the Basics tab — this file is a whole character. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
+        hint: refuses(csGaps) + charSnapWhole + " Readers on CharSnap can see the backstory and personality.",
         onClick: () => onExportCharSnap(activeVar)
+      }, {
+        label: "Export for CharSnap, guts hidden",
+        hint: refuses(csGaps) + charSnapWhole + " " + hiddenWhy,
+        onClick: () => onExportCharSnap(activeVar, true)
       }, onExportCharSnapVariant && {
         label: "Export as a CharSnap variant file",
-        hint: refuses(csVariantGaps) + "For CharSnap's “Import Variant” button, on the Details tab — it drops this version into the variant slot you have open there. A whole-character file will not work with that button, which is why this one is separate.",
+        hint: refuses(csVariantGaps) + charSnapVariantWhy,
         onClick: () => onExportCharSnapVariant(activeVar)
+      }, onExportCharSnapVariant && {
+        label: "Export as a CharSnap variant file, guts hidden",
+        hint: refuses(csVariantGaps) + charSnapVariantWhy + " " + hiddenWhy,
+        onClick: () => onExportCharSnapVariant(activeVar, true)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
-        hint: variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " versions — CharSnap does not take more than five versions of a character." : "All " + (variants.length + 1) + " versions in one file, rather than just the one on screen.",
+        hint: everyVersionWhy,
         onClick: () => onExportCharSnap("all")
+      }, variants.length > 0 && {
+        label: "Export every version for CharSnap, guts hidden",
+        hint: everyVersionWhy + " " + hiddenWhy,
+        onClick: () => onExportCharSnap("all", true)
       }]
     }]
   }), (c.sectionOrder || []).length > 0 && /*#__PURE__*/React.createElement("button", {
@@ -7737,7 +7841,22 @@ function CharacterEditor({
       ...x,
       content: e.target.value
     } : x))
-  })))), /*#__PURE__*/React.createElement("div", {
+  }), (() => {
+    const kind = sectionKind(s.title);
+    const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
+    return /*#__PURE__*/React.createElement("div", {
+      title: info.why,
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        marginTop: 6,
+        textAlign: "right",
+        letterSpacing: "normal",
+        textTransform: "none",
+        color: kind === "permanent" && estTokens(s.content) ? "var(--brass)" : "var(--dim)"
+      }
+    }, tokenLabel(s.content, kind));
+  })()))), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: 20,
@@ -8093,6 +8212,7 @@ function RecordModal({
   }, /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, f.label), f.type === "sections" ? /*#__PURE__*/React.createElement(SectionsField, {
+    kindOf: f.kindOf,
     sections: r[f.key] || [],
     onChange: s => setR(p => ({
       ...p,
@@ -10833,18 +10953,22 @@ function RolecraftVault() {
     out.__scopeName = v.name || "Variant";
     return out;
   };
-  const exportCharSnap = (c, scope) => {
-    const out = charToCharSnap(c, scope);
+  /* Whether the guts are hidden belongs to the file being written, not to the
+     character it came from: CharSnap has no flag for it, only marks in the text.
+     So it is chosen here, and the two files are named differently so one does
+     not quietly replace the other in the Downloads folder. */
+  const exportCharSnap = (c, scope, hide) => {
+    const out = charToCharSnap(c, scope, hide);
     const label = scopeLabel(c, scope);
-    downloadJSON(out.main, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + "-charsnap.json");
-    toast("CharSnap file exported" + (label ? " \u2014 " + label + " only" : " (" + out.main.variants.length + " variants)") + "; images upload separately");
+    downloadJSON(out.main, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + "-charsnap" + (hide ? "-hidden" : "") + ".json");
+    toast("CharSnap file exported" + (label ? " \u2014 " + label + " only" : " (" + out.main.variants.length + " variants)") + (hide ? ", guts hidden" : "") + "; images upload separately");
   };
   /* For CharSnap's "Import Variant" button, which takes a variant on its own
      rather than a character containing one. */
-  const exportCharSnapVariant = (c, scope) => {
+  const exportCharSnapVariant = (c, scope, hide) => {
     const label = scopeLabel(c, scope) || "Default";
-    downloadJSON(charToCharSnapVariant(c, scope), sanitizeName(c.name) + "-" + sanitizeName(label) + "-variant.json");
-    toast("Variant file exported — " + label + "; use “Import Variant” on CharSnap");
+    downloadJSON(charToCharSnapVariant(c, scope, hide), sanitizeName(c.name) + "-" + sanitizeName(label) + "-variant" + (hide ? "-hidden" : "") + ".json");
+    toast("Variant file exported — " + label + (hide ? ", guts hidden" : "") + "; use “Import Variant” on CharSnap");
   };
   const exportCharJson = async (c, scope) => {
     const sc = scopedChar(c, scope);
@@ -14289,8 +14413,8 @@ function RolecraftVault() {
       onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
       onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)), // no tag warning: this export is not necessarily bound for CharSnap
       onExportText: scope => askExport("this character as text, with no pictures", () => exportCharTextJson(vc, scope)),
-      onExportCharSnapVariant: scope => askExport("this version as a CharSnap variant file", () => exportCharSnapVariant(vc, scope)),
-    onExportCharSnap: scope => askExport(scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format", () => exportCharSnap(vc, scope), unknownTagWarning(vc)),
+      onExportCharSnapVariant: (scope, hide) => askExport("this version as a CharSnap variant file" + (hide ? ", with its guts hidden" : ""), () => exportCharSnapVariant(vc, scope, hide)),
+    onExportCharSnap: (scope, hide) => askExport((scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format") + (hide ? ", with its guts hidden" : ""), () => exportCharSnap(vc, scope, hide), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
         return persistChar({
@@ -14494,7 +14618,11 @@ function RolecraftVault() {
     }, {
       key: "sections",
       label: "Sections — anything extra (appearance, kinks, boundaries, notes)",
-      type: "sections"
+      type: "sections",
+      /* A persona reaches the AI as its description alone — nothing folds these
+         in the way a character's sections fold into its own description — so
+         they cost nothing and should not be counted as though they did. */
+      kindOf: () => "unsent"
     }]
   }), editingRecord && editingRecord.type === "lore" && /*#__PURE__*/React.createElement(RecordModal, {
     title: editingRecord.record.createdAt ? "Edit lore entry" : "New lore entry",
