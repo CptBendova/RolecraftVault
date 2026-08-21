@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.139";
+const APP_VERSION = "1.140";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.139";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.139 — current",
+  heading: "1.140 — current",
+  notes: ["Importing a CharSnap file quietly dropped four of its fields. CharSnap keeps the base prompt override, the NSFW prompt override, the prefill instruction override and the alternate greetings on each variant, spelled with underscores — this app only ever looked for a different spelling at the top of the file, so all four vanished on the way in without a word. That included files this app had just written itself, because the export always spelled them CharSnap’s way. Both spellings are read now, wherever they sit, and a file taken out and brought back keeps everything it left with.","Stats now say where a character sits against CharSnap’s own guidance. CharSnap suggests keeping the permanent fields under 2,000 tokens and warns that quality drops badly near 3,000; the counter had the figure but never the yardstick. There is a line for it now, and it says plainly when you are over.","The token estimate now admits where it reads low. It counts about four characters to a token, which is CharSnap’s own rule of thumb, but Cyrillic, Chinese, Japanese and Korean are usually counted a token per character — so for those the figure understates, and it now says so rather than quietly being wrong.","Attaching more than three lorebooks to a character now says what will happen. CharSnap takes at most three per bot; the vault has never limited it and nothing warned you that the fourth would not travel.","The lorebook entry editor now shows CharSnap’s limits while you write. An entry description can be 1,500 characters and about 500 is suggested, so there is a live count that turns to a warning once it will no longer fit. An entry with no triggers now says so too — without one it can never come up in a chat.","“Export for CharSnap” now mentions that the file is marked not-NSFW. This app has no such setting, so the flag always goes out false; if the character is adult you need to tick it on CharSnap after importing.","The sample file was missing fields CharSnap accepts. The two NSFW flags and the four per-variant override and alternate-greeting fields are all in it now, and the note at the top covers the things that catch people out: age is required on every variant, searchables cannot contain spaces, and anything past the fifth variant is ignored."]
+}, {
+  heading: "1.139",
   notes: ["The descriptions in that popup were wrong about pictures. Three of them said pictures are never inside a JSON file — they are: exporting a character, a persona, a lorebook or a collection on its own carries its pictures, which is why those files are large. The descriptions now say which exports keep pictures and which do not.","Exporting every lorebook at once leaves the pictures out, while exporting a single book keeps them. The same book came to 3.2 KB on its own and 0.4 KB as part of “all lorebooks”. That is how the app has always behaved and is unchanged here, but nothing said so — the description now warns you, and points at the single-book export if you want the pictures.","“Export every version for CharSnap” claimed it was writing all of them. CharSnap accepts at most five, so a character with more quietly lost the rest. It now says how many will actually go — “the first five of your seven” — before you click it."]
 }, {
   heading: "1.138",
@@ -354,12 +357,14 @@ function compressImage(file, maxDim = 1000, quality = 0.85) {
    this is the one worth handing someone who asks what to write. Unknown keys are
    ignored on import, so the note travels with the file harmlessly. */
 const SAMPLE_CHARACTER_JSON = {
-  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number. Each variant can carry its own age, gender and pronouns; leave them blank and it uses the Default's. 'sections' are your own titled blocks and are shared by every variant. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
+  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number, and CharSnap requires one on every variant. Each variant can also carry its own gender and pronouns; leave them blank and it uses the Default's. 'sections' are your own titled blocks, shared by every variant — CharSnap has no such field, so they are folded into the description on the way out. 'searchables' must not contain spaces. CharSnap keeps at most five variants and ignores any beyond the fifth. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
   name: "",
   gender: "",
   tagline: "",
   tags: [],
   searchables: [],
+  nsfw: false,
+  nsfw_picture: false,
   sections: [{
     title: "",
     content: ""
@@ -377,7 +382,11 @@ const SAMPLE_CHARACTER_JSON = {
     example_message: "",
     creator_comment: "",
     system_prompt: "",
-    always_active_system_prompt: ""
+    always_active_system_prompt: "",
+    base_system_override: "",
+    nsfw_system_override: "",
+    prefill_instruction_override: "",
+    alternate_greetings: []
   }]
 };
 /* The same idea for the other two things you can import. These are the vault's
@@ -825,9 +834,26 @@ function normalizeCharacterImport(obj) {
         content: s
       });
     };
-    // extra first messages sometimes ship as a JSON-encoded array string
+    /* CharSnap keeps these four on the variant, in snake_case — its documented
+       import format lists base_system_override, nsfw_system_override,
+       prefill_instruction_override and alternate_greetings as optional
+       per-variant fields. This only ever looked for camelCase at the top level,
+       which is neither, so a real CharSnap file lost all four without a word —
+       including one this app had just written, since the export does emit
+       snake_case. Both spellings and both levels are accepted now. */
+    const v0 = Array.isArray(d.variants) && d.variants[0] || {};
+    const anyOf = (...keys) => {
+      for (const k of keys) {
+        if (d[k] != null && String(d[k]).trim()) return d[k];
+        if (v0[k] != null && String(v0[k]).trim()) return v0[k];
+      }
+      return "";
+    };
+    // extra first messages ship as a JSON-encoded array string, or as CharSnap’s
+    // alternate_greetings: an array of [greeting, scenario] pairs
     try {
-      const extra = typeof d.additionalFirstMessagesAndScenarios === "string" ? JSON.parse(d.additionalFirstMessagesAndScenarios) : d.additionalFirstMessagesAndScenarios;
+      const rawExtra = anyOf("additionalFirstMessagesAndScenarios", "alternate_greetings", "alternateGreetings");
+      const extra = typeof rawExtra === "string" ? JSON.parse(rawExtra) : rawExtra;
       if (Array.isArray(extra) && extra.length) {
         sec("Additional first messages", extra.map(x => typeof x === "string" ? x : JSON.stringify(x)).join("\n\n---\n\n"));
       }
@@ -840,9 +866,9 @@ function normalizeCharacterImport(obj) {
     (Array.isArray(d.sections) ? d.sections : []).forEach(x => {
       if (x && typeof x === "object") sec(S(x.title) || "Section", x.content || x.body);
     });
-    sec("System override", d.baseSystemOverride);
-    sec("NSFW system override", d.nsfwSystemOverride);
-    sec("Prefill instructions", d.prefillInstructionOverride || d.post_history_instructions);
+    sec("System override", anyOf("baseSystemOverride", "base_system_override"));
+    sec("NSFW system override", anyOf("nsfwSystemOverride", "nsfw_system_override"));
+    sec("Prefill instructions", anyOf("prefillInstructionOverride", "prefill_instruction_override", "post_history_instructions"));
     const contentOf = v => ({
       tagline: S(v.tagline || v.variant_tagline || v.shortMessage),
       story: v.story || v.backstory || v.description || "",
@@ -2247,6 +2273,12 @@ const estTokens = t => Math.ceil(String(t || "").length / 4);
    Only one variant is ever in play at a time, so this is measured for a single
    version; a character with six variants does not cost six times as much. */
 const OVERRIDE_LIMIT = 2000;
+/* CharSnap's published guidance for the permanent fields: "Most bot sites you
+   want to keep under 2000 tokens (around 8000 characters)", and "Anything near
+   3000 tokens on Charsnap is when you begin to notice large drops in chat
+   quality." Worth showing next to the figure rather than leaving you to know it. */
+const PERMANENT_GUIDE = 2000;
+const PERMANENT_ROUGH = 3000;
 const OVERRIDE_LABELS = [["baseSystemOverride", "Base prompt override"], ["nsfwSystemOverride", "NSFW prompt override"], ["prefillInstructionOverride", "Prefill instruction override"]];
 function promptBudget(c) {
   const split = splitCharSnapSections(c);
@@ -4869,7 +4901,7 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards.",
+        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. The file is marked not-NSFW: this app has no such setting, so tick it on CharSnap if the character is adult.",
         onClick: () => onExportCharSnap(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
@@ -6675,7 +6707,16 @@ function CharacterEditor({
     value: c.lorebooks || [],
     onChange: v => set("lorebooks", v),
     emptyHint: "No lorebooks in your vault yet — create one on the Lorebooks page."
-  }))), /*#__PURE__*/React.createElement("div", {
+  }), (c.lorebooks || []).length > 3 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--brass)",
+      marginTop: 8,
+      lineHeight: 1.5
+    }
+    /* CharSnap: "Each bot can have up to three Lorebooks attached natively."
+       The vault never capped this and nothing said the fourth would not travel. */
+  }, "CharSnap attaches at most three lorebooks to a bot. You have ", (c.lorebooks || []).length, " here — keep them if you like, but only three will travel."))), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: "16px 20px",
@@ -7465,7 +7506,15 @@ function RecordModal({
   }, f.datalist.map(d => /*#__PURE__*/React.createElement("option", {
     key: d,
     value: d
-  }))))), /*#__PURE__*/React.createElement("div", {
+  })))
+  , f.hint && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: f.hintWarn && f.hintWarn(r) ? "var(--brass)" : "var(--dim)",
+      marginTop: 5,
+      lineHeight: 1.5
+    }
+  }, f.hint(r)))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -9456,6 +9505,10 @@ function RolecraftVault() {
         section("Permanent", budget.permanent, "Nothing written yet");
         section("Temporary", budget.temporary, "Nothing here");
         rows.push(["Total", withChars({ total: budget.total, chars: budget.totalChars })]);
+        /* Permanent is the figure CharSnap gives a number for, so say where this
+           character sits against it instead of leaving it to be guessed. */
+        const perm = budget.permanent.total;
+        rows.push(["Permanent vs CharSnap's guide", perm >= PERMANENT_ROUGH ? tilde(perm) + " — past 3,000, expect quality to drop" : perm > PERMANENT_GUIDE ? tilde(perm) + " — over the 2,000 they suggest" : tilde(perm) + " of 2,000 suggested"]);
         if (budget.unsent.total) {
           rows.push(["Never sent", tilde(budget.unsent.total), "head"]);
           budget.unsent.items.forEach(([l, n]) => rows.push([l, tilde(n), "sub"]));
@@ -9466,7 +9519,7 @@ function RolecraftVault() {
         title,
         subtitle: budgetNote,
         rows,
-        note: (budget ? "Permanent is always in the conversation, so it is spent again on every reply — that is the figure worth keeping down. Temporary goes in at the start and may be trimmed once the chat gets long. Custom sections are folded into the description, which is where they end up on CharSnap. " + (budget.overrides.total ? "Your prompt overrides come to about " + fmtNum(budget.overrides.total) + " tokens; CharSnap counts those against their own separate allowance, so they are not in the figures above. " : "") + "The bottom rows count every written field, including all variants. " : "Text counts every written field (including variants and sections). ") + "Tokens are an estimate at roughly 4 characters each; every model counts them slightly differently."
+        note: (budget ? "Permanent is always in the conversation, so it is spent again on every reply — that is the figure worth keeping down. Temporary goes in at the start and may be trimmed once the chat gets long. Custom sections are folded into the description, which is where they end up on CharSnap. " + (budget.overrides.total ? "Your prompt overrides come to about " + fmtNum(budget.overrides.total) + " tokens; CharSnap counts those against their own separate allowance, so they are not in the figures above. " : "") + "The bottom rows count every written field, including all variants. " : "Text counts every written field (including variants and sections). ") + "Tokens are an estimate at roughly 4 characters each, which is CharSnap's own rule of thumb; every model counts them slightly differently. Text in Cyrillic, Chinese, Japanese or Korean is often counted a token per character, so for those this figure reads low."
       });
     } catch (e) {
       setStatsOpen(null);
@@ -13767,13 +13820,19 @@ function RolecraftVault() {
       key: "triggers",
       label: "Triggers — keywords that bring this entry up",
       type: "tags",
-      placeholder: "Add a trigger and press Enter"
+      placeholder: "Add a trigger and press Enter",
+      hint: rec => (rec.triggers || []).length ? null : "CharSnap needs at least one trigger — without one the entry can never come up",
+      hintWarn: rec => !(rec.triggers || []).length
     }, {
       key: "content",
       label: "Entry",
       type: "textarea",
       rows: 9,
-      placeholder: "Rules, factions, places, history…"
+      placeholder: "Rules, factions, places, history…",
+      /* CharSnap: Description "maximum 1500 characters, recommended ~500",
+         and every entry needs at least one trigger or it can never fire. */
+      hint: rec => { const n = String(rec.content || "").length; return n > 1500 ? n.toLocaleString() + " characters — CharSnap caps an entry at 1,500, so this will not fit" : n > 500 ? n.toLocaleString() + " characters — CharSnap allows 1,500 and suggests about 500" : "CharSnap allows 1,500 characters per entry and suggests about 500"; },
+      hintWarn: rec => String(rec.content || "").length > 1500
     }]
   }), editingRecord && editingRecord.type === "prompt" && /*#__PURE__*/React.createElement(RecordModal, {
     title: editingRecord.record.createdAt ? "Edit prompt" : "New prompt",
