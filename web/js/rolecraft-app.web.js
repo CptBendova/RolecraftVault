@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.137";
+const APP_VERSION = "1.138";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.137";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.137 — current",
+  heading: "1.138 — current",
+  notes: ["The import/export popup had its headings in the wrong colour entirely. A button does not inherit text colour from the page, so “Import JSON”, “Export JSON” and the rest fell back to the browser’s own black — on a dark panel, near invisible, and dimmer than the small grey line underneath it, which read as broken. They are the same white the rest of the app uses for a heading now, with the description below in the same grey Settings uses.","The rows are proper theme styling rather than one-off inline values: they match the app’s corner rounding and text size instead of the browser’s defaults, they light up in brass as the pointer crosses them so it is clear they can be clicked, and they take a visible outline when reached by keyboard. Checked in all three themes — light, dark and CharSnap — and every line clears the accessible contrast standard with room to spare."]
+}, {
+  heading: "1.137",
   notes: ["Import and export are one button now, on every screen that had them. They had grown into a row of their own — a lorebook carried “Import entry”, “Sample”, “Export JSON”, “Export text only” and “Export for CharSnap” side by side, and a character page four export buttons — all crowding out the things you actually came to the page to do. That book’s toolbar is down from nine buttons to five.","Behind the button is a popup laid out like Settings: the choices split into “Bring in” and “Send out”, each with a line under it saying what it actually does and when you would want it. The bare labels never said whether “Export JSON” included your pictures, or which of the two CharSnap exports to use — now they do.","It also says what applies. The menu on a character tells you which version it is about to export; the one inside a lorebook says that importing there always lands in that book whatever the file claims; the whole-library ones point you at the record itself if you only wanted one."]
 }, {
   heading: "1.136",
@@ -1472,6 +1475,21 @@ const CSS = `
     --danger-soft: rgba(224,122,122,.12); --danger-line: rgba(224,122,122,.3); }
   .rcv .hero-back { position: absolute; inset: 0; background-size: cover; background-position: center 25%;
     filter: blur(26px) saturate(1.1); opacity: .18; transform: scale(1.15); }
+  /* Rows in the import/export popup. These were inline styles on a bare button,
+     which meant the label inherited the browser's default black on a dark panel
+     and the description under it ended up brighter than its own heading. A
+     button inherits neither colour nor font unless told to. */
+  .rcv .filerow { display: block; width: 100%; text-align: left; padding: 11px 13px;
+    border-radius: 11px; border: 1px solid var(--line); background: rgba(150,166,214,.03);
+    color: var(--text); font-family: inherit; font-size: 13.5px; cursor: pointer;
+    transition: border-color .12s ease, background .12s ease; }
+  .rcv .filerow + .filerow { margin-top: 7px; }
+  .rcv .filerow:hover { border-color: var(--brass-line); background: var(--brass-soft); }
+  .rcv .filerow:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+  .rcv .filerow .fr-label { font-weight: 700; font-size: 13.5px; color: var(--text); }
+  .rcv .filerow:hover .fr-label { color: var(--brass); }
+  .rcv .filerow .fr-hint { font-size: 12.25px; color: var(--mut); margin-top: 3px; line-height: 1.5; }
+  .rcv .filegroup + .filegroup { margin-top: 16px; }
   .rcv .cpage-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 420px); gap: 24px; align-items: start; }
   .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1fr) 200px; }
   .rcv .cpage-grid.nogal .cpage-aside { grid-template-columns: 1fr; }
@@ -1985,43 +2003,23 @@ function FilesMenu({ label, title, note, groups }) {
     }
   }, title || "Import and export"), live.map((g, gi) => /*#__PURE__*/React.createElement("div", {
     key: gi,
-    style: {
-      marginTop: gi ? 14 : 0
-    }
+    className: "filegroup"
   }, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow",
     style: {
-      marginBottom: 7
+      marginBottom: 8
     }
   }, g.heading), g.items.map((it, ii) => /*#__PURE__*/React.createElement("button", {
     key: ii,
-    className: "card",
-    style: {
-      display: "block",
-      width: "100%",
-      textAlign: "left",
-      padding: "10px 12px",
-      marginBottom: 6,
-      cursor: "pointer",
-      background: "transparent",
-      border: "1px solid var(--line)"
-    },
+    className: "filerow",
     onClick: () => {
       setOpen(false);
       it.onClick();
     }
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 13.5
-    }
+    className: "fr-label"
   }, it.label), it.hint && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "var(--mut)",
-      marginTop: 2,
-      lineHeight: 1.45
-    }
+    className: "fr-hint"
   }, it.hint))))), note && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
