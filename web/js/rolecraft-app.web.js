@@ -4165,7 +4165,7 @@ function LorebookPage({
         onClick: onExportBookText
       }, onExportCharSnap && {
         label: "Export for CharSnap",
-        hint: "A Chub-compatible file, ready to upload. No pictures — CharSnap does not read them out of a file, so add them there afterwards.",
+        hint: "A Chub-compatible file, ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards.",
         onClick: onExportCharSnap
       }]
     }]
@@ -4869,7 +4869,7 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: "Ready to upload to CharSnap. Add the pictures there afterwards.",
+        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards.",
         onClick: () => onExportCharSnap(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
