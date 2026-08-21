@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.150";
+const APP_VERSION = "1.151";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.150";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.150 — current",
+  heading: "1.151 — current",
+  notes: ["The guide now says which parts belong to the Windows app alone. Copying your vault to another device and installing updates do not exist in the web edition, and their panels are simply not shown there, so the guide said nothing while someone went looking for a button that was never on their screen. Moving a vault out of the web edition is a backup file instead, and the guide says so in the same breath. It also notes that the web edition keeps its vault in the browser’s storage on that computer, so clearing your site data removes it.","The mirroring tick box said “Mirror the other device”, which reads as though it changes the other machine. It changes this one. It now says “Mirror onto <this device>”, matching the “Receive onto” heading above it, and states plainly that the other device is never changed either way.","The guide explains mirroring properly now. It always said which device loses records, but never that the choice is made on that same device, which is the whole reason it is safe: a machine cannot lose your work unless you walk over to it, type the other one’s code in, and tick the box there yourself.","The guide no longer uses em dashes anywhere.","Four things the guide never covered are in it now: choosing several characters at once with Select and what you can then do with them, the reading text size in Settings, files holding more than one character, and being asked what to do when something you are importing is already here.","The guide also said custom sections arrive at CharSnap with their titles above them, which stopped being true when headings moved onto the same line. Publishing to CharSnap now also names the four section titles that do not go into the description at all, which was only mentioned under Tokens before, and says that a second section claiming one of those titles is folded in like any other.","Passwords and safety now names the encryption for anyone who wants it: AES-256-GCM, with the key stretched by PBKDF2 at 210,000 iterations before Windows wraps it again.","A version’s own portrait was missing from your backup. A character’s pictures were gathered by hand in seven different places, and only one of them remembered that a version carries a portrait of its own — so the picture you set on “Young Vela” was left out of the full backup, out of both character exports, out of the pictures zip and out of the stats count. Worse than absent: the character still pointed at it, so importing the file elsewhere produced a version referring to a picture that was not in it. There is one list now, and everything reads from it.","Oddly, characters in the bin were already backed up properly — the bin used the complete list while the live characters beside it did not. So a deleted character kept more of its artwork than one you still had.","If you have a backup taken before today, the version portraits are not in it. Take a fresh one. Nothing in your vault was lost — the pictures have been there all along, only the copies leaving the app were short.","Exporting just the Default threw away the Default’s own pictures. A picture can be marked as belonging to everyone, to one version, or to the Default alone. Exporting the Default kept the shared ones and dropped the ones marked as its own, which is exactly backwards — and the character page had always shown them there, so the file disagreed with what you were looking at.","Removing a bucket’s cover picture deleted the bucket. Only an empty one, and only if you used the small x on its cover — but the bucket was simply gone, when all you asked for was the picture to go. Buckets with characters in them were never affected, since those are held by the characters themselves.","A second section with the same reserved title was labelled wrongly. Give two sections the title “System override” and only the first becomes the override; the second is folded into the description like any other. The counter went by the title alone, so it called both of them overrides — telling you the second was charged to a separate allowance when its words were really being paid for on every reply. The counter and the export now work it out the same way, from the same code.","Adding a version could hand it a name already in use. New versions were named by counting, so deleting one and adding another produced two called “Variant 3” — and both travelled to CharSnap under that name. A new version now takes the first number nothing else is using, and names you have chosen yourself are left alone."]
+}, {
+  heading: "1.150",
   notes: ["An update that needs the installer now says so, instead of installing and quietly not working. A .rcvup only ever replaces the interface; when a release also changes the part of the app underneath it, applying the patch on its own left the new interface running on the old foundation. It looked installed, and then misbehaved in ways nothing on screen explained. Hand the app such a file now and it refuses by name — telling you which installer to run and which build you are currently on — and leaves your copy exactly as it was.","This can only help from here onwards. The check lives in the part of the app a patch cannot reach, so it arrives with this installer and guards the release after it. A patch applied to an older copy still cannot warn you, because the older copy has nothing in it to do the warning with.","The release notes have always said which file you need. Now the app knows as well, and it is no longer a matter of anyone remembering: the signing step compares the release against the previous one and marks the package itself, ignoring the version stamp that changes every time regardless.","Nothing about your vault, your characters or your settings is touched by any of this. An update that is refused simply does not happen."]
 }, {
   heading: "1.149",
@@ -1282,20 +1285,33 @@ function showGutsIn(text) {
   const t = (text == null ? "" : String(text)).trim();
   return gutsHidden(t) ? t.slice(GUTS_OPEN.length, -GUTS_CLOSE.length).trim() : (text || "");
 }
-/* What a section costs, and when. A title CharSnap reserves stops being part of
-   the description and becomes that field instead — worth showing, because
-   renaming a section to "System override" quietly changes where its words go. */
-function sectionKind(title) {
-  const key = CHARSNAP_SECTIONS[(title || "").trim().toLowerCase()];
-  if (!key) return "permanent";
-  return key === "__afms" ? "temporary" : "override";
+/* What each section costs, and when. A title CharSnap reserves stops being part
+   of the description and becomes that field instead — worth showing, because
+   renaming a section to "System override" quietly changes where its words go.
+
+   Only the first section claiming a reserved title gets it. A second one with
+   the same title falls back into the description like any other, so the answer
+   depends on a section's position and not only on its title — reading the title
+   alone told you a duplicate was an override when its words were really being
+   paid for on every reply. Returns one kind per section, in order, and the split
+   below is built from it so the two cannot drift apart. */
+function sectionKinds(sections) {
+  const mapped = {};
+  return (sections || []).map(s => {
+    const key = CHARSNAP_SECTIONS[(s.title || "").trim().toLowerCase()];
+    if (!key || mapped[key]) return "permanent";
+    mapped[key] = s.content || "";
+    return key === "__afms" ? "temporary" : "override";
+  });
 }
 function splitCharSnapSections(c) {
+  const list = c.sections || [];
+  const kinds = sectionKinds(list);
   const mapped = {};
   const extras = [];
-  (c.sections || []).forEach(s => {
-    const key = CHARSNAP_SECTIONS[(s.title || "").trim().toLowerCase()];
-    if (key && !mapped[key]) mapped[key] = s.content || "";else extras.push(s);
+  list.forEach((s, i) => {
+    if (kinds[i] === "permanent") { extras.push(s); return; }
+    mapped[CHARSNAP_SECTIONS[(s.title || "").trim().toLowerCase()]] = s.content || "";
   });
   // anything that is not one of those is folded into the description on the way out
   return { mapped, extras, description: foldSections(c.story, extras) };
@@ -1843,13 +1859,15 @@ const GUIDE = [
     "summary": "What the vault is, and how the app is laid out.",
     "body": [
       "Rolecraft Vault is a private library for the writing behind your roleplay: characters, the personas you play as, lorebooks, and reusable prompts. It keeps them together, lets you edit them properly, and hands them to CharSnap when you want to publish.",
-      "Nothing leaves this device. The interface has no way of reaching the internet at all — it cannot sync, phone home, or send a crash report, because the code that would do it is not there. The one exception is the device transfer you start yourself, covered later in this guide.",
+      "Nothing leaves this device. The interface has no way of reaching the internet at all. It cannot sync, phone home, or send a crash report, because the code that would do it is not there. The one exception is the device transfer you start yourself, covered later in this guide.",
       [
         "The column on the left moves between the four libraries: Characters, Personas, Lorebooks and Prompts.",
         "Stats, the theme, locking the vault, this guide and Settings sit at the bottom of that column.",
+        "The theme button changes the look of the app, and Settings has a reading text size of Small, Medium or Large if the writing feels too small.",
         "Escape closes whatever is open, and every window also has an X in its top corner.",
         "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
-      ]
+      ],
+      "Rolecraft Vault comes in two forms: the Windows app, and a web edition that runs in a browser. They are the same library and behave the same way, but two things belong to the Windows app alone: copying your vault to another device, and installing updates. In the web edition those panels are simply not there, and this guide says so where each one comes up."
     ]
   },
   {
@@ -1862,11 +1880,11 @@ const GUIDE = [
       [
         "Description and Personality are the substance. They are sent with every single message, so everything here is paid for again on every reply. CharSnap reads them as one thing, so the split is for your convenience.",
         "First message opens the chat, Scenario sets the scene, and Example messages show how the character speaks. These fade out of the conversation as it grows long.",
-        "System prompt and Always-active system prompt are instructions rather than writing. The always-active one is very strong — good for a rule like never speaking for the user, bad for personality.",
+        "System prompt and Always-active system prompt are instructions rather than writing. The always-active one is very strong: good for a rule like never speaking for the user, bad for personality.",
         "Creator memo is never sent to the AI. It is the right place for notes to yourself, especially if you have hidden your guts.",
         "Tagline shows on the card and in listings, and is not sent to the AI either."
       ],
-      "Custom sections are yours to name — appearance, rules of the world, anything. CharSnap has no such field, so when you export they are folded into the description with their titles above them."
+      "Custom sections are yours to name: appearance, rules of the world, anything. CharSnap has no such field of its own, so on the way out they are folded into the description, each one headed by its own title. Four particular titles are handled differently, and Publishing to CharSnap says which."
     ]
   },
   {
@@ -1874,15 +1892,15 @@ const GUIDE = [
     "title": "Versions of a character",
     "summary": "Variants: what they hold, what they share, and the limit of five.",
     "body": [
-      "A character can carry several versions of itself — CharSnap calls them variants. Use them for the same character at a different age, in another setting, or written a different way. Switch between them with the tabs in the editor and the chips on the character page.",
-      "A version only needs to hold what differs. Leave a field blank and it falls back to the Default's — the box shows what it will inherit, in grey.",
+      "A character can carry several versions of itself. CharSnap calls them variants. Use them for the same character at a different age, in another setting, or written a different way. Switch between them with the tabs in the editor and the chips on the character page.",
+      "A version only needs to hold what differs. Leave a field blank and it falls back to the Default's, and the box shows what it will inherit, in grey.",
       [
         "Each version has its own: age, gender, pronouns, tagline, and all the writing.",
         "Shared by every version: tags, searchable terms, custom sections, the bucket, and the lorebooks attached.",
         "Pictures belong to whichever version was open when you added them, and the gallery in the editor shows only that version's.",
         "Copy from Default fills a new version with the Default's writing, so you can edit rather than start over."
       ],
-      "CharSnap accepts at most five versions of one character, and ignores any beyond the fifth. You can keep more here — the export tells you how many will actually travel."
+      "CharSnap accepts at most five versions of one character, and ignores any beyond the fifth. You can keep more here, and the export tells you how many will actually travel."
     ]
   },
   {
@@ -1894,11 +1912,11 @@ const GUIDE = [
       [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
-        "Albums group pictures inside one character — a set of outfits, a set of expressions.",
+        "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
         "Download all images saves the originals as a zip, one folder per character. Large libraries are written to disk as they go, so there is no practical size limit."
       ],
-      "Removing a picture is immediate and cannot be undone — unlike a character, a picture does not go to the bin. That is why every button that removes one asks twice.",
+      "Removing a picture is immediate and cannot be undone. Unlike a character, a picture does not go to the bin. That is why every button that removes one asks twice.",
       "Pictures are never inside a CharSnap file. CharSnap cannot read images out of a file at all, so you upload your art there after importing. They are inside this app's own exports, which is why those files are large."
     ]
   },
@@ -1907,7 +1925,7 @@ const GUIDE = [
     "title": "Personas",
     "summary": "Who you play as, and why length matters here most.",
     "body": [
-      "A persona is you — who you are playing as, rather than who you are talking to. Pick one when you start a chat on CharSnap.",
+      "A persona is you: who you are playing as, rather than who you are talking to. Pick one when you start a chat on CharSnap.",
       "Every word of a persona description is sent with every message, exactly like a character's description. A long persona costs the same as a long character, on top of it. This is the single easiest place to waste your context, so keep it to what actually matters in play.",
       "Personas have their own portraits, galleries, buckets and attached lorebooks, and can be exported and brought back the same way characters can."
     ]
@@ -1918,13 +1936,13 @@ const GUIDE = [
     "summary": "Facts that appear only when their triggers do.",
     "body": [
       "A lorebook is a set of facts the AI pulls in only when they come up. It is how you keep a large world out of the description, where it would be paid for on every single message.",
-      "Each entry has triggers — the words that bring it up. When one appears in the recent conversation, that entry joins the next reply and then drops out again. There is no clever matching: if the trigger word is not used, the entry does not appear.",
+      "Each entry has triggers, the words that bring it up. When one appears in the recent conversation, that entry joins the next reply and then drops out again. There is no clever matching: if the trigger word is not used, the entry does not appear.",
       [
         "An entry with no triggers can never appear at all. The editor warns you.",
-        "Keep an entry under 1,500 characters — that is CharSnap's limit — and around 500 is a comfortable size.",
+        "Keep an entry under 1,500 characters, which is CharSnap's limit. Around 500 is a comfortable size.",
         "Up to 25 entries can fire on a single message.",
         "A bot can have at most three lorebooks attached on CharSnap. The editor warns you past that.",
-        "Entry types — Character, Location, Item, PlotEvent, Other — are for your own sorting and barely affect the AI."
+        "Entry types (Character, Location, Item, PlotEvent, Other) are for your own sorting and barely affect the AI."
       ],
       "Importing inside a book puts everything into that book, whatever the file claims. Importing from the Lorebooks screen instead files entries by the world named in the file."
     ]
@@ -1934,7 +1952,7 @@ const GUIDE = [
     "title": "Prompts",
     "summary": "Reusable openers and instructions, kept in collections.",
     "body": [
-      "The Prompt Vault holds reusable openers, scene-setters and instruction blocks, grouped into collections. They are yours to copy out and paste wherever you want them — they are not attached to a character and are not sent anywhere on their own.",
+      "The Prompt Vault holds reusable openers, scene-setters and instruction blocks, grouped into collections. They are yours to copy out and paste wherever you want them. They are not attached to a character and are not sent anywhere on their own.",
       "A collection behaves like a lorebook: rename it, give it a cover, look at its Stats, export it as JSON or as plain text, and import prompts straight into it."
     ]
   },
@@ -1946,8 +1964,9 @@ const GUIDE = [
       [
         "Buckets are folders. A character or persona sits in one bucket, and a bucket can have its own cover picture.",
         "Tags describe a character and are how you filter your own library. They may contain spaces.",
-        "Searchable terms are extra words that help a character be found. CharSnap does not allow spaces in these, so a space becomes a hyphen when exporting — what you typed stays here unchanged.",
+        "Searchable terms are extra words that help a character be found. CharSnap does not allow spaces in these, so a space becomes a hyphen when exporting. What you typed stays here unchanged.",
         "The search box on each library screen looks through names, tags, terms and the writing itself.",
+        "Select, at the top of the Characters and Personas screens, turns on tick boxes. With several picked you can move them all into one bucket at once, or delete them together. A group deletion goes to the bin exactly as a single one does.",
         "The dashboard can be reordered, and Spotlight picks a character at random each time you open it."
       ]
     ]
@@ -1959,9 +1978,9 @@ const GUIDE = [
     "body": [
       "Everything you write costs tokens, and the AI has limited room. Stats on any character breaks this down.",
       [
-        "Permanent — description, personality, system prompts, and your persona. Sent with every message, so this is the figure worth keeping down.",
-        "Temporary — first message, scenario, example messages. Sent at the start and trimmed as the chat grows.",
-        "Never sent — creator memo, tagline, tags and searchable terms. These cost you nothing."
+        "Permanent: description, personality, system prompts, and your persona. Sent with every message, so this is the figure worth keeping down.",
+        "Temporary: first message, scenario, example messages. Sent at the start and trimmed as the chat grows.",
+        "Never sent: creator memo, tagline, tags and searchable terms. These cost you nothing."
       ],
       "CharSnap suggests keeping the permanent fields under 2,000 tokens, and warns that quality drops noticeably approaching 3,000. Stats tells you where you stand against that.",
       "A token is roughly four characters of English. Cyrillic, Chinese, Japanese and Korean are usually counted about one token per character, so for those the estimate here reads low.",
@@ -1978,13 +1997,14 @@ const GUIDE = [
       "Every screen has a single Import / Export button. The popup says what each choice does and whether your pictures go with it.",
       [
         "Export JSON is this app's own format and includes pictures. This is the one to keep as a backup.",
-        "Export text only leaves the pictures out — small enough to read or paste elsewhere. For characters, any linked lore travels with it.",
+        "Export text only leaves the pictures out, which makes it small enough to read or paste elsewhere. For characters, any linked lore travels with it.",
         "Exporting all lorebooks at once leaves the pictures behind. Export a single book to keep them.",
-        "Import accepts this app's own files, CharSnap files, and Tavern v1 and v2 character cards.",
+        "Import accepts this app's own files, CharSnap files, and Tavern v1 and v2 character cards. A file holding several characters at once, sometimes called a bot pack, is read as all of them.",
+        "If something you are importing is already in the vault, you are asked what to do with it before anything is written: bring it in as a copy, overwrite what is here, or skip it.",
         "Download a sample file gives you a blank file listing every field an import will accept."
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
-      "Backups live in Settings. Export backup writes everything — every record and every picture — as one file, and Import backup brings it back."
+      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file, and Import backup brings it back."
     ]
   },
   {
@@ -1995,7 +2015,7 @@ const GUIDE = [
       "CharSnap has two separate import buttons that take two different files. This catches people out, so the app names which is which.",
       [
         "Export for CharSnap makes a whole character. On CharSnap use Import JSON, on the Basics tab.",
-        "Export as a CharSnap variant file makes one version on its own. On CharSnap use Import Variant, on the Details tab — it drops into the variant slot you have open there.",
+        "Export as a CharSnap variant file makes one version on its own. On CharSnap use Import Variant, on the Details tab. It drops into the variant slot you have open there.",
         "Export every version for CharSnap puts up to five versions into a single file."
       ],
       "That middle one is how you build a character up in pieces: send the Default across to create the character, then add each further version to it later, instead of replacing the whole thing every time.",
@@ -2004,8 +2024,10 @@ const GUIDE = [
         "A file is only marked adult if you have ticked NSFW on the character here. NSFW picture is the separate setting that blurs your art there.",
         "CharSnap requires a personality, a description, a first message and an age. If any are blank the export says so before you send it, rather than leaving CharSnap to refuse it.",
         "Gender is sent as male, female or others, which is all CharSnap accepts.",
-        "Your own sections travel inside the description, each under its own heading — “Appearance: tall, blue-grey” — and the backstory is labelled the same way. CharSnap has no sections of its own, so this is how yours survive the trip. Each section is single-spaced inside itself, with a blank line between one section and the next.",
-        "Every CharSnap export is offered twice: once plainly, and once with the guts hidden. The hidden one wraps the backstory and personality in CharSnap’s |~ ~| marks, so readers there see only the name, tagline and pictures — the AI still reads every word, and so do you. It is chosen when you export rather than set on the character, because on CharSnap’s side the setting is nothing more than those marks in the text.",
+        "Your own sections travel inside the description, each under its own heading, such as “Appearance: tall, blue-grey”, and the backstory is labelled the same way. CharSnap has no sections of its own, so this is how yours survive the trip. Each section is single-spaced inside itself, with a blank line between one section and the next.",
+        "Four titles are the exception and do not go into the description at all. “System override”, “NSFW system override” and “Prefill instructions” become CharSnap’s prompt overrides, and “Additional first messages” becomes its alternate greetings. Anything else you have written goes into the description, whatever you called it.",
+        "Only the first section claiming one of those four titles gets it. A second section with the same title is folded into the description like any other, and its counter says so.",
+        "Every CharSnap export is offered twice: once plainly, and once with the guts hidden. The hidden one wraps the backstory and personality in CharSnap’s |~ ~| marks, so readers there see only the name, tagline and pictures. The AI still reads every word, and so do you. It is chosen when you export rather than set on the character, because on CharSnap’s side the setting is nothing more than those marks in the text.",
         "The two files are named differently, so a hidden export does not quietly replace a plain one in your Downloads folder."
       ]
     ]
@@ -2016,7 +2038,7 @@ const GUIDE = [
     "summary": "Undoing a change, and what deleting really does.",
     "body": [
       "Every character keeps up to twenty snapshots of its writing. Open History in the editor to look through them and restore one.",
-      "A snapshot holds words only. Restoring an old draft never changes, removes or brings back a picture — your artwork is left exactly as it is, on purpose.",
+      "A snapshot holds words only. Restoring an old draft never changes, removes or brings back a picture. Your artwork is left exactly as it is, on purpose.",
       "Deleting a character, persona, lorebook or prompt moves it to Recently deleted in Settings, where it waits for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
       "Pictures are the exception: removing one is immediate and permanent, which is why those buttons ask twice."
     ]
@@ -2026,13 +2048,20 @@ const GUIDE = [
     "title": "Moving to another device",
     "summary": "Copying your vault across your own network.",
     "body": [
-      "Settings has a device transfer that copies your vault to another computer over your own network. Nothing goes to the internet — the two machines talk directly, and only while you have that panel open.",
+      "Settings has a device transfer that copies your vault to another computer over your own network. Nothing goes to the internet. The two machines talk directly, and only while you have that panel open.",
+      "This is in the Windows app only. The web edition has no device transfer, because a page in a browser cannot open a connection for another machine to reach. To move a vault out of the web edition, use Export backup in Settings and import that file wherever you want it.",
       [
         "Start on the device you are copying from. It shows a one-time code.",
         "On the other device, type that code. What is sent is encrypted with a key made from it.",
         "Before anything is written you get a summary: which device is sending, which is receiving, and how many records will be added, overwritten or removed. Nothing happens until you confirm."
       ],
-      "Mirroring is off unless you turn it on. With it on, the receiving device also loses anything the sending one does not have, and the tick box names which device that is. Left off, a transfer only ever adds and updates."
+      "Mirroring only ever changes the device you are sitting at. The tick box is on the receiving side, beside the box where you type the code, and the device showing the code is never altered by a transfer at all. It answers questions and hands over records, and that is all it can do.",
+      [
+        "Left off, which is how it starts, a transfer only adds and updates. Nothing is ever removed.",
+        "Turned on, the device you typed the code into also loses anything the other one does not have. That is the only way a transfer can delete anything, anywhere.",
+        "So a machine you have been working on cannot lose your work unless you walk over to that machine, type the other one's code into it, and tick the box yourself."
+      ],
+      "Nothing is written until you have seen what will happen. The first press only compares the two vaults and reports how many records would be added, overwritten and removed, naming both devices. If anything at all would be removed the confirm button turns red and says which device it is about to mirror onto. Press it again to go ahead, or close the panel and nothing has changed."
     ]
   },
   {
@@ -2040,13 +2069,16 @@ const GUIDE = [
     "title": "Passwords and safety",
     "summary": "Encryption, the PIN, and the one thing that cannot be recovered.",
     "body": [
-      "A master password encrypts every value in the vault. Without it the vault cannot be opened — there is no recovery and no reset, because there is nobody holding a copy to ask.",
+      "A master password encrypts every value in the vault. Without it the vault cannot be opened. There is no recovery and no reset, because there is nobody holding a copy to ask.",
       [
         "Set it in Settings. The PIN is only a convenience for unlocking quickly on a machine you already trust; it is not a second password.",
         "On Windows the encryption is also tied to your account, so the files are not readable by simply copying them to another machine.",
-        "Exports are deliberately not encrypted, so other tools can read them. Anyone who gets hold of an export can read it — keep them somewhere you trust, and delete copies you no longer need."
+        "The web edition keeps its vault in the browser's own storage on that computer, encrypted the same way with your master password, but without that extra tie to a Windows account. Clearing your browser's site data removes it, so keep a backup.",
+        "For anyone who wants the specifics: values are encrypted with AES-256-GCM, and the key is stretched from your password with PBKDF2 at 210,000 iterations before Windows wraps it again.",
+        "Exports are deliberately not encrypted, so other tools can read them. Anyone who gets hold of an export can read it, so keep them somewhere you trust and delete copies you no longer need."
       ],
-      "If you forget the master password, an export you made earlier is the only way back. That is the reason to make one."
+      "If you forget the master password, an export you made earlier is the only way back. That is the reason to make one.",
+      "The interface has no way of reaching the network at all, so nothing here can be sent anywhere by accident. The device transfer is the one exception, it runs only while that panel is open, and what it sends is encrypted with a key made from the one-time code."
     ]
   },
   {
@@ -2055,10 +2087,11 @@ const GUIDE = [
     "summary": "How new versions arrive, and which file you need.",
     "body": [
       "Updates arrive as a signed file that you pick yourself in Settings. The app installs nothing on its own and never checks for anything.",
+      "This is in the Windows app only. The web edition is served rather than installed, so it is already whatever version is being hosted and there is nothing for you to apply.",
       [
         "A .rcvup file updates the interface, which covers almost every release.",
         "A setup .exe is needed when a release changes the part of the app a patch cannot reach. The release notes always say which you need, and from 1.150 the app checks too: hand it a .rcvup that needs the installer and it will tell you, rather than installing something that cannot work.",
-        "Only the newest file matters — each one contains everything before it."
+        "Only the newest file matters, because each one contains everything before it."
       ],
       "Version history in Settings lists what changed in each release. If an update ever misbehaves the app falls back to the version it shipped with, and Ctrl+Shift+F12 forces that at any time."
     ]
@@ -2830,6 +2863,23 @@ function TagInput({
 
 /* ---------- stats helpers ---------- */
 const VARIANT_TEXT_KEYS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt"];
+/* Every picture a character owns. This existed in seven places, written out by
+   hand each time, and only one of them remembered that a version carries its own
+   portrait — so a variant's picture was missing from the backup, from both
+   exports, from the pictures zip, from the blur list and from the stats count,
+   and was left orphaned in storage when an import overwrote the character. The
+   import side already expected it to be there. One list now, so the next place
+   that needs it cannot get it wrong. */
+function charImgIds(c) {
+  if (!c) return [];
+  return [c.profileImg, c.banner,
+    ...(c.gallery || []).map(g => g.imgId),
+    ...(c.variants || []).map(v => v.profileImg)].filter(Boolean);
+}
+function personaImgIds(p) {
+  if (!p) return [];
+  return [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean);
+}
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
   (c.sections || []).forEach(s => parts.push(s.title, s.content));
@@ -3459,7 +3509,7 @@ function SectionsField({
       content: e.target.value
     } : x))
   }), (() => {
-    const kind = kindOf ? kindOf(s.title) : sectionKind(s.title);
+    const kind = kindOf ? kindOf(s.title) : sectionKinds(sections)[i];
     const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
     return /*#__PURE__*/React.createElement("div", {
       title: info.why,
@@ -6852,9 +6902,16 @@ function CharacterEditor({
     } : x));
   };
   const addVariant = () => {
+    /* Named by the first number nothing else is using rather than by how many
+       versions there are. Counting meant that deleting one and adding another
+       handed out a name already taken, leaving two versions called the same
+       thing — which then travelled to CharSnap as two identical variant names. */
+    const taken = new Set(variants.map(v => (v.name || "").trim().toLowerCase()));
+    let n = 2, name;
+    do { name = "Variant " + n++; } while (taken.has(name.toLowerCase()));
     const nv = {
       id: uid(),
-      name: "Variant " + (variants.length + 2)
+      name
     };
     set("variants", [...variants, nv]);
     setVIdx(variants.length);
@@ -7845,7 +7902,7 @@ function CharacterEditor({
       content: e.target.value
     } : x))
   }), (() => {
-    const kind = sectionKind(s.title);
+    const kind = sectionKinds(c.sections)[i];
     const info = MEMORY_KIND[kind] || MEMORY_KIND.permanent;
     return /*#__PURE__*/React.createElement("div", {
       title: info.why,
@@ -9363,7 +9420,7 @@ function SettingsModal({
     style: { marginTop: 2 },
     checked: xferReplace,
     onChange: e => { setXferReplace(e.target.checked); setXferPlan(null); }
-  }), /*#__PURE__*/React.createElement("span", null, "Mirror the other device \u2014 also ", /*#__PURE__*/React.createElement("strong", { style: { color: "var(--danger)" } }, "delete anything on ", thisDevice || "this device"), " that the other one does not have. Leave this off to merge, which only ever adds and updates.")),
+  }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", { style: { color: "var(--text)" } }, "Mirror onto ", thisDevice || "this device"), ". Makes this device match the other one exactly, which means ", /*#__PURE__*/React.createElement("strong", { style: { color: "var(--danger)" } }, "deleting anything on ", thisDevice || "this device"), " that the other one does not have. The other device is never changed either way. Leave this off to merge, which only ever adds and updates.")),
   /* A dry run first. It reads both manifests and writes nothing, so the numbers
      on the confirm step are the real ones rather than a guess. */
   xferPlan && /*#__PURE__*/React.createElement("div", {
@@ -9516,7 +9573,7 @@ function RolecraftVault() {
       next = next.map(c => {
         const it = byId.get(c.id);
         if (!it) return c;
-        [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
+        charImgIds(c).forEach(id => {
           dropImage(id);
         });
         return {
@@ -9738,10 +9795,15 @@ function RolecraftVault() {
   const setBucketCover = async (name, imgId) => {
     const old = bucketMeta[name] && bucketMeta[name].cover;
     const next = { ...bucketMeta };
+    /* An empty {} entry is what keeps an empty bucket alive, so dropping the
+       entry once the cover was gone deleted the bucket along with its picture.
+       Buckets with characters in them survived, because those live on the
+       characters — it was only ever the empty ones that vanished. Removing a
+       bucket is deleteEmptyBucket's job, not this one's. */
     if (imgId) next[name] = { ...(next[name] || {}), cover: imgId };else if (next[name]) {
       const m = { ...next[name] };
       delete m.cover;
-      if (Object.keys(m).length) next[name] = m;else delete next[name];
+      next[name] = m;
     }
     setBucketMeta(next);
     await sSet("buckets:meta", JSON.stringify(next));
@@ -10564,8 +10626,8 @@ function RolecraftVault() {
      from the bin, by hand or by the 30-day sweep. */
   const TRASH_DAYS = 30;
   const imageIdsOf = (type, r) => {
-    if (type === "character") return [r.profileImg, r.banner, ...(r.gallery || []).map(g => g.imgId), ...(r.variants || []).map(v => v.profileImg)].filter(Boolean);
-    if (type === "persona") return [r.avatar, ...(r.gallery || []).map(g => g.imgId)].filter(Boolean);
+    if (type === "character") return charImgIds(r);
+    if (type === "persona") return personaImgIds(r);
     return (r.images || []).map(im => im.imgId).filter(Boolean);
   };
   /* Several at once has to be one write. Calling the single version in a loop
@@ -10911,8 +10973,8 @@ function RolecraftVault() {
     const images = {},
       thumbs = {};
     const ids = [];
-    for (const c of charList || []) ids.push(c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId));
-    for (const p of personaList || []) ids.push(p.avatar, ...(p.gallery || []).map(g => g.imgId));
+    for (const c of charList || []) ids.push(...charImgIds(c));
+    for (const p of personaList || []) ids.push(...personaImgIds(p));
     for (const id of ids.filter(Boolean)) {
       images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
       const t = await sGet("th:" + id);
@@ -10937,7 +10999,12 @@ function RolecraftVault() {
       // a tag whose variant no longer exists counts as shared, as in the viewer,
       // so an orphaned image is not quietly dropped from every scoped export
       const orphan = vid && vid !== DEFAULT_VID && !(c.variants || []).some(v => v.id === vid);
-      return !vid || orphan || (scope !== null && vid === scope);
+      /* A picture marked as the Default's own was dropped from the Default's own
+         export: it is tagged, it is not orphaned, and it matches no variant id.
+         The viewer has always shown it there, so the export lost exactly the
+         pictures that most belonged to it. Match the viewer. */
+      if (!vid || orphan) return true;
+      return scope === null ? vid === DEFAULT_VID : vid === scope;
     };
     if (scope === null) return {
       ...c,
@@ -10981,8 +11048,9 @@ function RolecraftVault() {
       images,
       thumbs
     } = await collectImagesFor([sc], []);
-    // banner belongs here too — leaving it out meant a blurred banner came back unblurred
-    const ids = [sc.profileImg, sc.banner, ...(sc.gallery || []).map(g => g.imgId)].filter(Boolean);
+    // banner belongs here too — leaving it out meant a blurred banner came back
+    // unblurred, and the same was true of a version's own portrait
+    const ids = charImgIds(sc);
     /* One file, two readers. CharSnap looks for name/gender/tagline/variants at the
        top level and ignores what it does not recognise; this app keys off `app` and
        reads `char`, so the full-fidelity record rides along underneath without
@@ -11218,6 +11286,7 @@ function RolecraftVault() {
       let n = 1;
       push(c.profileImg, base, n++);
       push(c.banner, base, n++);
+      for (const v of c.variants || []) push(v.profileImg, base, n++);
       for (const g of c.gallery || []) push(g.imgId, base, n++);
     }
     for (const p of scopePersonas || []) {
@@ -11256,8 +11325,8 @@ function RolecraftVault() {
     toast("Preparing backup…");
     const images = {};
     const imgIds = [];
-    for (const c of chars) imgIds.push(c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId));
-    for (const p of personas) imgIds.push(p.avatar, ...(p.gallery || []).map(g => g.imgId));
+    for (const c of chars) imgIds.push(...charImgIds(c));
+    for (const p of personas) imgIds.push(...personaImgIds(p));
     const thumbs = {};
     Object.values(bucketMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
@@ -14406,7 +14475,7 @@ function RolecraftVault() {
         // counts below it still cover the whole character
         const sc = scopedChar(vc, scope === undefined ? null : scope);
         const label = scopeLabel(vc, scope === undefined ? null : scope) || "Default";
-        return openRecordStats(vc.name || "Untitled", textOfChar(vc), [vc.profileImg, vc.banner, ...(vc.gallery || []).map(g => g.imgId)], promptBudget(sc), "Token cost measured for “" + label + "”" + ((vc.variants || []).length ? " · one version is in play at a time" : ""));
+        return openRecordStats(vc.name || "Untitled", textOfChar(vc), charImgIds(vc), promptBudget(sc), "Token cost measured for “" + label + "”" + ((vc.variants || []).length ? " · one version is in play at a time" : ""));
       },
       onClose: () => setViewCharId(null),
       onEdit: () => {
