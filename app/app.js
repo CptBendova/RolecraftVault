@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.140";
+const APP_VERSION = "1.141";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.140";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.140 — current",
+  heading: "1.141 — current",
+  notes: ["Characters can be marked adult, and it now travels to CharSnap. Two tick boxes sit under the core details: “NSFW” for adult writing, and “NSFW picture” for pictures that need blurring — the two flags CharSnap actually asks for. Until now every file this app wrote said the character was not adult, whatever it was, and you had to remember to set it again on CharSnap after importing.","They come back in, too. A CharSnap file that carries either flag now arrives with it set instead of being dropped, so a character taken out and brought home keeps the marking. Version history remembers them alongside tags and buckets, so restoring an older draft restores what it was marked as then.","“Export for CharSnap” now tells you what the file will say — “Marked NSFW and NSFW picture, as set on this character”, or that it is marked not adult with a reminder to set it if it should be. It used to tell everyone to go and tick it on CharSnap, because the app had no way of knowing."]
+}, {
+  heading: "1.140",
   notes: ["Importing a CharSnap file quietly dropped four of its fields. CharSnap keeps the base prompt override, the NSFW prompt override, the prefill instruction override and the alternate greetings on each variant, spelled with underscores — this app only ever looked for a different spelling at the top of the file, so all four vanished on the way in without a word. That included files this app had just written itself, because the export always spelled them CharSnap’s way. Both spellings are read now, wherever they sit, and a file taken out and brought back keeps everything it left with.","Stats now say where a character sits against CharSnap’s own guidance. CharSnap suggests keeping the permanent fields under 2,000 tokens and warns that quality drops badly near 3,000; the counter had the figure but never the yardstick. There is a line for it now, and it says plainly when you are over.","The token estimate now admits where it reads low. It counts about four characters to a token, which is CharSnap’s own rule of thumb, but Cyrillic, Chinese, Japanese and Korean are usually counted a token per character — so for those the figure understates, and it now says so rather than quietly being wrong.","Attaching more than three lorebooks to a character now says what will happen. CharSnap takes at most three per bot; the vault has never limited it and nothing warned you that the fourth would not travel.","The lorebook entry editor now shows CharSnap’s limits while you write. An entry description can be 1,500 characters and about 500 is suggested, so there is a live count that turns to a warning once it will no longer fit. An entry with no triggers now says so too — without one it can never come up in a chat.","“Export for CharSnap” now mentions that the file is marked not-NSFW. This app has no such setting, so the flag always goes out false; if the character is adult you need to tick it on CharSnap after importing.","The sample file was missing fields CharSnap accepts. The two NSFW flags and the four per-variant override and alternate-greeting fields are all in it now, and the note at the top covers the things that catch people out: age is required on every variant, searchables cannot contain spaces, and anything past the fifth variant is ignored."]
 }, {
   heading: "1.139",
@@ -357,7 +360,7 @@ function compressImage(file, maxDim = 1000, quality = 0.85) {
    this is the one worth handing someone who asks what to write. Unknown keys are
    ignored on import, so the note travels with the file harmlessly. */
 const SAMPLE_CHARACTER_JSON = {
-  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number, and CharSnap requires one on every variant. Each variant can also carry its own gender and pronouns; leave them blank and it uses the Default's. 'sections' are your own titled blocks, shared by every variant — CharSnap has no such field, so they are folded into the description on the way out. 'searchables' must not contain spaces. CharSnap keeps at most five variants and ignores any beyond the fifth. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
+  _readme: "Fill in what you want to change and leave the rest empty — empty fields are ignored, so a file with only 'personality' set will update only that. 'age' is text, not a number, and CharSnap requires one on every variant. Each variant can also carry its own gender and pronouns; leave them blank and it uses the Default's. 'sections' are your own titled blocks, shared by every variant — CharSnap has no such field, so they are folded into the description on the way out. 'searchables' must not contain spaces. 'nsfw' and 'nsfw_picture' are the character's adult flags and come across on import. CharSnap keeps at most five variants and ignores any beyond the fifth. Rolecraft Vault also accepts its own character export and Tavern v1/v2 cards.",
   name: "",
   gender: "",
   tagline: "",
@@ -782,6 +785,9 @@ function normalizeCharacterImport(obj) {
         age: raw.age || "",
         gender: raw.gender || "",
         pronouns: raw.pronouns || "",
+        // CharSnap keeps these two on the character, not the variant
+        nsfw: !!raw.nsfw,
+        nsfwPicture: !!raw.nsfwPicture,
         tags: toTagList(raw.tags),
         searchables: toTermList(raw.searchables),
         story: raw.story || raw.backstory || raw.description || "",
@@ -916,6 +922,8 @@ function normalizeCharacterImport(obj) {
     const firstVName = /^default$/i.test(fvn) ? "" : fvn;
     const res0 = fresh({
       name: S(d.name || d.variant_name),
+      nsfw: !!(d.nsfw != null ? d.nsfw : v0.nsfw),
+      nsfwPicture: !!(d.nsfw_picture != null ? d.nsfw_picture : d.nsfwPicture),
       tags: toTagList(d.tags),
       // CharSnap keeps several fields on the variant, so look there too
       searchables: firstTermList(d.searchables, firstV && firstV.searchables),
@@ -1292,18 +1300,17 @@ function charToCharSnap(c, scope) {
   }
   const scopedV = scopeAll || scope === null ? null : (c.variants || []).find(v => v.id === scope);
   /* Key order and set follow CharSnap's own "Full-Character" import template.
-     tags/searchables go out even when empty, as the template does. This app has
-     no NSFW flag, so those two are emitted false — the same result as omitting
-     them, but explicit and matching the documented shape. If a character is adult,
-     mark it on CharSnap after importing. */
+     tags/searchables go out even when empty, as the template does. The two NSFW
+     flags are the character's own now rather than always false — CharSnap asks
+     for the first on any adult bot and uses the second to blur the pictures. */
   const main = {
     name: c.name || "Untitled",
     gender: gender,
     tagline: scopedV && (scopedV.tagline || "").trim() ? scopedV.tagline : tagline,
     tags: (c.tags || []).slice(),
     searchables: (c.searchables || []).slice(),
-    nsfw: false,
-    nsfw_picture: false,
+    nsfw: !!c.nsfw,
+    nsfw_picture: !!c.nsfwPicture,
     variants: variants
   };
   return {
@@ -4901,7 +4908,7 @@ function CharacterPage({
         onClick: () => onExportText(activeVar)
       }, {
         label: "Export for CharSnap",
-        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. The file is marked not-NSFW: this app has no such setting, so tick it on CharSnap if the character is adult.",
+        hint: "Ready to upload. No pictures — CharSnap cannot take them from a file at all, so add them there afterwards. " + (c.nsfw || c.nsfwPicture ? "Marked " + [c.nsfw ? "NSFW" : "", c.nsfwPicture ? "NSFW picture" : ""].filter(Boolean).join(" and ") + ", as set on this character." : "Marked not adult — set that on the character if it should be."),
         onClick: () => onExportCharSnap(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
@@ -6032,6 +6039,8 @@ function snapshotChar(c, label) {
     tags: (c.tags || []).slice(),
     searchables: (c.searchables || []).slice(),
     bucket: c.bucket || "",
+    nsfw: !!c.nsfw,
+    nsfwPicture: !!c.nsfwPicture,
     lorebooks: (c.lorebooks || []).slice(),
     sections: (c.sections || []).map(s => ({
       id: s.id, // kept so a restore can still resolve sectionOrder's "sec:<id>" keys
@@ -6075,6 +6084,8 @@ function applySnapshot(c, snap) {
     tags: (snap.tags || []).slice(),
     searchables: (snap.searchables || []).slice(),
     bucket: snap.bucket || "",
+    nsfw: !!snap.nsfw,
+    nsfwPicture: !!snap.nsfwPicture,
     lorebooks: (snap.lorebooks || []).slice(),
     sections,
     sectionOrder: order && order.length ? order : null,
@@ -6662,6 +6673,38 @@ function CharacterEditor({
       marginBottom: 14
     }
   }), /*#__PURE__*/React.createElement("label", {
+    className: "lbl"
+  }, "Adult content — both of these travel to CharSnap"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-start",
+      fontSize: 13,
+      color: "var(--mut)",
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    style: { marginTop: 2 },
+    checked: !!c.nsfw,
+    onChange: e => set("nsfw", e.target.checked)
+  }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", { style: { color: "var(--text)" } }, "NSFW"), " — ", "the writing is adult. CharSnap asks for this on any bot that needs it.")), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-start",
+      fontSize: 13,
+      color: "var(--mut)",
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    style: { marginTop: 2 },
+    checked: !!c.nsfwPicture,
+    onChange: e => set("nsfwPicture", e.target.checked)
+  }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", { style: { color: "var(--text)" } }, "NSFW picture"), " — ", "blur the pictures on CharSnap. Their rule is that nudity is fine but must be blurred.")), /*#__PURE__*/React.createElement("label", {
     className: "lbl"
   }, "Tags — filter and find characters by these"), /*#__PURE__*/React.createElement(TagInput, {
     tags: c.tags,
