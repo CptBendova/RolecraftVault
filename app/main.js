@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.152";
+const FACTORY_BUILD = "1.153";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -268,6 +268,15 @@ function vaultSignature() {
   }
   return h.digest("hex");
 }
+/* Reading a record and hashing it. Pulled out so the blocking build and the
+   yielding one below cannot drift apart in what they produce. */
+function hashOfRecord(k) {
+  try {
+    const v = readValue(k);
+    if (v === null || v === undefined) return null;
+    return crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 16);
+  } catch (e) { return null; }
+}
 function buildManifest(report) {
   const sig = vaultSignature();
   if (sig && manifestCache && manifestCache.sig === sig) {
@@ -278,15 +287,35 @@ function buildManifest(report) {
   const m = {};
   let i = 0;
   for (const k of keys) {
-    try {
-      const v = readValue(k);
-      if (v !== null && v !== undefined) m[k] = crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 16);
-    } catch (e) {}
+    const h = hashOfRecord(k);
+    if (h !== null) m[k] = h;
     if (report) report(++i, keys.length);
   }
   // only cache a scan that matches the folder it started from
   if (sig && sig === vaultSignature()) manifestCache = { sig, manifest: m };
   return m;
+}
+/* The same scan, done before anyone is waiting on it. Yields every few records
+   so the window keeps painting and can say how far along it is. */
+async function warmManifest(report) {
+  const sig = vaultSignature();
+  if (sig && manifestCache && manifestCache.sig === sig) return;
+  const keys = allKeys();
+  const m = {};
+  for (let i = 0; i < keys.length; i++) {
+    const h = hashOfRecord(keys[i]);
+    if (h !== null) m[keys[i]] = h;
+    if (report) report(i + 1, keys.length);
+    if ((i & 15) === 15) await new Promise(r => setImmediate(r));
+  }
+  if (sig && sig === vaultSignature()) manifestCache = { sig, manifest: m };
+}
+function sendToWindow(channel, payload) {
+  try {
+    const wins = BrowserWindow.getAllWindows();
+    const win = wins && wins[0];
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  } catch (e) {}
 }
 /* Both sides of a transfer look identical once you are staring at a code, which
    is how someone mirrors the wrong way round and deletes the vault they meant to
@@ -519,9 +548,21 @@ function startTransferServer() {
       settled = true;
       const port = addr.port;
       const code = makeCode(ip, port, secret);
-      transferState = { secret, code, expiresAt: Date.now() + 10 * 60 * 1000 };
-      transferState.timer = setTimeout(stopTransferServer, 10 * 60 * 1000);
-      resolve({ ok: true, code, ip, port, expiresInMinutes: 10, device: deviceName() });
+      /* The listing is built now rather than when the other device asks for it.
+         Throttled to one message every tenth of a second, because a report fires
+         per record and each one crosses to the window. */
+      let last = 0;
+      warmManifest((done, total) => {
+        const now = Date.now();
+        if (done < total && now - last < 100) return;
+        last = now;
+        sendToWindow("transfer-progress", { phase: "preparing", done, total, pct: total > 0 ? done / total : 0 });
+      }).catch(() => {}).then(() => {
+        sendToWindow("transfer-progress", { phase: "done" });
+        transferState = { secret, code, expiresAt: Date.now() + 10 * 60 * 1000 };
+        transferState.timer = setTimeout(stopTransferServer, 10 * 60 * 1000);
+        resolve({ ok: true, code, ip, port, expiresInMinutes: 10, device: deviceName() });
+      });
     });
   });
 }
@@ -675,7 +716,10 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
   };
   let target;
   try { target = parseCode(code); } catch (e) { return { ok: false, error: "That code isn't valid" }; }
-  const base = { host: target.ip, port: target.port, timeout: 30000 };
+  /* Thirty seconds was the whole budget for a request that can involve the other
+     device reading its entire vault. It only has to be generous: a device that is
+     not there fails on connect, not on this. */
+  const base = { host: target.ip, port: target.port, timeout: 180000 };
   let remote;
   try {
     phase("asking", 0, 0);

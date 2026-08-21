@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.152";
+const APP_VERSION = "1.153";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.152";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.152 — current",
+  heading: "1.153 — current",
+  notes: ["Sharing a vault timed out before it ever started. The listing the other device asks for is built by reading and decrypting every record you own, pictures included, and hashing each one. That was left until the other device asked for it, and the other device only waits thirty seconds, so on a vault of any real size the first thing that happened was a failure saying the other device did not answer. It had answered; it was still reading.","The work now happens the moment you press Share this vault, with the button telling you it is getting ready and a bar showing how far along it is. The code appears only once this device can answer immediately. The reading is done in small pieces so the window keeps responding rather than freezing while it works.","The device receiving also waits three minutes instead of thirty seconds now, in case it is asking a copy that has not warmed up yet. A device that is not there still fails straight away, because that fails when connecting rather than when waiting.","Opening a character on a large screen left the library showing around it. A character, a persona or the editor opens as a sheet over everything else, but it was sharing the same width limit as the page underneath, so on a 4K monitor it was narrower than the screen. Worse, the two were centred against different things, so the grid of characters poked out past its edge and stayed visible. A sheet now covers the screen it is covering.","Nothing is capped to a narrow column in the middle of a big monitor any more. The libraries, the galleries and anything else built from a grid now use the whole width and simply fit more per row: a 4K screen shows eighteen characters across where it used to show eight. The dashboard keeps a limit of its own, because a heading on the far left with its counts three thousand pixels away stopped reading as one thing.","The reading column inside a record is wider too, but still stops well short of the full width of a large monitor, because a line of text that long is genuinely hard to read. Characters with a gallery keep the two-column layout and now have considerably more room for it."]
+}, {
+  heading: "1.152",
   notes: ["A mirror is now agreed on both devices. Mirroring is the only thing in the app that deletes records, and until now the device it deleted from was the only one that knew it was happening. The other machine sat there sharing, with no idea. It now shows a box naming both devices and saying how many records would be copied, overwritten and deleted, and nothing is written anywhere until somebody answers it. A question nobody answers counts as a refusal, never as approval.","If the direction is wrong you can turn it around from that box instead of starting again. Choosing “the other way” makes the device that was sharing the one that gets overwritten, and it then shows its own summary and its own red confirm before anything happens. This is the case worth having: you set it up on the wrong machine and notice it on the other screen.","Mirroring needs this version on both devices. An older one cannot be asked, so rather than quietly going ahead without the agreement, mirroring stops and says which installer the other device needs. Merging is untouched and still works with any version, because it only ever adds and updates.","The tick box for mirroring was also the wrong way round in its wording. It said “Mirror the other device”, which reads as though it changes the other machine, when it changes yours. It now says “Mirror onto <this device>” and states that the other device is never changed.","The guide explains all of it properly, including the thing that made it confusing: both devices show the same panel, so both have a mirror tick box, and the one you can see governs only the machine you are looking at. It also now says a transfer is all or nothing, and that exporting a single record is the way to move one character rather than the whole library."]
 }, {
   heading: "1.151",
@@ -1607,7 +1610,21 @@ const CSS = `
      The explicit width matters: auto margins on a flex item cancel the stretch
      it would otherwise get, and without it the column sizes to its content and
      spills past a narrow screen. */
-  .rcv > .scrollbody { width: 100%; max-width: 1628px; margin-left: auto; margin-right: auto; }
+  /* The column itself is no longer capped, so the libraries, the galleries and
+     anything else built from a grid use the whole screen and simply fit more per
+     row. The two places that came apart when this was uncapped are handled
+     directly: the dashboard below, and the reading column inside a record. */
+  .rcv > .scrollbody { width: 100%; }
+  /* Four counts and a heading stretched across a 4K monitor stopped reading as
+     one thing, the heading on the far left and the counts three thousand pixels
+     away. Capped here rather than on the column, so it does not cost every other
+     screen its width. */
+  .rcv .dashwrap { max-width: 2280px; margin-left: auto; margin-right: auto; }
+  /* A sheet is the whole screen: a character, a persona or the editor, opening
+     over the library. It is position:fixed, so the cap above made it narrower
+     than the viewport and left the library visible around it. Nothing behind a
+     sheet should be visible through it, whatever the reading column is set to. */
+  .rcv > .scrollbody.sheet { max-width: none; margin-left: 0; margin-right: 0; }
   .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
@@ -3897,7 +3914,7 @@ function ImageGridView({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       display: "flex",
       gap: 10,
@@ -3971,7 +3988,7 @@ function ImageGridView({
     onClick: onClose
   }, "Close")), onSetVariant && vOpts.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "12px auto 0",
       display: "flex",
       gap: 8,
@@ -4065,7 +4082,7 @@ function ImageGridView({
     value: v.id
   }, v.name + " portrait"))))), onSetAlbum && /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "12px auto 0",
       display: "flex",
       gap: 8,
@@ -4192,7 +4209,7 @@ function ImageGridView({
     }
   }, confirmAlbumDel ? "Click again — “" + album + "” goes, pictures stay" : "Delete album")))), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "22px 26px 80px"
     }
@@ -4782,7 +4799,7 @@ function LorebookPage({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "30px 30px 24px"
     }
@@ -4946,7 +4963,7 @@ function LorebookPage({
     }
   })))), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "24px 30px 80px"
     }
@@ -5280,7 +5297,7 @@ function CharacterPage({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody"
+    className: "scrollbody sheet"
   }, /*#__PURE__*/React.createElement(CloseX, {
     onClose: onClose,
     fixed: true,
@@ -5321,7 +5338,7 @@ function CharacterPage({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "36px 30px 32px",
       display: "flex",
@@ -5648,7 +5665,7 @@ function CharacterPage({
     size: 13
   }), " Stats")))))), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "28px 30px 80px"
     }
@@ -5661,7 +5678,7 @@ function CharacterPage({
       gap: 14,
       minWidth: 0,
       ...(hasAside ? {} : {
-        maxWidth: 940,
+        maxWidth: 1180,
         margin: "0 auto",
         width: "100%"
       })
@@ -6048,7 +6065,7 @@ function PersonaPage({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody"
+    className: "scrollbody sheet"
   }, /*#__PURE__*/React.createElement(CloseX, {
     onClose: onClose,
     fixed: true,
@@ -6068,7 +6085,7 @@ function PersonaPage({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "36px 30px 32px",
       display: "flex",
@@ -6268,7 +6285,7 @@ function PersonaPage({
     }
   })))), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1560,
+      maxWidth: 2280,
       margin: "0 auto",
       padding: "28px 30px 80px"
     }
@@ -6281,7 +6298,7 @@ function PersonaPage({
       gap: 14,
       minWidth: 0,
       ...(hasAside ? {} : {
-        maxWidth: 940,
+        maxWidth: 1180,
         margin: "0 auto",
         width: "100%"
       })
@@ -7151,7 +7168,7 @@ function CharacterEditor({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody"
+    className: "scrollbody sheet"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: 1080,
@@ -8682,6 +8699,7 @@ function SettingsModal({
      one number for a minute reads as a hang. The two that know how much is left
      say so; the two that cannot are honest about it and stripe instead. */
   const XFER_STEPS = {
+    preparing: "Getting this vault ready to share",
     asking: "Asking the other device what it has",
     comparing: "Working out what is different here",
     packing: "The other device is gathering the records",
@@ -9469,7 +9487,7 @@ function SettingsModal({
         if (r.device) setThisDevice(r.device);
       } else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
     }
-  }, xferBusy ? spinner("Starting\u2026") : "Share this vault"),
+  }, xferBusy ? spinner(xferProg && xferProg.phase === "preparing" ? "Getting ready\u2026" : "Starting\u2026") : "Share this vault"),
   /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
   }, "Receive onto ", here),
@@ -12211,7 +12229,9 @@ function RolecraftVault() {
         onClick: w.open
       }, w.kind === "persona" ? "Open persona" : "Open character")))))))) : null
     };
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "dashwrap"
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
