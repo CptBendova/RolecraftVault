@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.151";
+const FACTORY_BUILD = "1.152";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -189,6 +189,32 @@ function decryptPayload(blob, secret) {
 }
 
 let transferServer = null;
+/* A mirror asks the other device first, and that question has to survive the
+   round trip: the HTTP response is held open while a window shows a dialog and
+   somebody decides. Keyed by id so two requests cannot answer each other. */
+const pendingMirrorAsks = new Map();
+function askThisDevice(detail, timeoutMs) {
+  const wins = BrowserWindow.getAllWindows();
+  const win = wins && wins[0];
+  if (!win || win.isDestroyed()) return Promise.resolve("unavailable");
+  const id = crypto.randomBytes(8).toString("hex");
+  return new Promise(resolve => {
+    let done = false;
+    const finish = answer => {
+      if (done) return;
+      done = true;
+      pendingMirrorAsks.delete(id);
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    // an unanswered question is a refusal, never an approval
+    const timer = setTimeout(() => finish("refuse"), timeoutMs);
+    pendingMirrorAsks.set(id, finish);
+    try {
+      win.webContents.send("transfer-mirror-request", Object.assign({ id }, detail));
+    } catch (e) { finish("unavailable"); }
+  });
+}
 let transferState = null; // { secret, code, expiresAt, timer }
 
 function lanAddress() {
@@ -440,6 +466,41 @@ function startTransferServer() {
       req.on("error", () => { try { res.destroy(); } catch (e) {} });
       return;
     }
+    /* A mirror is the only thing that can delete records, so it is agreed here
+       as well as there. The body carries the asking device's name, its own
+       pairing code so this device can turn the transfer around if the person
+       says the direction is wrong, and the counts they are looking at. */
+    if (req.method === "POST" && route === "/mirror-request") {
+      const MAX_ASK = 64 << 10;
+      const chunks = [];
+      let size = 0;
+      req.on("data", d => {
+        size += d.length;
+        if (size > MAX_ASK) { res.writeHead(413); res.end("too big"); req.destroy(); return; }
+        chunks.push(d);
+      });
+      req.on("end", async () => {
+        if (size > MAX_ASK) return;
+        try {
+          const ask = JSON.parse(decryptPayload(Buffer.concat(chunks), secret).toString("utf8"));
+          const decision = await askThisDevice({
+            device: String(ask.device || "The other device").slice(0, 60),
+            theirCode: String(ask.code || "").slice(0, 40),
+            added: Number(ask.added) || 0,
+            updated: Number(ask.updated) || 0,
+            removed: Number(ask.removed) || 0,
+            thisDevice: deviceName()
+          }, 3 * 60 * 1000);
+          const blob = encryptPayload(Buffer.from(JSON.stringify({ decision }), "utf8"), secret);
+          res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": blob.length });
+          res.end(blob);
+        } catch (e) {
+          res.writeHead(400); res.end("bad");
+        }
+      });
+      req.on("error", () => { try { res.destroy(); } catch (e) {} });
+      return;
+    }
     res.writeHead(404); res.end("no");
   });
   return new Promise(resolve => {
@@ -660,6 +721,53 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
     return Object.assign({ ok: true, added: 0, updated: 0, removed: 0, unchanged, bytes: 0, upToDate: true }, who);
   }
 
+  /* Nothing has been written yet. A mirror stops here until the other device
+     agrees, because this is the only path that deletes anything. A merge does
+     not ask: it only ever adds and updates. */
+  if (mirror && removable.length) {
+    let mine = null;
+    try {
+      // our own code, so they can turn the transfer around without starting over
+      mine = await startTransferServer();
+    } catch (e) { mine = null; }
+    if (!mine || !mine.ok) {
+      return { ok: false, error: "Couldn't offer this device for the other one to check. Mirroring needs both devices reachable on the same network." };
+    }
+    let decision = "unavailable";
+    try {
+      const body = encryptPayload(Buffer.from(JSON.stringify({
+        device: deviceName(), code: mine.code, added, updated, removed: removable.length
+      }), "utf8"), target.secret);
+      /* base last would put its own 30 second timeout back, and this request is
+         deliberately held open while a person reads a dialog, so ours has to win. */
+      const blob = await httpBuffer(Object.assign({}, base, {
+        path: "/mirror-request", method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
+        timeout: 4 * 60 * 1000
+      }), body);
+      decision = JSON.parse(decryptPayload(blob, target.secret).toString("utf8")).decision;
+    } catch (e) {
+      // an older build has no such route, so the question cannot be put at all
+      decision = "unavailable";
+    }
+    /* Reverse is the one answer that needs this device still listening, because
+       the other one is about to connect back to it. Every other answer means we
+       have finished offering and should stop. */
+    if (decision !== "reverse") stopTransferServer();
+    if (decision === "reverse") {
+      return Object.assign({ ok: false, reversed: true, theirCode: code,
+        error: "The other device asked to mirror the other way instead." }, who);
+    }
+    if (decision === "unavailable") {
+      return Object.assign({ ok: false, needsBothUpdated: true,
+        error: "This device could not ask " + (who.otherDevice || "the other device") + " to approve. Mirroring needs the newer version on both devices. Merging still works." }, who);
+    }
+    if (decision !== "allow") {
+      return Object.assign({ ok: false, refused: true,
+        error: (who.otherDevice || "The other device") + " refused the mirror. Nothing was changed." }, who);
+    }
+  }
+
   let bytes = 0;
   if (needed.length) {
     const encPath = path.join(updatesDir, "incoming.bin");
@@ -827,6 +935,12 @@ function verifyPassword(pw) {
 
 function setupAuthIpc() {
   ipcMain.handle("transfer-start", () => startTransferServer());
+  ipcMain.handle("transfer-mirror-respond", (e, id, decision) => {
+    const finish = pendingMirrorAsks.get(String(id));
+    if (!finish) return { ok: false };
+    finish(decision === "allow" || decision === "reverse" ? decision : "refuse");
+    return { ok: true };
+  });
   ipcMain.handle("transfer-stop", () => { stopTransferServer(); return { ok: true }; });
   ipcMain.handle("transfer-status", () => transferState
     ? { active: true, code: transferState.code, minutesLeft: Math.max(0, Math.round((transferState.expiresAt - Date.now()) / 60000)), device: deviceName() }

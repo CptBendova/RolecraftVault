@@ -38,6 +38,14 @@ contextBridge.exposeInMainWorld("transfer", {
     ipcRenderer.on("transfer-progress", h);
     return () => ipcRenderer.removeListener("transfer-progress", h);
   },
+  /* The other device is asking whether it may mirror from this one. The reply
+     goes back by id, so an answer cannot land on a different question. */
+  onMirrorRequest: (cb) => {
+    const h = (_e, payload) => { try { cb(payload); } catch (err) {} };
+    ipcRenderer.on("transfer-mirror-request", h);
+    return () => ipcRenderer.removeListener("transfer-mirror-request", h);
+  },
+  respondMirror: (id, decision) => ipcRenderer.invoke("transfer-mirror-respond", id, decision),
 });
 contextBridge.exposeInMainWorld("updater", {
   status: () => ipcRenderer.invoke("updates-status"),

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.151";
+const APP_VERSION = "1.152";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.151";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.151 — current",
+  heading: "1.152 — current",
+  notes: ["A mirror is now agreed on both devices. Mirroring is the only thing in the app that deletes records, and until now the device it deleted from was the only one that knew it was happening. The other machine sat there sharing, with no idea. It now shows a box naming both devices and saying how many records would be copied, overwritten and deleted, and nothing is written anywhere until somebody answers it. A question nobody answers counts as a refusal, never as approval.","If the direction is wrong you can turn it around from that box instead of starting again. Choosing “the other way” makes the device that was sharing the one that gets overwritten, and it then shows its own summary and its own red confirm before anything happens. This is the case worth having: you set it up on the wrong machine and notice it on the other screen.","Mirroring needs this version on both devices. An older one cannot be asked, so rather than quietly going ahead without the agreement, mirroring stops and says which installer the other device needs. Merging is untouched and still works with any version, because it only ever adds and updates.","The tick box for mirroring was also the wrong way round in its wording. It said “Mirror the other device”, which reads as though it changes the other machine, when it changes yours. It now says “Mirror onto <this device>” and states that the other device is never changed.","The guide explains all of it properly, including the thing that made it confusing: both devices show the same panel, so both have a mirror tick box, and the one you can see governs only the machine you are looking at. It also now says a transfer is all or nothing, and that exporting a single record is the way to move one character rather than the whole library."]
+}, {
+  heading: "1.151",
   notes: ["The guide now says which parts belong to the Windows app alone. Copying your vault to another device and installing updates do not exist in the web edition, and their panels are simply not shown there, so the guide said nothing while someone went looking for a button that was never on their screen. Moving a vault out of the web edition is a backup file instead, and the guide says so in the same breath. It also notes that the web edition keeps its vault in the browser’s storage on that computer, so clearing your site data removes it.","The mirroring tick box said “Mirror the other device”, which reads as though it changes the other machine. It changes this one. It now says “Mirror onto <this device>”, matching the “Receive onto” heading above it, and states plainly that the other device is never changed either way.","The guide explains mirroring properly now. It always said which device loses records, but never that the choice is made on that same device, which is the whole reason it is safe: a machine cannot lose your work unless you walk over to it, type the other one’s code in, and tick the box there yourself.","The guide no longer uses em dashes anywhere.","Four things the guide never covered are in it now: choosing several characters at once with Select and what you can then do with them, the reading text size in Settings, files holding more than one character, and being asked what to do when something you are importing is already here.","The guide also said custom sections arrive at CharSnap with their titles above them, which stopped being true when headings moved onto the same line. Publishing to CharSnap now also names the four section titles that do not go into the description at all, which was only mentioned under Tokens before, and says that a second section claiming one of those titles is folded in like any other.","Passwords and safety now names the encryption for anyone who wants it: AES-256-GCM, with the key stretched by PBKDF2 at 210,000 iterations before Windows wraps it again.","A version’s own portrait was missing from your backup. A character’s pictures were gathered by hand in seven different places, and only one of them remembered that a version carries a portrait of its own — so the picture you set on “Young Vela” was left out of the full backup, out of both character exports, out of the pictures zip and out of the stats count. Worse than absent: the character still pointed at it, so importing the file elsewhere produced a version referring to a picture that was not in it. There is one list now, and everything reads from it.","Oddly, characters in the bin were already backed up properly — the bin used the complete list while the live characters beside it did not. So a deleted character kept more of its artwork than one you still had.","If you have a backup taken before today, the version portraits are not in it. Take a fresh one. Nothing in your vault was lost — the pictures have been there all along, only the copies leaving the app were short.","Exporting just the Default threw away the Default’s own pictures. A picture can be marked as belonging to everyone, to one version, or to the Default alone. Exporting the Default kept the shared ones and dropped the ones marked as its own, which is exactly backwards — and the character page had always shown them there, so the file disagreed with what you were looking at.","Removing a bucket’s cover picture deleted the bucket. Only an empty one, and only if you used the small x on its cover — but the bucket was simply gone, when all you asked for was the picture to go. Buckets with characters in them were never affected, since those are held by the characters themselves.","A second section with the same reserved title was labelled wrongly. Give two sections the title “System override” and only the first becomes the override; the second is folded into the description like any other. The counter went by the title alone, so it called both of them overrides — telling you the second was charged to a separate allowance when its words were really being paid for on every reply. The counter and the export now work it out the same way, from the same code.","Adding a version could hand it a name already in use. New versions were named by counting, so deleting one and adding another produced two called “Variant 3” — and both travelled to CharSnap under that name. A new version now takes the first number nothing else is using, and names you have chosen yourself are left alone."]
 }, {
   heading: "1.150",
@@ -2055,13 +2058,18 @@ const GUIDE = [
         "On the other device, type that code. What is sent is encrypted with a key made from it.",
         "Before anything is written you get a summary: which device is sending, which is receiving, and how many records will be added, overwritten or removed. Nothing happens until you confirm."
       ],
-      "Mirroring only ever changes the device you are sitting at. The tick box is on the receiving side, beside the box where you type the code, and the device showing the code is never altered by a transfer at all. It answers questions and hands over records, and that is all it can do.",
+      "Both devices show the same panel, and that is the thing worth knowing. Each one has a Share this vault button at the top and a Receive onto box underneath it, so each one also has its own mirror tick box. The tick box you are looking at belongs to the machine you are looking at, and decides what happens to that machine and nothing else. The other device's tick box has no bearing on it.",
+      "Mirroring is not something you start on its own, which is why there seems to be no button for it. It is a setting on a copy you are about to receive, so it does nothing until you type the other device's code into the box above it and press the button underneath, on that same machine.",
       [
-        "Left off, which is how it starts, a transfer only adds and updates. Nothing is ever removed.",
-        "Turned on, the device you typed the code into also loses anything the other one does not have. That is the only way a transfer can delete anything, anywhere.",
-        "So a machine you have been working on cannot lose your work unless you walk over to that machine, type the other one's code into it, and tick the box yourself."
+        "On the device that has the writing, press Share this vault. It shows a one-time code and then waits. Nothing leaves it unless the other device asks, and nothing on it is changed by any of this.",
+        "On the device you want changed, tick the box if you want mirroring, type the code, and press the button. Leave the box alone and the transfer only adds and updates, removing nothing.",
+        "Press once to see what would happen and again to do it. So a machine cannot lose your work unless you are standing at that machine, typing the other one's code into it."
       ],
-      "Nothing is written until you have seen what will happen. The first press only compares the two vaults and reports how many records would be added, overwritten and removed, naming both devices. If anything at all would be removed the confirm button turns red and says which device it is about to mirror onto. Press it again to go ahead, or close the panel and nothing has changed."
+      "A mirror then asks the other device as well, because it is the only thing that can delete anything. A box appears over there naming both machines and saying how many records would be copied, overwritten and deleted, and whoever is sitting at it can allow it, refuse it, or turn it around. Nothing is written anywhere until that is answered, and a question nobody answers counts as a refusal.",
+      "Turning it around is there for the case you are worried about: you set it up the wrong way and notice on the other screen. Choosing it makes the machine that was sharing the one that gets overwritten instead, and it then shows its own summary and its own red confirm button before anything happens. You do not have to start again.",
+      "Both devices need this version for that. If the other one is older it cannot be asked, so mirroring stops and says so rather than going ahead without it. Merging is unaffected and works with any version, because it only ever adds and updates.",
+      "The first press only compares the two vaults. It writes nothing and reports how many records would be added, overwritten and removed, naming both devices. If anything at all would be removed the confirm button turns red and says which device it is about to mirror onto. Press it again to go ahead, or close the panel and nothing has changed.",
+      "A transfer is for making two machines hold the same library. There is no way to share only part of a vault: the device that shares offers all of it, and the other one takes whatever it is missing. To move a single character, persona, lorebook or prompt instead, export that one record to a file and import it on the other machine. That adds the one thing and touches nothing else."
     ]
   },
   {
@@ -8641,6 +8649,25 @@ function SettingsModal({
   const [xferPlan, setXferPlan] = useState(null); // dry run: what a sync would do here
   const [thisDevice, setThisDevice] = useState(null);
   const [xferProg, setXferProg] = useState(null);
+  /* The other device is asking to mirror from this one. Held in state rather
+     than answered straight away, because a person has to read it. */
+  const [mirrorAsk, setMirrorAsk] = useState(null);
+  const [reverseFrom, setReverseFrom] = useState(null); // their code, once we have said "the other way"
+  useEffect(() => {
+    if (!window.transfer || !window.transfer.onMirrorRequest) return;
+    return window.transfer.onMirrorRequest(a => setMirrorAsk(a));
+  }, []);
+  /* Saying "mirror the other way" turns this device into the receiving one. It
+     runs the ordinary receive against the code they sent, so the preview and
+     the red confirm below happen here, on the device that is now at risk. */
+  useEffect(() => {
+    if (!reverseFrom) return;
+    setXferCode(reverseFrom);
+    setXferReplace(true);
+    setXferPlan(null);
+    setXferMsg({ ok: true, text: "You chose to mirror the other way. Press the button below to see what that would do to this device." });
+    setReverseFrom(null);
+  }, [reverseFrom]);
   useEffect(() => {
     if (window.transfer) window.transfer.status().then(s => {
       if (s && s.active) setXfer(s);
@@ -9358,7 +9385,46 @@ function SettingsModal({
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: { fontWeight: 700, marginBottom: 4 }
-  }, "Transfer to another device"), /*#__PURE__*/React.createElement("div", {
+  }, "Transfer to another device"), mirrorAsk && /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: { zIndex: 60 }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: { maxWidth: 520 },
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Approve a mirror"),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 15, fontWeight: 700, margin: "8px 0 10px", color: "var(--text)", lineHeight: 1.5 }
+  }, mirrorAsk.device, " wants to make itself match ", mirrorAsk.thisDevice || "this device", "."),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, color: "var(--mut)", lineHeight: 1.6, marginBottom: 10 }
+  }, "Nothing here changes. On ", /*#__PURE__*/React.createElement("strong", null, mirrorAsk.device), " it would copy ", mirrorAsk.added, " and overwrite ", mirrorAsk.updated, ", and ",
+  /*#__PURE__*/React.createElement("strong", { style: { color: "var(--danger)" } }, "delete ", mirrorAsk.removed, " record", mirrorAsk.removed === 1 ? "" : "s"),
+  " that this device does not have."),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: "var(--dim)", lineHeight: 1.6, marginBottom: 14 }
+  }, "If that is the wrong way round, turn it around instead. Then ", mirrorAsk.thisDevice || "this device", " is the one that would lose records, and you will be shown exactly what before anything happens."),
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-danger",
+    onClick: () => { const a = mirrorAsk; setMirrorAsk(null); window.transfer.respondMirror(a.id, "allow"); }
+  }, "Allow \u2014 mirror onto " + mirrorAsk.device),
+  /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !mirrorAsk.theirCode,
+    style: { opacity: mirrorAsk.theirCode ? 1 : .5 },
+    onClick: () => {
+      const a = mirrorAsk;
+      setMirrorAsk(null);
+      window.transfer.respondMirror(a.id, "reverse");
+      setReverseFrom(a.theirCode);
+    }
+  }, "The other way \u2014 mirror onto " + (mirrorAsk.thisDevice || "this device")),
+  /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => { const a = mirrorAsk; setMirrorAsk(null); window.transfer.respondMirror(a.id, "refuse"); }
+  }, "Refuse")))), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.55 }
   }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network, and the receiving device needs the one\u2011time code."),
   /* Which vault you are standing in. A transfer only ever writes to the device
@@ -9463,7 +9529,8 @@ function SettingsModal({
         return;
       }
       setXferBusy(true);
-      setXferMsg(null);
+      // a mirror waits on the other device now, so say so rather than sitting blank
+      setXferMsg(xferReplace ? { ok: true, text: "Waiting for the other device to approve this mirror\u2026" } : null);
       const r = await window.transfer.receive(xferCode.trim(), xferReplace);
       setXferBusy(false);
       setXferProg(null);
