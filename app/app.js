@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.141";
+const APP_VERSION = "1.142";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.141";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.141 — current",
+  heading: "1.142 — current",
+  notes: ["The gallery at the bottom of the character editor showed every picture in the character, whichever version you had open. Editing a variant showed the Default’s pictures and editing the Default showed the variants’ — while the button directly above promised that new ones would go to the version you were on. It now shows only the pictures belonging to the version you are editing, using the same rule the character page has always used.","Pictures that belong to no particular version still show on all of them, which is what being shared means. If a version has none of its own, the gallery now says so and points at the tabs, rather than looking empty as though the pictures had gone.","Opening a picture from that gallery still opens the right one. The pictures are addressed by their place in the whole character, so filtering the view could easily have opened the wrong one — the numbering you see now counts what is on screen while the picture itself is still found by its real position."]
+}, {
+  heading: "1.141",
   notes: ["Characters can be marked adult, and it now travels to CharSnap. Two tick boxes sit under the core details: “NSFW” for adult writing, and “NSFW picture” for pictures that need blurring — the two flags CharSnap actually asks for. Until now every file this app wrote said the character was not adult, whatever it was, and you had to remember to set it again on CharSnap after importing.","They come back in, too. A CharSnap file that carries either flag now arrives with it set instead of being dropped, so a character taken out and brought home keeps the marking. Version history remembers them alongside tags and buckets, so restoring an older draft restores what it was marked as then.","“Export for CharSnap” now tells you what the file will say — “Marked NSFW and NSFW picture, as set on this character”, or that it is marked not adult with a reminder to set it if it should be. It used to tell everyone to go and tick it on CharSnap, because the app had no way of knowing."]
 }, {
   heading: "1.140",
@@ -6395,6 +6398,18 @@ function CharacterEditor({
     const vName = vIdx >= 0 && variants[vIdx] ? variants[vIdx].name || "variant" : "Default";
     toast(added.length + (added.length === 1 ? " image added to \u201c" : " images added to \u201c") + vName + "\u201d");
   };
+  /* The gallery grid listed every picture in the character whichever version was
+     selected, so editing a variant showed the Default’s pictures and vice versa
+     — while the button above it promised new ones would go to this version only.
+     Filtered with the same rule the character page uses. oi is carried through
+     because the lightbox, captions and removal all address c.gallery by position. */
+  const liveVid = id => id === DEFAULT_VID || variants.some(v => v.id === id);
+  const activeVid = vIdx >= 0 && variants[vIdx] ? variants[vIdx].id : DEFAULT_VID;
+  const shownGallery = (c.gallery || []).map((g, oi) => ({ g, oi })).filter(x => {
+    const vid = (x.g.variantId || "").trim();
+    if (!vid || !liveVid(vid)) return true; // untagged, or orphaned by a restore = shared
+    return vid === activeVid;
+  });
   const profileSrc = editorPortraitId ? imgCache[editorPortraitId] : null;
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7180,7 +7195,7 @@ function CharacterEditor({
       uploadGallery(e.target.files);
       e.target.value = "";
     }
-  })), (c.gallery || []).length === 0 ? /*#__PURE__*/React.createElement("div", {
+  })), shownGallery.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px dashed var(--line2)",
       borderRadius: 10,
@@ -7189,16 +7204,17 @@ function CharacterEditor({
       color: "var(--dim)",
       fontSize: 13.5
     }
-  }, "No gallery images yet. Add reference art, outfits, expressions — anything.") : /*#__PURE__*/React.createElement("div", {
+  }, (c.gallery || []).length ? "No pictures on this version yet. The others have some — switch tabs above to see them." : "No gallery images yet. Add reference art, outfits, expressions — anything.") : /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
       gap: 12
     }
-  }, (c.gallery || []).map((g, i) => /*#__PURE__*/React.createElement("button", {
+  }, shownGallery.map(({ g, oi: i }, vi) => /*#__PURE__*/React.createElement("button", {
     key: g.imgId,
     onClick: () => setLightbox(i),
-    "aria-label": "Open image " + (i + 1),
+    // the label counts what is on screen; the lightbox still needs the real position
+    "aria-label": "Open image " + (vi + 1),
     style: {
       position: "relative",
       aspectRatio: "1",
