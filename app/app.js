@@ -4873,7 +4873,7 @@ function CharacterPage({
         onClick: () => onExportCharSnap(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
-        hint: variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " — CharSnap does not take more than five." : "All " + (variants.length + 1) + " in one file, rather than just the one on screen.",
+        hint: variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " versions — CharSnap does not take more than five versions of a character." : "All " + (variants.length + 1) + " versions in one file, rather than just the one on screen.",
         onClick: () => onExportCharSnap("all")
       }]
     }]
