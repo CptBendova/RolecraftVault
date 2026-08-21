@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.154";
+const APP_VERSION = "1.155";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.154";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.154 — current",
+  heading: "1.155 — current",
+  notes: ["A character or persona on a wide screen was giving the writing the space and the pictures none of it. The writing took one flexible column and the gallery a fixed slice of at most 420 pixels, so every pixel a bigger monitor offered went into making the lines longer: at full width the text ran to about 1,800 pixels across while the pictures stayed small. That is backwards, and it is what made the page look empty.","It is the other way round now. The writing stops at a readable width and the gallery takes whatever is left, so a bigger screen means bigger pictures rather than longer lines. On a 4K monitor the gallery goes from 420 pixels to about 1,150, nearly three times the size, and the writing settles at a width you can actually read. On a small screen nothing changes.","Card size is a setting. Settings has Small, Medium and Large under the reading size, and it applies to the character and persona libraries. Small fits far more on screen at once; large gives each character a proper portrait. It is remembered like the other preferences, and Reset layout puts it back to medium.","The picture count has come off the caption on a card. It shared a line with the tagline in a row that wrapped, so on a narrower card the tagline dropped underneath it and the caption grew from two lines to three, with the dark panel behind it eating further up the picture. It is a small badge in the top corner now: still there if you want it, out of the way of the writing, and covering about half a percent of the card instead of a whole extra line."]
+}, {
+  heading: "1.154",
   notes: ["The bar showing a vault being got ready to share was in the wrong half of the panel. There is one progress bar and it lives with the receiving controls, so pressing Share put the spinner on the button at the top and the bar itself down beside the code box, which is not where you are looking. It now sits directly under the button you pressed, with a line saying what it is doing and why a large library takes a moment.","Pressing Share also made the receiving button say “Checking what would change”, because both halves of the panel shared one idea of being busy. They are separate now. You still cannot receive while a share is starting; the button simply stops claiming to be working on something you did not ask for."]
 }, {
   heading: "1.153",
@@ -1628,7 +1631,8 @@ const CSS = `
      than the viewport and left the library visible around it. Nothing behind a
      sheet should be visible through it, whatever the reading column is set to. */
   .rcv > .scrollbody.sheet { max-width: none; margin-left: 0; margin-right: 0; }
-  .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+  /* Driven by a variable so the size can be chosen in Settings. */
+  .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 180px), 1fr)); gap: 16px; }
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
   .rcv .char-card:hover { transform: translateY(-3px); border-color: var(--brass-line); }
@@ -1636,6 +1640,12 @@ const CSS = `
   .rcv .char-card .veil { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, rgba(6,9,20,.92) 88%); }
   .rcv.light .char-card .veil { background: linear-gradient(180deg, transparent 30%, rgba(6,9,20,.55) 62%, rgba(6,9,20,.96) 100%); }
   .rcv .char-card .meta { text-shadow: 0 1px 4px rgba(0,0,0,.65); }
+  /* Top corner, opposite the selection tick, so it never pushes the caption. */
+  .rcv .char-card .shots { position: absolute; top: 8px; right: 8px; z-index: 2;
+    display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px;
+    border-radius: 99px; font-size: 11px; font-weight: 600; color: #e9edf8;
+    background: rgba(10,14,26,.62); border: 1px solid rgba(180,195,235,.28);
+    text-shadow: 0 1px 3px rgba(0,0,0,.7); }
   .rcv .char-card .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px;
     background: linear-gradient(180deg, rgba(6,9,20,0), rgba(6,9,20,.86) 24%, rgba(6,9,20,.94)); }
   .rcv .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); grid-auto-rows: 148px; grid-auto-flow: dense; gap: 12px; }
@@ -1718,8 +1728,14 @@ const CSS = `
   .rcv .filerow:hover .fr-label { color: var(--brass); }
   .rcv .filerow .fr-hint { font-size: 12.25px; color: var(--mut); margin-top: 3px; line-height: 1.5; }
   .rcv .filegroup + .filegroup { margin-top: 16px; }
-  .rcv .cpage-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 420px); gap: 24px; align-items: start; }
-  .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1fr) 200px; }
+  /* The writing used to take one flexible column and the gallery a fixed slice of
+     up to 420px, so every pixel a wider screen offered went into making the lines
+     longer: at full width the text ran to about 1,800px and the pictures stayed
+     small. Backwards. The writing is capped at a readable measure and the gallery
+     takes whatever is left, so a bigger screen means bigger pictures. Centred, so
+     the pair does not sit against one edge when it cannot fill the width. */
+  .rcv .cpage-grid { display: grid; grid-template-columns: minmax(0, 1100px) minmax(300px, 1fr); gap: 24px; align-items: start; justify-content: center; }
+  .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1100px) 200px; }
   .rcv .cpage-grid.nogal .cpage-aside { grid-template-columns: 1fr; }
   .rcv .cpage-aside { position: sticky; top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
   .rcv .cpage-aside .tile { aspect-ratio: 1; }
@@ -8645,6 +8661,8 @@ function SettingsModal({
   setTheme,
   textSize,
   setTextSize,
+  cardSize,
+  setCardSize,
   contrast,
   setContrast,
   trash,
@@ -8864,6 +8882,31 @@ function SettingsModal({
     },
     onClick: () => setTextSize(s)
   }, label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      margin: "18px 0 10px"
+    }
+  }, "Card size"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, [["small", "Small"], ["medium", "Medium"], ["large", "Large"]].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
+    key: v,
+    className: "btn " + (cardSize === v ? "btn-primary" : "btn-ghost"),
+    style: {
+      flex: 1
+    },
+    onClick: () => setCardSize(v)
+  }, label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--dim)",
+      marginTop: 8,
+      marginBottom: 4,
+      lineHeight: 1.5
+    }
+  }, "How big characters and personas are shown in the library. Smaller cards fit more on screen at once."), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--dim)",
@@ -10050,6 +10093,7 @@ function RolecraftVault() {
         const pbucketM = parse(await sGet("pbuckets:meta"), "pbuckets:meta", {});
         const blurList = parse(await sGet("blurset"), "blurset", []);
         const ts = await sGet("ui:textsize");
+    const cds = await sGet("ui:cardsize");
         const ctr = await sGet("ui:contrast");
         const trashRaw = parse(await sGet("trash:all"), "trash:all", []);
         if (damaged.length) {
@@ -10065,6 +10109,7 @@ function RolecraftVault() {
         setPromptMeta(promptM);
         setPBucketMeta(pbucketM); // always set: a stale one would survive a lock
         setTextSize(ts || "medium");
+    setCardSize(cds || "medium");
         setContrast(ctr || "normal");
         setTrash(Array.isArray(trashRaw) ? trashRaw : []);
         const blObj = {};
@@ -10444,12 +10489,18 @@ function RolecraftVault() {
     }
   };
   const [textSize, setTextSize] = useState("medium"); // reading size for prose: small | medium | large
+  const [cardSize, setCardSize] = useState("medium"); // character and persona cards: small | medium | large
   const [contrast, setContrast] = useState("normal"); // text contrast boost: normal | high | max
   const [trash, setTrash] = useState([]); // [{tid, type, record, deletedAt}] — restorable deletes
   const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : "14.5px";
+  const cardMinPx = cardSize === "small" ? "132px" : cardSize === "large" ? "268px" : "180px";
   const applyTextSize = async s => {
     setTextSize(s);
     await sSet("ui:textsize", s);
+  };
+  const applyCardSize = async s => {
+    setCardSize(s);
+    await sSet("ui:cardsize", s);
   };
   const applyContrast = async v => {
     setContrast(v);
@@ -11572,7 +11623,8 @@ function RolecraftVault() {
     className: rootClass,
     "data-rcv-state": "locked",
     style: {
-      "--prose-size": proseSizePx
+      "--prose-size": proseSizePx,
+      "--card-min": cardMinPx
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(LockScreen, {
     authState: authState,
@@ -11642,7 +11694,8 @@ function RolecraftVault() {
     className: rootClass,
     "data-rcv-state": "ready",
     style: {
-      "--prose-size": proseSizePx
+      "--prose-size": proseSizePx,
+      "--card-min": cardMinPx
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("div", {
     className: "sidebar",
@@ -12859,7 +12912,13 @@ function RolecraftVault() {
       color: "var(--brass-line)",
       fontWeight: 700
     }
-  }, (c.name || "?").charAt(0).toUpperCase())), /*#__PURE__*/React.createElement("div", {
+  }, (c.name || "?").charAt(0).toUpperCase())), (c.gallery || []).length > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "shots",
+    title: (c.gallery || []).length + ((c.gallery || []).length === 1 ? " picture" : " pictures")
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.img,
+    size: 11
+  }), (c.gallery || []).length), /*#__PURE__*/React.createElement("div", {
     className: "veil"
   }), /*#__PURE__*/React.createElement("div", {
     className: "meta"
@@ -12878,18 +12937,9 @@ function RolecraftVault() {
       marginTop: 2,
       display: "flex",
       gap: 8,
-      flexWrap: "wrap"
+      flexWrap: "nowrap"
     }
-  }, (c.gallery || []).length > 0 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-flex",
-      gap: 4,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.img,
-    size: 11
-  }), (c.gallery || []).length), (c.tagline || (c.tags || []).join(" | ")) && /*#__PURE__*/React.createElement("span", {
+  }, (c.tagline || (c.tags || []).join(" | ")) && /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#d9b25c", // fixed for the same reason; --brass goes dark in the light theme
       whiteSpace: "nowrap",
@@ -13335,7 +13385,13 @@ function RolecraftVault() {
         fontSize: 52,
         color: "var(--brass-line)"
       }
-    }, (p.name || "?").charAt(0).toUpperCase())), /*#__PURE__*/React.createElement("div", {
+    }, (p.name || "?").charAt(0).toUpperCase())), (p.gallery || []).length > 0 && /*#__PURE__*/React.createElement("span", {
+      className: "shots",
+      title: (p.gallery || []).length + ((p.gallery || []).length === 1 ? " picture" : " pictures")
+    }, /*#__PURE__*/React.createElement(Ic, {
+      d: icons.img,
+      size: 11
+    }), (p.gallery || []).length), /*#__PURE__*/React.createElement("div", {
       className: "veil"
     }), /*#__PURE__*/React.createElement("div", {
       className: "meta"
@@ -13361,17 +13417,7 @@ function RolecraftVault() {
         textOverflow: "ellipsis",
         maxWidth: 170
       }
-    }, p.tagline || p.role), (p.gallery || []).length > 0 && /*#__PURE__*/React.createElement("span", {
-      style: {
-        display: "inline-flex",
-        gap: 4,
-        alignItems: "center",
-        color: "var(--mut)"
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      d: icons.img,
-      size: 11
-    }), (p.gallery || []).length)))))));
+    }, p.tagline || p.role)))))));
   })(), view === "lorebooks" && (() => {
     const books = {};
     lore.forEach(e => {
@@ -14892,6 +14938,8 @@ function RolecraftVault() {
       await sDel("ui:dashorder");
       await sDel("ui:advopen");
       await sSet("ui:textsize", "medium");
+    setCardSize("medium");
+    await sSet("ui:cardsize", "medium");
       setContrast("normal");
       await sSet("ui:contrast", "normal");
       toast("Layout reset to defaults");
@@ -14899,6 +14947,8 @@ function RolecraftVault() {
     onClose: () => setShowSettings(false),
     textSize: textSize,
     setTextSize: applyTextSize,
+    cardSize: cardSize,
+    setCardSize: applyCardSize,
     contrast: contrast,
     setContrast: applyContrast,
     trash: trash,
