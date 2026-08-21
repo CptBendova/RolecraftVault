@@ -27,7 +27,7 @@ const APP_VERSION = "1.138";
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
   heading: "1.138 — current",
-  notes: ["The import/export popup had its headings in the wrong colour entirely. A button does not inherit text colour from the page, so “Import JSON”, “Export JSON” and the rest fell back to the browser’s own black — on a dark panel, near invisible, and dimmer than the small grey line underneath it, which read as broken. They are the same white the rest of the app uses for a heading now, with the description below in the same grey Settings uses.","The rows are proper theme styling rather than one-off inline values: they match the app’s corner rounding and text size instead of the browser’s defaults, they light up in brass as the pointer crosses them so it is clear they can be clicked, and they take a visible outline when reached by keyboard.","The same popup opened from a character, a persona or a lorebook came out in the dark theme’s colours whatever theme you were using — in the light theme, a dark navy panel with white text in an otherwise white app. The area behind the banner picture at the top of those pages deliberately forces dark colours so the writing over the picture stays readable, and the popup was being treated as part of it. It is now drawn against the app itself, so it takes your theme. Checked on all seven of these popups in all three themes."]
+  notes: ["The import/export popup had its headings in the wrong colour entirely. A button does not inherit text colour from the page, so “Import JSON”, “Export JSON” and the rest fell back to the browser’s own black — on a dark panel, near invisible, and dimmer than the small grey line underneath it, which read as broken. They are the same white the rest of the app uses for a heading now, with the description below in the same grey Settings uses.","The rows are proper theme styling rather than one-off inline values: they match the app’s corner rounding and text size instead of the browser’s defaults, they light up in brass as the pointer crosses them so it is clear they can be clicked, and they take a visible outline when reached by keyboard.","The descriptions in that popup were wrong about pictures. Three of them said pictures are never inside a JSON file — they are: exporting a character, a persona, a lorebook or a collection on its own carries its pictures, which is why those files are large. The descriptions now say which exports keep pictures and which do not.","Exporting every lorebook at once leaves the pictures out, while exporting a single book keeps them. The same book came to 3.2 KB on its own and 0.4 KB as part of “all lorebooks”. That is how the app has always behaved and is unchanged here, but nothing said so — the description now warns you, and points at the single-book export if you want the pictures.","“Export every version for CharSnap” claimed it was writing all of them. CharSnap accepts at most five, so a character with more quietly lost the rest. It now says how many will actually go — “the first five of your seven” — before you click it.","The same popup opened from a character, a persona or a lorebook came out in the dark theme’s colours whatever theme you were using — in the light theme, a dark navy panel with white text in an otherwise white app. The area behind the banner picture at the top of those pages deliberately forces dark colours so the writing over the picture stays readable, and the popup was being treated as part of it. It is now drawn against the app itself, so it takes your theme. Checked on all seven of these popups in all three themes."]
 }, {
   heading: "1.137",
   notes: ["Import and export are one button now, on every screen that had them. They had grown into a row of their own — a lorebook carried “Import entry”, “Sample”, “Export JSON”, “Export text only” and “Export for CharSnap” side by side, and a character page four export buttons — all crowding out the things you actually came to the page to do. That book’s toolbar is down from nine buttons to five.","Behind the button is a popup laid out like Settings: the choices split into “Bring in” and “Send out”, each with a line under it saying what it actually does and when you would want it. The bare labels never said whether “Export JSON” included your pictures, or which of the two CharSnap exports to use — now they do.","It also says what applies. The menu on a character tells you which version it is about to export; the one inside a lorebook says that importing there always lands in that book whatever the file claims; the whole-library ones point you at the record itself if you only wanted one."]
@@ -4138,7 +4138,7 @@ function LorebookPage({
     size: 14
   }), " New ", entryNoun)), /*#__PURE__*/React.createElement(FilesMenu, {
     title: "This " + bookNoun,
-    note: "Importing here always lands in this " + bookNoun + ", whatever the file itself says. Pictures are never included in a JSON file — use “Download images” for those.",
+    note: "Importing here always lands in this " + bookNoun + ", whatever the file itself says.",
     groups: [{
       heading: "Bring in",
       items: [onImportEntry && {
@@ -4154,7 +4154,7 @@ function LorebookPage({
       heading: "Send out",
       items: [{
         label: "Export JSON",
-        hint: "The whole " + bookNoun + ", in this app’s own format. Import it back here or on another machine.",
+        hint: "The whole " + bookNoun + " with its pictures, in this app’s own format. Import it back here or on another machine.",
         onClick: onExportBook
       }, onExportBookText && {
         label: "Export text only",
@@ -4162,7 +4162,7 @@ function LorebookPage({
         onClick: onExportBookText
       }, onExportCharSnap && {
         label: "Export for CharSnap",
-        hint: "A Chub-compatible lorebook file, ready to upload.",
+        hint: "A Chub-compatible file, ready to upload. No pictures — CharSnap does not read them out of a file, so add them there afterwards.",
         onClick: onExportCharSnap
       }]
     }]
@@ -4853,12 +4853,12 @@ function CharacterPage({
   }), " Download images")), /*#__PURE__*/React.createElement(FilesMenu, {
     label: "Export",
     title: c.name || "This character",
-    note: "These export the version you are looking at — " + (av ? av.name || "Variant" : "Default") + ". Switch versions on the page behind to export a different one. Pictures are never inside a JSON file; use “Download images” for those.",
+    note: "These export the version you are looking at — " + (av ? av.name || "Variant" : "Default") + ". Switch versions on the page behind to export a different one.",
     groups: [{
       heading: "Send out",
       items: [{
         label: "Export JSON",
-        hint: "This app’s own format. Import it back here or on another machine.",
+        hint: "This app’s own format, pictures included. Import it back here or on another machine.",
         onClick: () => onExportJson(activeVar)
       }, onExportText && {
         label: "Export text only",
@@ -4870,7 +4870,7 @@ function CharacterPage({
         onClick: () => onExportCharSnap(activeVar)
       }, variants.length > 0 && {
         label: "Export every version for CharSnap",
-        hint: "All " + (variants.length + 1) + " in one file, rather than just the one on screen.",
+        hint: variants.length + 1 > 5 ? "The first five of your " + (variants.length + 1) + " — CharSnap does not take more than five." : "All " + (variants.length + 1) + " in one file, rather than just the one on screen.",
         onClick: () => onExportCharSnap("all")
       }]
     }]
@@ -5474,12 +5474,12 @@ function PersonaPage({
   }), " Download images")), /*#__PURE__*/React.createElement(FilesMenu, {
     label: "Export",
     title: p.name || "This persona",
-    note: "Pictures are never inside a JSON file — use “Download images” for those.",
+    note: "Export JSON keeps this persona’s pictures; the text export does not.",
     groups: [{
       heading: "Send out",
       items: [onExportJson && {
         label: "Export JSON",
-        hint: "This app’s own format. Import it back here or on another machine.",
+        hint: "This app’s own format, pictures included. Import it back here or on another machine.",
         onClick: onExportJson
       }, onExportText && {
         label: "Export text only",
@@ -11954,7 +11954,7 @@ function RolecraftVault() {
         heading: "Send out",
         items: [{
           label: "Export JSON",
-          hint: "Every persona, portraits included.",
+          hint: "Every persona, with their portraits and gallery pictures. This is the one to keep as a backup.",
           onClick: () => askExport("your personas (including portraits)", exportPersonasJson)
         }]
       }]
@@ -12401,7 +12401,7 @@ function RolecraftVault() {
         heading: "Send out",
         items: [{
           label: "Export JSON",
-          hint: "Every lorebook in the vault, in this app's own format.",
+          hint: "Every lorebook in the vault — but without their pictures. To keep those, open a single book and export it from there.",
           onClick: () => askExport("your lorebooks", exportLoreJson)
         }]
       }]
