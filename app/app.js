@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.155";
+const APP_VERSION = "1.156";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.155";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.155 — current",
+  heading: "1.156 — current",
+  notes: ["Giving the gallery the spare width in 1.155 was right, but it went into one picture instead of more of them. The first picture in a gallery spans both columns and stands taller than it is wide, so the wider the screen got the bigger that single image grew, until on a large monitor it was most of what you could see.","A lead picture earns its place when the gallery is narrow and there is only room for one thing at a time. Once there is room for six, it just crowds out the other five. So above a certain width the gallery becomes an even grid and every picture is the same size: on a 2,000 pixel window that is four across at about 200 each, where before it was one at 806 by 927. Below that width nothing changes and the lead picture stays.","The top of the page was left half finished. The creator memo stopped at 760 pixels inside a column with more than twice that to give, and nothing followed it, so the whole band read as empty on a wide screen. It now uses what is there, while still stopping short of the full width of a large monitor, because a memo is read like anything else."]
+}, {
+  heading: "1.155",
   notes: ["A character or persona on a wide screen was giving the writing the space and the pictures none of it. The writing took one flexible column and the gallery a fixed slice of at most 420 pixels, so every pixel a bigger monitor offered went into making the lines longer: at full width the text ran to about 1,800 pixels across while the pictures stayed small. That is backwards, and it is what made the page look empty.","It is the other way round now. The writing stops at a readable width and the gallery takes whatever is left, so a bigger screen means bigger pictures rather than longer lines. On a 4K monitor the gallery goes from 420 pixels to about 1,150, nearly three times the size, and the writing settles at a width you can actually read. On a small screen nothing changes.","Card size is a setting. Settings has Small, Medium and Large under the reading size, and it applies to the character and persona libraries. Small fits far more on screen at once; large gives each character a proper portrait. It is remembered like the other preferences, and Reset layout puts it back to medium.","The picture count has come off the caption on a card. It shared a line with the tagline in a row that wrapped, so on a narrower card the tagline dropped underneath it and the caption grew from two lines to three, with the dark panel behind it eating further up the picture. It is a small badge in the top corner now: still there if you want it, out of the way of the writing, and covering about half a percent of the card instead of a whole extra line."]
 }, {
   heading: "1.154",
@@ -1743,6 +1746,16 @@ const CSS = `
   @media (max-width: 1120px) {
     .rcv .cpage-grid { grid-template-columns: 1fr; }
     .rcv .cpage-aside { position: static; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 1; }
+  }
+  /* Once the gallery has real room, two columns is the wrong shape: the lead
+     tile spans both of them, so the wider the screen the bigger that one picture
+     grows, until it is most of what you can see. A lead picture is worth having
+     when there is only room for one thing at a time. With room for six it just
+     crowds out the other five. Above this width the gallery becomes an even grid
+     and every picture is the same size. */
+  @media (min-width: 1700px) {
+    .rcv .cpage-aside { grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); }
     .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 1; }
   }
   .rcv .modal-back { position: fixed; inset: 0; background: var(--overlay); backdrop-filter: blur(4px);
@@ -5494,7 +5507,11 @@ function CharacterPage({
       borderRadius: 12,
       padding: "12px 14px",
       marginBottom: 16,
-      maxWidth: 760
+      /* 760 left the top of a wide screen looking half finished: the memo stopped
+         short and nothing followed it, so the band it sits in read as empty. It
+         still stops short of a very wide screen, because a memo is read like
+         anything else, but it now uses what is actually there. */
+      maxWidth: 1180
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
