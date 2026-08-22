@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.156";
+const APP_VERSION = "1.157";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.156";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.156 — current",
+  heading: "1.157 — current",
+  notes: ["“Download all images” said every image in the vault and meant every image attached to a character or a persona. Bucket covers were left behind, and so were lorebook and collection covers and the pictures inside lore entries and prompts. It now takes all of them: covers go into their own folders, and a picture inside an entry is filed under its book and named after the entry it belongs to.","Everything in that zip is the original, at full size, and always was. It reads the stored picture rather than the smaller version used for the cards, so what lands on disk is exactly what you put in.","Bucket covers now have a download corner of their own. Point at a bucket and there is a small arrow beside the buttons for setting and removing its cover, which saves just that picture at full size rather than making you fetch the whole library to get one image.","A bucket whose name cannot be used as a folder name no longer overwrites another one. Two buckets called “A/B” and “A:B” both reduce to the same safe name, and the zip used to keep only whichever was written last."]
+}, {
+  heading: "1.156",
   notes: ["Giving the gallery the spare width in 1.155 was right, but it went into one picture instead of more of them. The first picture in a gallery spans both columns and stands taller than it is wide, so the wider the screen got the bigger that single image grew, until on a large monitor it was most of what you could see.","A lead picture earns its place when the gallery is narrow and there is only room for one thing at a time. Once there is room for six, it just crowds out the other five. So above a certain width the gallery becomes an even grid and every picture is the same size: on a 2,000 pixel window that is four across at about 200 each, where before it was one at 806 by 927. Below that width nothing changes and the lead picture stays.","The top of the page was left half finished. The creator memo stopped at 760 pixels inside a column with more than twice that to give, and nothing followed it, so the whole band read as empty on a wide screen. It now uses what is there, while still stopping short of the full width of a large monitor, because a memo is read like anything else."]
 }, {
   heading: "1.155",
@@ -1966,7 +1969,7 @@ const GUIDE = [
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
-        "Download all images saves the originals as a zip, one folder per character. Large libraries are written to disk as they go, so there is no practical size limit."
+        "Download all images saves the originals, at full quality, as a zip: a folder per character, one for personas, and folders for bucket covers, lorebook covers and the pictures inside lore entries and prompts. Large libraries are written to disk as they go, so there is no practical size limit."
       ],
       "Removing a picture is immediate and cannot be undone. Unlike a character, a picture does not go to the bin. That is why every button that removes one asks twice.",
       "Pictures are never inside a CharSnap file. CharSnap cannot read images out of a file at all, so you upload your art there after importing. They are inside this app's own exports, which is why those files are large."
@@ -11422,7 +11425,19 @@ function RolecraftVault() {
     }
   };
   const [personaGrid, setPersonaGrid] = useState(false);
-  const downloadImagesZip = async (scopeChars, scopePersonas, zipName) => {
+  /* One picture on its own. Reads the same record the zip reads, so what lands
+     on disk is the original rather than the thumbnail shown on the card. */
+  const downloadOneImage = async (imgId, name) => {
+    if (!imgId) return;
+    const v = await sGet("img:" + imgId);
+    if (!v) {
+      toast("That picture is no longer in the vault");
+      return;
+    }
+    downloadBlob(new Blob([dataUrlBytes(v)]), safeFileName(name) + "." + extOf(v));
+    toast("Picture saved");
+  };
+  const downloadImagesZip = async (scopeChars, scopePersonas, zipName, extras) => {
     /* Which pictures to fetch is worked out first. It touches no storage, so
        the total is known before the slow part starts and the bar can be honest
        about how far along it is. */
@@ -11432,6 +11447,19 @@ function RolecraftVault() {
       if (!id || seen.has(id)) return;
       seen.add(id);
       plan.push({ id, base, n });
+    };
+    /* A cover belongs to a bucket or a book rather than to a record, so it is
+       named after the thing it covers instead of numbered within a folder. Two
+       buckets whose names reduce to the same safe filename would otherwise write
+       to the same path and the zip would keep only the last. */
+    const usedPaths = new Set();
+    const pushAt = (id, path) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      let out = path, i = 2;
+      while (usedPaths.has(out.toLowerCase())) out = path + "-" + i++;
+      usedPaths.add(out.toLowerCase());
+      plan.push({ id, path: out });
     };
     /* Two characters called the same thing shared one folder and restarted
        numbering, so the zip held duplicate paths and unpacking silently kept
@@ -11459,6 +11487,7 @@ function RolecraftVault() {
       push(p.avatar, base, n++);
       for (const g of p.gallery || []) push(g.imgId, base, n++);
     }
+    for (const e of extras || []) pushAt(e.id, e.path);
     if (!plan.length) {
       toast("No images to download");
       return;
@@ -11470,7 +11499,8 @@ function RolecraftVault() {
     try {
       for (const it of plan) {
         const v = await sGet("img:" + it.id);
-        if (v) z.add(it.base + "/" + String(it.n).padStart(2, "0") + "." + extOf(v), dataUrlBytes(v));
+        // always the original: sGet("img:") never the smaller "th:" thumbnail
+        if (v) z.add((it.path || it.base + "/" + String(it.n).padStart(2, "0")) + "." + extOf(v), dataUrlBytes(v));
         track.step();
       }
       if (!z.count) {
@@ -12668,6 +12698,28 @@ function RolecraftVault() {
         }
       }, /*#__PURE__*/React.createElement(Ic, {
         d: icons.x,
+        size: 14
+      })), customCover && /*#__PURE__*/React.createElement("span", {
+        className: "blurbtn",
+        role: "button",
+        tabIndex: 0,
+        "aria-label": "Download the cover for " + b,
+        title: "Save this picture at full size",
+        style: {
+          right: 80
+        },
+        onClick: e => {
+          e.stopPropagation();
+          downloadOneImage(customCover, b + "-cover");
+        },
+        onKeyDown: e => {
+          if (e.key === "Enter") {
+            e.stopPropagation();
+            downloadOneImage(customCover, b + "-cover");
+          }
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        d: icons.down,
         size: 14
       })), coverId ? /*#__PURE__*/React.createElement("img", {
         src: imgCache[coverId],
@@ -14974,7 +15026,30 @@ function RolecraftVault() {
     onExport: () => askExport("a full vault backup", exportAll),
     onImport: importAll,
     toast: toast,
-    onDownloadImages: () => askExport("every image in the vault", () => downloadImagesZip(chars, personas, "rolecraft-images.zip")),
+    onDownloadImages: () => askExport("every image in the vault", () => {
+        /* This said "every image in the vault" while collecting only what hung
+           off a character or a persona. Bucket covers, book covers and the
+           pictures inside lore entries and prompts were left behind. */
+        const extras = [];
+        const cover = (meta, folder) => Object.entries(meta || {}).forEach(([name, m]) => {
+          if (m && m.cover) extras.push({ id: m.cover, path: folder + "/" + safeFileName(name || "Unnamed") });
+        });
+        cover(bucketMeta, "buckets");
+        cover(pBucketMeta, "personas/buckets");
+        cover(loreMeta, "lorebooks/covers");
+        cover(promptMeta, "prompts/covers");
+        const entryPics = (list, folder, titleOf, bookOf) => (list || []).forEach(e => {
+          (e.images || []).forEach((im, k) => {
+            if (!im || !im.imgId) return;
+            const book = safeFileName(bookOf(e) || "Unsorted");
+            const title = safeFileName(titleOf(e) || "Untitled");
+            extras.push({ id: im.imgId, path: folder + "/" + book + "/" + title + "-" + String(k + 1).padStart(2, "0") });
+          });
+        });
+        entryPics(lore, "lorebooks", e => e.title, e => e.world);
+        entryPics(prompts, "prompts", e => e.title, e => e.collection);
+        return downloadImagesZip(chars, personas, "rolecraft-images.zip", extras);
+      }),
     theme: theme,
     setTheme: setTheme,
     authState: authState,
