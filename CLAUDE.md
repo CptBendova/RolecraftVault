@@ -16,11 +16,11 @@ app/                the Electron app (this is the product)
   main.js           main process: storage encryption, updates, Wi-Fi transfer
   preload.js        the only bridge between main and the interface
   index.html        entry page + CSP
-  app.js            THE ENTIRE INTERFACE (~350 KB, compiled React) — see below
+  app.js            THE ENTIRE INTERFACE (~640 KB, compiled React) — see below
   vendor/           React UMD builds + self-hosted fonts
 web/                embeddable web edition (same interface, browser storage)
 build/installer.nsi NSIS script for the Windows installer
-scripts/            sign-update.js, build-web.js, check-integrity.js
+scripts/            set-version, sign-update, build-web, build-installer, check-integrity
 keys/               signing key — NEVER commit (see keys/README.txt)
 dist/               build output (gitignored)
 ```
@@ -38,6 +38,19 @@ Dozens of tested features and bug fixes live only in this file.
 - After any edit: `npm run check` (syntax + integrity), then `npm start` and click
   the affected screen.
 
+Editing it by script is normal here. Two things bite repeatedly:
+
+- **Anchors must match indentation exactly.** Nested blocks are indented 4 and 6
+  spaces, not 2 and 4. Print the target with `JSON.stringify` before writing an
+  anchor rather than retyping it from a trimmed listing.
+- **Backslashes get eaten by the shell.** `\n`, `—` and regex escapes have
+  been mangled three separate times inside `node -e` and heredocs, producing
+  silently wrong code (`/\B(?=(\d{3})+(?!\d))/g` became `/B(?=(d{3})+(?!d))/g`
+  and stopped grouping numbers). Write the patch to a file with the Write tool and
+  run it with `node`, or build the backslash with `String.fromCharCode(92)`.
+- `app/main.js` is **CRLF**, `app/app.js` is **LF**. A multi-line anchor written
+  with `\n` will not match main.js. Convert, or match single lines.
+
 ## Hard rules
 
 1. **The interface never touches the network.** No `fetch`, `XMLHttpRequest`,
@@ -46,13 +59,21 @@ Dozens of tested features and bug fixes live only in this file.
    for the opt-in Wi-Fi transfer.
 2. **Images are sacred.** Version history, JSON updates and restores capture text
    only — never `profileImg`, `banner`, `gallery`, or variant portraits. A restore
-   must never change a picture.
+   must never change a picture. **Use `charImgIds(c)` / `personaImgIds(p)` for any
+   list of a record's images.** Seven places once built that list by hand and only
+   one remembered that a *variant carries its own `profileImg`*, so variant
+   portraits went missing from the backup, both exports, the pictures zip, the blur
+   list and the stats count (fixed in 1.151). Never write that list out again.
 3. **Signing key is the root of trust.** Any `.rcvup` signed with `keys/private_key.pem`
    is trusted and executed by every installed copy. Keep it offline, never commit it.
    If it leaks or is lost, every user needs a fresh installer with a new baked-in key.
 4. **Renderer changes ship as `.rcvup` patches. Shell changes need a full installer.**
    Anything touching `main.js`, `preload.js`, or `index.html` cannot be delivered by
-   a patch — say so explicitly when handing over builds.
+   a patch. Since 1.150 this is enforced rather than remembered: `npm run sign`
+   diffs those three files against the last release tag (ignoring the version
+   stamp), marks the package, and the app refuses a patch that needs the installer,
+   naming it. `--shell` / `--no-shell` override the detection. Say which artifact is
+   needed in the release notes regardless.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
 
@@ -64,34 +85,49 @@ Dozens of tested features and bug fixes live only in this file.
 | `personas:all` | array of personas |
 | `lore:all` | array of lore entries |
 | `prompts:all` | array of prompts |
+| `trash:all` | the bin: `[{tid, type, record, deletedAt}]`, purged after 30 days |
 | `img:<id>` / `th:<id>` | original image / thumbnail (data URLs) |
+| `sz:<id>` | byte size of that image, written once by `saveImage` so stats need not re-read it |
 | `buckets:meta`, `pbuckets:meta` | bucket covers + empty buckets |
 | `lore:meta`, `prompts:meta` | book covers + empty books |
 | `blurset` | ids of blurred images |
-| `ui:charsort`, `ui:textsize`, `ui:dashorder`, `ui:advopen` | preferences |
+| `ui:charsort`, `ui:textsize`, `ui:contrast`, `ui:cardsize`, `ui:dashorder`, `ui:advopen` | preferences |
+| `thumbver`, `charfields`, `lorefields` | **one-time migration markers.** Each guards a migration that runs once and then writes its marker. Do not clear or reuse them. |
 
-Character: `{id, name, age, gender, pronouns, tagline, tags[], bucket, lorebooks[],
-story, personality, scenario, firstMessage, exampleMessage, creatorMemo,
-systemPrompt, alwaysActiveSystemPrompt, variants[], sections[], sectionOrder,
-profileImg, banner, gallery[{imgId, caption, album, variantId}], albums[],
-imgMeta{}, history[]}`
+Character: `{id, name, age, gender, pronouns, tagline, tags[], searchables[],
+bucket, lorebooks[], story, personality, scenario, firstMessage, exampleMessage,
+creatorMemo, systemPrompt, alwaysActiveSystemPrompt, nsfw, nsfwPicture, variants[],
+sections[], sectionOrder, profileImg, banner, gallery[{imgId, caption, album,
+variantId}], albums[], imgMeta{}, history[], createdAt, updatedAt}`
 
+- A **variant** carries its own `name`, its own copies of the text fields, and its
+  own **`profileImg`**. That last one is the trap in rule 2.
 - `variantId` on a gallery image: `""` = shared by all variants,
-  `"__default__"` = Default only, otherwise a variant id.
+  `"__default__"` (`DEFAULT_VID`) = Default only, otherwise a variant id.
 - `imgMeta[imgId]` carries album/variant for images that aren't gallery entries
   (portraits, banner).
 - `history[]` = up to 20 text-only snapshots for restore.
 
 **Preferences must load only after the vault is unlocked.** Reading storage while
-locked fails silently and resets the preference — this was a real bug. Gate those
-effects on `authState.checked && !authState.locked`.
+locked fails silently and resets the preference — this was a real bug. Load them in
+the same gated block as the records, not in their own effect.
 
 ## Security model
 
 Every value: optional AES-256-GCM (PBKDF2, 210k) with the master password, then
 wrapped again by Windows DPAPI via `safeStorage`. The PIN is convenience only.
-Exports are deliberately plaintext. Wi-Fi transfer is LAN-only, opt-in, and the
-payload is encrypted with a key derived from the one-time pairing code.
+Exports are deliberately plaintext. The web edition uses IndexedDB + WebCrypto with
+the same contract, minus the DPAPI wrap.
+
+Wi-Fi transfer is LAN-only, opt-in, and the payload is encrypted with a key derived
+from the one-time pairing code. The sharing device is **passive**: it serves
+`/whoami`, `/manifest` and `/delta` and is never modified by a transfer. Since 1.152
+a **mirror** (the only operation that deletes) also asks the other device over
+`/mirror-request`, which holds the HTTP response open while that device shows a
+dialog; it can allow, refuse, or reverse the direction. Everything fails closed —
+no answer, no window, or an older build all mean refuse. Since 1.153 the manifest is
+built when sharing starts rather than when it is asked for, because building it
+reads and decrypts every record and used to blow the receiver's timeout.
 
 ## CharSnap interop (learned the hard way)
 
@@ -103,39 +139,71 @@ always_active_system_prompt, creator_comment, variant_name, variant_tagline`.
 Emitting the 16-key export shape fails validation. Lorebook import uses the Chub
 structure plus CharSnap's own fields, and every entry needs ≥1 trigger.
 
+There are **two importers**: "Import JSON" (Basics tab) takes a whole character;
+"Import Variant" (Details tab) takes a **bare variant object with the fields at the
+root**. They are not interchangeable.
+
+- Custom sections have no CharSnap equivalent, so they are folded into the
+  description by `foldSections`, each headed `Title: text` on the same line, single
+  spaced inside a section with a blank line between sections.
+- Four section titles are claimed instead of folded: "System override", "NSFW system
+  override", "Prefill instructions" and "Additional first messages". **Only the
+  first section claiming a title gets it**; a duplicate falls back into the
+  description. `sectionKinds()` and `splitCharSnapSections()` are built from the same
+  rule so the token counter and the export cannot disagree.
+- "Hide guts" has no flag in the file: it *is* `|~ … ~|` wrapped around the
+  description and personality. Offered as a separate export rather than stored on
+  the character.
+- At most 5 versions per character, 3 lorebooks per bot, 1500 characters per entry.
+
 ## Versioning
 
-The displayed version is a flat number — **1.092** — not semver. It lived in five
+The displayed version is a flat number — **1.156** — not semver. It lived in five
 places that had drifted to three different values, so it now has one owner:
 
 ```bash
-npm run set-version 1.092    # rewrites all four display sites at once
+npm run set-version 1.156    # rewrites all four display sites at once
 ```
 
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
 `app/package.json`, and `!define VERSION` in `build/installer.nsi`. Never edit
-those by hand.
+those by hand. `npm run sign` refuses to sign when the version does not match
+`FACTORY_BUILD`.
 
 The **root `package.json` keeps its own semver** (`1.9.3`) and is intentionally
-left alone: npm requires valid semver there, and `1.092` is not. Nothing
-user-facing reads it — it only names the npm scripts. This is safe because the
-update system never compares versions: `main.js` treats `pkg.version` purely as a
-display string, so a `.rcvup` installs regardless of what came before.
+left alone: npm requires valid semver there, and `1.156` is not. Nothing
+user-facing reads it — it only names the npm scripts.
 
-Add a `CHANGELOG` entry in `app/app.js` for anything users would notice. Entries
-before 1.092 are reconstructed from the code, not a real record — the UI says so,
-and that label should stay.
+Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
+for a user rather than a developer. Entries before 1.092 are reconstructed from the
+code, not a real record — the UI says so, and that label should stay.
+
+## The in-app guide
+
+`GUIDE` in `app/app.js` is a 15-section contents page. It is plain JSON, so it can
+be parsed, edited and re-serialised with `JSON.stringify(G, null, 2)` rather than
+patched by hand.
+
+- **No em dashes anywhere in it.** Asked for directly. Rewrite the sentence rather
+  than swapping the punctuation.
+- It is shown in both editions, so anything Windows-only (device transfer, updates)
+  must say so.
 
 ## Ship procedure
 
 ```bash
-npm run set-version 1.092           # keep every version site in step first
+npm run set-version 1.156           # keep every version site in step first
 npm run check                       # syntax + no-network sweep
 npm start                           # launch and actually click the thing
 npm run build:web                   # regenerate the web bundle from app/app.js
-npm run sign 1.092 "what changed"   # -> dist/Rolecraft-update-1.092.rcvup
-npm run build:installer             # only when app/main.js|preload.js|index.html changed
+npm run sign 1.156 "what changed"   # -> dist/Rolecraft-update-1.156.rcvup
+npm run build:installer             # always, so both artifacts exist
 ```
+
+Ship **both** artifacts every time, and say in the release notes which one is
+actually needed. Verify the published `.rcvup` afterwards by downloading it,
+base64-decoding `files["app.js"]` and comparing sha256 against the local build —
+a release once went out without the changes it claimed.
 
 `build:installer` needs a staged Electron build at `dist/Rolecraft Vault/`, which
 is gitignored and therefore missing on a fresh clone. To rebuild it: copy
@@ -144,9 +212,34 @@ is gitignored and therefore missing on a fresh clone. To rebuild it: copy
 `resources/app/`. It also needs NSIS (`winget install NSIS.NSIS`); winget does not
 put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 
+## Layout notes
+
+- A record that opens over the library (character, persona, editor) is a
+  `.scrollbody.sheet`: `position: fixed`, and **must not be width-capped**, or the
+  library shows around it on a large screen.
+- The reading column is capped and the gallery takes the surplus, so a wider screen
+  means bigger pictures rather than longer lines. Above 1700px the gallery drops its
+  oversized lead tile and becomes an even grid.
+- `.scrollbody` is reused by small scrollers inside panels, which is why the column
+  rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
+
 ## Testing notes
 
-There is no test suite yet; changes have been verified with headless DOM harnesses
-and by hand. Good first improvement: move those harnesses into `tests/`. Things a
-headless harness *cannot* check — image uploads (needs a real canvas for
-thumbnails) and a real two-device Wi-Fi transfer — must be tried in the running app.
+There is no test suite yet. What has worked well, and is worth continuing:
+
+- **Lift the real function out of `app.js` and run it.** Find it by name, brace-match
+  to its end, and `new Function` it with stubs for what it closes over. This has
+  caught real bugs, including ones in the fix being written. Do not retype the logic
+  into the test — lift it, or the test proves nothing about the shipped code.
+- **Drive the web build in the browser** for anything visual, and measure rather than
+  eyeball: element rects, computed styles, grid track counts.
+- The transfer panel is Electron-only. To render it in the web build, stub
+  `window.transfer` before opening Settings.
+
+Things a harness **cannot** check, which must be tried by hand:
+
+- Image uploads (needs a real canvas for thumbnails).
+- **A real two-device Wi-Fi transfer.** Nothing in 1.152, 1.153 or 1.154 has been
+  run against a second machine. Both devices need 1.153+ before mirroring works.
+
+Good first improvement: move the ad-hoc harnesses into `tests/` and add `npm test`.
