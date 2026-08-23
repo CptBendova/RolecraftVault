@@ -235,6 +235,12 @@ put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 - `.scrollbody` is reused by small scrollers inside panels, which is why the column
   rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
 
+## Phone copies dying around 130 MB (1.166)
+
+A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.
+
+Since 1.166 the PC packs `/delta-file?i=N` batches. A picture larger than 4 MB of plaintext is its own batch, then sent in 1 MB slices (`off`/`n`). The phone decrypts each piece, saves it, and asks for the next. Both devices need 1.166. `/delta-file` with no query is still the combined file, so an older PC receiver still works.
+
 ## Android: the two things that broke transfers (1.160)
 
 Both were found by reading Capacitor's own Android source in

@@ -135,7 +135,7 @@
 
   /* ---------- talking to the other device ---------- */
   const b64ToBytes = b64 => {
-    const bin = atob(b64);
+    const bin = atob(String(b64).replace(/\s/g, ""));
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
@@ -165,6 +165,31 @@
     });
     if (res.status !== 200) throw new Error("status " + res.status);
     return typeof res.data === "string" ? b64ToBytes(res.data) : new Uint8Array(res.data);
+  }
+
+  /* CapacitorHttp loads a whole response into JS as base64. Around 130 MB the
+     phone stops. Slices stay at 1 MB, so a 12 MB picture is twelve calls that
+     are joined here, never one giant native payload. */
+  const SLICE_BYTES = 1 << 20;
+  async function downloadSliced(target, path, totalBytes, timeoutMs, onBytes) {
+    if (!totalBytes || totalBytes <= SLICE_BYTES) {
+      const blob = await ask(target, path, "GET", null, timeoutMs);
+      if (onBytes) onBytes(blob.length, totalBytes || blob.length);
+      return blob;
+    }
+    const out = new Uint8Array(totalBytes);
+    let got = 0;
+    while (got < totalBytes) {
+      const n = Math.min(SLICE_BYTES, totalBytes - got);
+      const sep = path.indexOf("?") >= 0 ? "&" : "?";
+      const piece = await ask(target, path + sep + "off=" + got + "&n=" + n, "GET", null, timeoutMs);
+      if (!piece || !piece.length) throw new Error("The other device sent an empty piece of the vault.");
+      if (got + piece.length > totalBytes) throw new Error("The other device sent more than it said it would.");
+      out.set(piece, got);
+      got += piece.length;
+      if (onBytes) onBytes(got, totalBytes);
+    }
+    return out;
   }
 
   /* ---------- the local half ---------- */
@@ -266,7 +291,14 @@
       }
     }
 
-    let bytes = 0, records = [];
+    let bytes = 0, records = [], saved = 0;
+    const saveRecords = async recs => {
+      for (let i = 0; i < recs.length; i++) {
+        await window.storage.set(recs[i].k, recs[i].v);
+        saved++;
+        phase("saving", saved, needed.length);
+      }
+    };
     if (needed.length) {
       const wait = ms => new Promise(r => setTimeout(r, ms));
       const readProgress = async () => {
@@ -283,6 +315,7 @@
       const body = await encryptPayload(new TextEncoder().encode(JSON.stringify(needed)), target.secret);
       let blob = null;
       let started = false;
+      let batchSizes = null;
       try {
         const msg = JSON.parse(new TextDecoder().decode(
           await decryptPayload(await ask(target, "/delta-start", "POST", body, 30000), target.secret)));
@@ -293,14 +326,32 @@
         for (;;) {
           const st = await readProgress();
           applyProgress(st);
-          if (st && st.phase === "ready") break;
+          if (st && st.phase === "ready") {
+            if (Array.isArray(st.sizes) && st.sizes.length) batchSizes = st.sizes;
+            break;
+          }
           if (st && st.phase === "error") {
             return { ok: false, error: st.error || "The other device failed while gathering records." };
           }
           await wait(400);
         }
-        phase("receiving", 0, 1);
-        blob = await ask(target, "/delta-file", "GET", null, 600000);
+        if (batchSizes) {
+          const totalBytes = batchSizes.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+          let bytesDone = 0;
+          for (let i = 0; i < batchSizes.length; i++) {
+            const want = Number(batchSizes[i]) || 0;
+            const piece = await downloadSliced(target, "/delta-file?i=" + i, want, 600000, got => {
+              phase("receiving", bytesDone + got, totalBytes);
+            });
+            bytes += piece.length;
+            bytesDone += want || piece.length;
+            phase("unpacking", i + 1, batchSizes.length);
+            await saveRecords(await decryptRecordFile(piece, target.secret));
+          }
+        } else {
+          phase("receiving", 0, 1);
+          blob = await ask(target, "/delta-file", "GET", null, 600000);
+        }
       } else {
         phase("packing", 0, 0);
         const download = ask(target, "/delta", "POST", body, 600000);
@@ -314,18 +365,17 @@
           applyProgress(await readProgress());
         }
       }
-      bytes = blob.length;
-      phase("unpacking", 0, 0);
-      records = await decryptRecordFile(blob, target.secret);
+      if (blob) {
+        bytes = blob.length;
+        phase("unpacking", 0, 0);
+        records = await decryptRecordFile(blob, target.secret);
+      }
     }
 
-    /* Nothing is written until the whole payload has decrypted and passed its
-       tag check, so a wrong code or a truncated download cannot leave the vault
-       half updated. */
-    for (let i = 0; i < records.length; i++) {
-      await window.storage.set(records[i].k, records[i].v);
-      phase("saving", i + 1, records.length);
-    }
+    /* Batched transfers already saved each piece after its tag checked. A single
+       file still waits until the whole payload has decrypted, so a truncated
+       download cannot leave the vault half updated. */
+    if (records.length) await saveRecords(records);
     for (let i = 0; i < removable.length; i++) {
       await window.storage.delete(removable[i]);
       phase("removing", i + 1, removable.length);

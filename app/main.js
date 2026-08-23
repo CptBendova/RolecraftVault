@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.165";
+const FACTORY_BUILD = "1.166";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -236,7 +236,7 @@ function stopTransferServer() {
   if (transferState && transferState.timer) clearTimeout(transferState.timer);
   transferState = null;
   try { if (updatesDir) fs.unlinkSync(transferFilePath()); } catch (e) {}
-  try { if (updatesDir) fs.unlinkSync(deltaFilePath()); } catch (e) {}
+  clearDeltaFiles();
   if (transferServer) {
     try { transferServer.close(); } catch (e) {}
     transferServer = null;
@@ -245,6 +245,23 @@ function stopTransferServer() {
 
 const transferFilePath = () => path.join(updatesDir, "transfer.bin");
 const deltaFilePath = () => path.join(updatesDir, "delta.bin");
+const deltaBatchPath = i => path.join(updatesDir, "delta-" + i + ".bin");
+function clearDeltaFiles() {
+  if (!updatesDir) return;
+  try { fs.unlinkSync(deltaFilePath()); } catch (e) {}
+  try {
+    for (const name of fs.readdirSync(updatesDir)) {
+      if (/^delta-\d+\.bin$/.test(name)) {
+        try { fs.unlinkSync(path.join(updatesDir, name)); } catch (e2) {}
+      }
+    }
+  } catch (e) {}
+}
+/* A phone cannot hold a whole vault in one Capacitor HTTP response: around
+   130 MB the native layer stops. Batches stay small, but one picture can be
+   larger than the cap — that picture is still its own file, and the phone
+   pulls it in 1 MB slices. */
+const BATCH_PLAIN_MAX = 4 * 1024 * 1024;
 
 /* A short fingerprint per record lets the two devices work out exactly which
    records differ, so only those travel. Fingerprinting means reading and hashing
@@ -427,6 +444,73 @@ async function buildRecordFile(secret, keys, outPath, report) {
   }
 }
 
+function estimateKeyBytes(k) {
+  const m = /^(?:img|th):(.+)$/.exec(k);
+  if (m) {
+    try {
+      const n = Number(readValue("sz:" + m[1]));
+      if (Number.isFinite(n) && n > 0) return n;
+    } catch (e) {}
+  }
+  try {
+    const v = readValue(k);
+    if (v === null || v === undefined) return 0;
+    return String(v).length;
+  } catch (e) { return 0; }
+}
+
+function splitKeysIntoBatches(keys) {
+  const batches = [];
+  let cur = [], size = 0;
+  for (const k of keys) {
+    const n = estimateKeyBytes(k);
+    if (cur.length && size + n > BATCH_PLAIN_MAX) {
+      batches.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(k);
+    size += n;
+  }
+  if (cur.length) batches.push(cur);
+  return batches;
+}
+
+function openRecordWriter(outPath, secret) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
+  try { fs.unlinkSync(outPath); } catch (e) {}
+  const fd = fs.openSync(outPath, "w");
+  fs.writeSync(fd, Buffer.from("RCVX2"));
+  fs.writeSync(fd, salt);
+  fs.writeSync(fd, iv);
+  const putPlain = buf => {
+    const out = cipher.update(buf);
+    if (out && out.length) fs.writeSync(fd, out);
+  };
+  putPlain(Buffer.from(JSON.stringify({
+    app: "rolecraft-vault", kind: "lan-delta", at: new Date().toISOString()
+  }) + "\n", "utf8"));
+  return {
+    path: outPath,
+    writeRecord(k, v) {
+      putPlain(Buffer.from(JSON.stringify({ k: k, v: String(v) }) + "\n", "utf8"));
+    },
+    finish() {
+      const last = cipher.final();
+      if (last && last.length) fs.writeSync(fd, last);
+      fs.writeSync(fd, cipher.getAuthTag());
+      fs.closeSync(fd);
+      return { path: outPath, bytes: fs.statSync(outPath).size };
+    },
+    abort() {
+      try { fs.closeSync(fd); } catch (e) {}
+      try { fs.unlinkSync(outPath); } catch (e) {}
+    }
+  };
+}
+
 function buildTransferFile(secret) {
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
@@ -481,21 +565,36 @@ function startTransferServer() {
   const ip = lanAddress();
   if (!ip) return { ok: false, error: "No local network connection found. Connect both devices to the same Wi-Fi." };
   const secret = crypto.randomBytes(6);
-  const sendFile = (res, filePath, report) => {
+  const sendFile = (res, filePath, report, range) => {
     let size = 0;
     try { size = fs.statSync(filePath).size; } catch (e) {
       res.writeHead(500); res.end("gone");
       return;
     }
-    res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": size });
-    const stream = fs.createReadStream(filePath);
+    let start = 0, end = size;
+    if (range && Number.isFinite(range.off)) {
+      start = Math.max(0, Math.min(size, range.off | 0));
+      const n = range.n != null && Number.isFinite(range.n) ? Math.max(0, range.n | 0) : (size - start);
+      end = Math.max(start, Math.min(size, start + n));
+    }
+    const len = end - start;
+    const headers = {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": len,
+      "Accept-Ranges": "bytes",
+      "X-File-Size": String(size)
+    };
+    if (start !== 0 || end !== size) headers["Content-Range"] = "bytes " + start + "-" + (end ? end - 1 : 0) + "/" + size;
+    res.writeHead(200, headers);
+    if (len === 0) { res.end(); return; }
+    const stream = fs.createReadStream(filePath, { start: start, end: end - 1 });
     let sent = 0, last = 0;
     stream.on("data", chunk => {
       sent += chunk.length;
       const now = Date.now();
-      if (report && (sent === size || now - last > 80)) {
+      if (report && (sent === len || now - last > 80)) {
         last = now;
-        report(sent, size);
+        report(sent, len);
       }
     });
     stream.on("error", () => { try { res.destroy(); } catch (e) {} });
@@ -567,12 +666,51 @@ function startTransferServer() {
     };
     const packWanted = async (wanted) => {
       publishShareProgress({ phase: "packing", done: 0, total: wanted.length, pct: 0 });
-      const built = await buildRecordFile(secret, wanted, deltaFilePath(), (done, total) => {
-        publishShareProgress({ phase: "packing", done, total, pct: total > 0 ? done / total : 0 });
-      });
-      if (transferState) transferState.deltaPath = built.path;
-      publishShareProgress({ phase: "ready", done: wanted.length, total: wanted.length, pct: 1, bytes: 0, byteTotal: built.bytes });
-      return built;
+      const batches = splitKeysIntoBatches(wanted);
+      clearDeltaFiles();
+      const combined = openRecordWriter(deltaFilePath(), secret);
+      const sizes = [];
+      let keysDone = 0, lastYield = Date.now();
+      try {
+        for (let b = 0; b < batches.length; b++) {
+          const w = openRecordWriter(deltaBatchPath(b), secret);
+          try {
+            for (let i = 0; i < batches[b].length; i++) {
+              const k = batches[b][i];
+              let v;
+              try { v = readValue(k); } catch (e) { v = null; }
+              if (v !== null && v !== undefined) {
+                const s = String(v);
+                w.writeRecord(k, s);
+                combined.writeRecord(k, s);
+              }
+              keysDone++;
+              publishShareProgress({ phase: "packing", done: keysDone, total: wanted.length, pct: wanted.length > 0 ? keysDone / wanted.length : 0 });
+              if (Date.now() - lastYield > 40) {
+                await new Promise(r => setImmediate(r));
+                lastYield = Date.now();
+              }
+            }
+            sizes.push(w.finish().bytes);
+          } catch (e) {
+            w.abort();
+            throw e;
+          }
+        }
+        const built = combined.finish();
+        if (transferState) {
+          transferState.deltaPath = built.path;
+          transferState.deltaBatches = sizes.map((bytes, i) => ({ path: deltaBatchPath(i), bytes: bytes }));
+        }
+        publishShareProgress({
+          phase: "ready", done: wanted.length, total: wanted.length, pct: 1,
+          bytes: 0, byteTotal: built.bytes, batches: sizes.length, sizes: sizes
+        });
+        return built;
+      } catch (e) {
+        combined.abort();
+        throw e;
+      }
     };
     if (req.method === "POST" && route === "/delta-start") {
       readWantedKeys(wanted => {
@@ -584,11 +722,29 @@ function startTransferServer() {
       return;
     }
     if (req.method === "GET" && route === "/delta-file") {
-      const p = transferState && transferState.deltaPath;
-      if (!p || !fs.existsSync(p)) { res.writeHead(409); res.end("not ready"); return; }
-      sendFile(res, p, (sent, total) => {
+      let filePath = null;
+      let q = null;
+      try { q = new URL(req.url, "http://127.0.0.1"); } catch (e) { q = null; }
+      const iRaw = q && q.searchParams.get("i");
+      if (iRaw != null && iRaw !== "") {
+        const i = Number(iRaw);
+        const batches = transferState && transferState.deltaBatches;
+        if (!batches || !Number.isInteger(i) || i < 0 || i >= batches.length || !fs.existsSync(batches[i].path)) {
+          res.writeHead(409); res.end("not ready");
+          return;
+        }
+        filePath = batches[i].path;
+      } else {
+        const p = transferState && transferState.deltaPath;
+        if (!p || !fs.existsSync(p)) { res.writeHead(409); res.end("not ready"); return; }
+        filePath = p;
+      }
+      const offRaw = q && q.searchParams.get("off");
+      const nRaw = q && q.searchParams.get("n");
+      const range = offRaw != null && offRaw !== "" ? { off: Number(offRaw), n: nRaw != null && nRaw !== "" ? Number(nRaw) : null } : null;
+      sendFile(res, filePath, (sent, total) => {
         publishShareProgress({ phase: "sending", done: sent, total, pct: total > 0 ? sent / total : 0, bytes: sent, byteTotal: total });
-      });
+      }, range);
       return;
     }
     if (req.method === "POST" && route === "/delta") {
