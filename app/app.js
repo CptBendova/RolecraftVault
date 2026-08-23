@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.188";
+const APP_VERSION = "1.189";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.188";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.188 — current",
+  heading: "1.189 — current",
+  notes: ["A tablet is no longer treated as a phone. Everything the Android app does to keep memory in check was measured for a phone and then applied to tablets as well, because the only question being asked was whether this is Android at all. So a large tablet with plenty of memory was holding back exactly as hard as a small phone with very little: fewer pictures kept ready, fewer read at a time, and a smaller allowance overall.","It now looks at the screen and at how much memory the device reports. A tablet keeps three times as many pictures ready to draw, reads more of them at once, and is given an allowance to match what it actually has, so grids and galleries fill in as you scroll rather than being fetched again. Phones are unchanged except that a phone with more memory is now allowed to use more of it, and one with less is asked to use less.","None of this changes what is stored or how it is protected. It only decides how much is kept ready to show."]
+}, {
+  heading: "1.188",
   notes: ["A library of more than sixty-four characters stopped blanking cards as you scrolled. The phone was keeping a fixed number of picture previews and letting the rest go, so once you had more characters than that, scrolling far enough pushed the earlier ones out and they had to be read again on the way back. It now budgets by how much memory the pictures actually take rather than by how many there are, and since a preview is small, hundreds stay ready at once instead of sixty-four.","Opening a character no longer makes you wait in the grid. Every picture in that character is already read when you open it, but only a handful were being kept ready to draw, so a long gallery fetched them again as you swiped. The pictures belonging to the character you have open are now all kept ready. This costs nothing extra: they were already in memory, and what the screen holds is the same picture rather than a second copy of it.","The dashboard spotlight is drawn from the original now. It is the one picture on that page shown large enough to tell the difference, and on a wide screen it was being enlarged past the size of the preview it was drawn from. The smaller tiles beside it are unchanged, because at the size they are shown the preview is already sharper than the screen can display."]
 }, {
   heading: "1.187",
@@ -11572,12 +11575,24 @@ function RolecraftVault() {
   const imgBytes = useRef({});
   const imgTotal = useRef(0);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
+  /* ON_PHONE only means "running on Android", and a twelve inch tablet with
+     eight gigabytes was being given a budget phone's limits. Android's own
+     definition of a large screen is a shortest edge of 600dp, and the shortest
+     edge is used because it does not change when the device is turned over.
+     deviceMemory is reported in gigabytes and capped at 8 by the browser; when
+     it is missing, assume modest rather than generous. */
+  const SHORT_EDGE = typeof window !== "undefined" && window.screen
+    ? Math.min(window.screen.width || 0, window.screen.height || 0) : 0;
+  const ON_TABLET = ON_PHONE && SHORT_EDGE >= 600;
+  const DEVICE_GB = (typeof navigator !== "undefined" && Number(navigator.deviceMemory)) || (ON_TABLET ? 4 : 3);
   /* A picture with no thumbnail may still be drawn on a card from its
      original, but only on a phone if it is small. */
   const PHONE_CARD_MAX = 1000000;
   /* A data URL is a JavaScript string, so it costs about two bytes of memory
      per character. The budget below is that memory cost, not the file size. */
-  const IMG_CACHE_BYTES = ON_PHONE ? 220 * 1024 * 1024 : 0;
+  const IMG_CACHE_BYTES = ON_PHONE
+    ? Math.round(Math.max(2, Math.min(8, DEVICE_GB)) * 55) * 1024 * 1024
+    : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11619,7 +11634,7 @@ function RolecraftVault() {
   }, []);
   const imgQueue = useRef([]);
   const imgBusy = useRef(0);
-  const IMG_INFLIGHT = ON_PHONE ? 3 : 4;
+  const IMG_INFLIGHT = ON_TABLET ? 4 : ON_PHONE ? 3 : 4;
   const quietRef = useRef(false);
   const pumpImg = useCallback(() => {
     if (quietRef.current) return;
@@ -11680,8 +11695,10 @@ function RolecraftVault() {
      does not redraw the window. React state only gets the pictures the open
      character (or the current swipe) actually needs. One file at a time when
      idle; the open record jumps the queue. */
-  const FULL_CACHE_MAX = ON_PHONE ? 8 : 48;
-  const FULL_MEM_MAX = ON_PHONE ? 24 : 64;
+  /* A tablet shows far more pictures at once than a phone, so holding only
+     eight ready meant the rest were fetched again as they scrolled into view. */
+  const FULL_CACHE_MAX = ON_TABLET ? 24 : ON_PHONE ? 8 : 48;
+  const FULL_MEM_MAX = ON_TABLET ? 48 : ON_PHONE ? 24 : 64;
   const fullMem = useRef({});
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
