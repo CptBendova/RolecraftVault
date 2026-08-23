@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.184";
+const APP_VERSION = "1.185";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.184";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.184 — current",
+  heading: "1.185 — current",
+  notes: ["A character with dozens of pictures was still showing the small previews when you opened it. After you unlock, every original now loads in the background one at a time so the window stays smooth; opening that character jumps its pictures to the front of the line, so a gallery of sixty is already full size when you swipe."]
+}, {
+  heading: "1.184",
   notes: ["Windows was hitching — especially in Settings and when swiping pictures — because the library behind those screens kept decoding every full photo in the vault and redrawing the whole window for each one. Settings now pauses that work, swiping no longer redraws the list underneath, and Windows only loads full pictures for the character you actually opened. The phone still warms the Characters tab and dashboard as before."]
 }, {
   heading: "1.183",
@@ -11399,9 +11402,11 @@ function RolecraftVault() {
     imgBusy.current = 0;
     fullLoading.current.clear();
     fullOrder.current = [];
-    fullQueue.current = [];
+    fullUrgent.current = [];
+    fullIdle.current = [];
     fullBusy.current = 0;
     fullPinned.current.clear();
+    fullMem.current = {};
     fullBuf.current = {};
     fullEvict.current = [];
     if (fullFlush.current) {
@@ -11522,15 +11527,16 @@ function RolecraftVault() {
     pumpImg();
   }, [pumpImg]);
   const [fullCache, setFullCache] = useState({});
-  /* Full originals are queued a few at a time. Firing every file at once is
-     what made Windows hitch, and dropping all but four is why a swipe on the
-     phone reloaded every picture. The open character's pictures are pinned so
-     they stay until you leave. */
-  const FULL_CACHE_MAX = ON_PHONE ? 4 : 48;
-  const FULL_INFLIGHT = ON_PHONE ? 2 : 3;
+  /* Full originals live in a side store so background loading after unlock
+     does not redraw the window. React state only gets the pictures the open
+     character (or the current swipe) actually needs. One file at a time when
+     idle; the open record jumps the queue. */
+  const FULL_CACHE_MAX = ON_PHONE ? 8 : 48;
+  const fullMem = useRef({});
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
-  const fullQueue = useRef([]);
+  const fullUrgent = useRef([]);
+  const fullIdle = useRef([]);
   const fullBusy = useRef(0);
   const fullPinned = useRef(new Set());
   const fullBuf = useRef({});
@@ -11539,12 +11545,15 @@ function RolecraftVault() {
   const flushFull = useCallback(() => {
     fullFlush.current = null;
     if (quietRef.current) return;
-    const batch = fullBuf.current;
+    const raw = fullBuf.current;
     fullBuf.current = {};
     const evict = fullEvict.current;
     fullEvict.current = [];
-    const ids = Object.keys(batch);
-    if (!ids.length && !evict.length) return;
+    const batch = {};
+    Object.keys(raw).forEach(id => {
+      if (fullPinned.current.has(id)) batch[id] = raw[id];
+    });
+    if (!Object.keys(batch).length && !evict.length) return;
     setFullCache(p => {
       const next = { ...p, ...batch };
       evict.forEach(id => delete next[id]);
@@ -11553,39 +11562,61 @@ function RolecraftVault() {
   }, []);
   const pumpFull = useCallback(() => {
     if (quietRef.current) return;
-    while (fullBusy.current < FULL_INFLIGHT && fullQueue.current.length) {
-      const imgId = fullQueue.current.shift();
+    const inflight = fullUrgent.current.length ? 2 : 1;
+    while (fullBusy.current < inflight && (fullUrgent.current.length || fullIdle.current.length)) {
+      const imgId = fullUrgent.current.shift() || fullIdle.current.shift();
       if (!imgId) continue;
+      if (fullMem.current[imgId]) {
+        fullLoading.current.delete(imgId);
+        continue;
+      }
       fullBusy.current++;
+      const wanted = fullPinned.current.has(imgId);
       sGet("img:" + imgId).then(v => {
-        if (!v) {
-          fullLoading.current.delete(imgId);
-          return;
-        }
+        fullLoading.current.delete(imgId);
+        if (!v) return;
+        fullMem.current[imgId] = v;
         fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
         while (fullOrder.current.length > FULL_CACHE_MAX) {
           const u = fullOrder.current.findIndex(id => !fullPinned.current.has(id));
           if (u < 0) break;
           const eid = fullOrder.current.splice(u, 1)[0];
           fullEvict.current.push(eid);
-          fullLoading.current.delete(eid);
         }
-        fullBuf.current[imgId] = v;
-        if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 40);
+        if (fullPinned.current.has(imgId) || wanted) fullBuf.current[imgId] = v;
+        if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 50);
       }).catch(() => {
         fullLoading.current.delete(imgId);
       }).finally(() => {
         fullBusy.current--;
-        pumpFull();
+        setTimeout(pumpFull, wanted ? 0 : 30);
       });
     }
   }, [flushFull]);
   const requestFull = useCallback((imgId, urgent) => {
-    if (!imgId || fullLoading.current.has(imgId)) return;
+    if (!imgId) return;
+    if (fullMem.current[imgId]) {
+      if (fullPinned.current.has(imgId)) {
+        fullBuf.current[imgId] = fullMem.current[imgId];
+        if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 0);
+      }
+      return;
+    }
+    if (fullLoading.current.has(imgId)) {
+      if (urgent) {
+        const i = fullIdle.current.indexOf(imgId);
+        if (i >= 0) {
+          fullIdle.current.splice(i, 1);
+          fullUrgent.current.unshift(imgId);
+          pumpFull();
+        }
+      }
+      return;
+    }
     fullLoading.current.add(imgId);
-    if (urgent) fullQueue.current.unshift(imgId);else fullQueue.current.push(imgId);
+    if (urgent) fullUrgent.current.unshift(imgId);else fullIdle.current.push(imgId);
     pumpFull();
-  }, [pumpFull]);
+  }, [pumpFull, flushFull]);
   const warmFull = useCallback(ids => {
     const list = [];
     const seen = new Set();
@@ -11595,15 +11626,19 @@ function RolecraftVault() {
         list.push(id);
       }
     });
-    fullPinned.current = new Set(list);
-    list.forEach((id, i) => requestFull(id, i < 4));
+    list.forEach(id => fullPinned.current.add(id));
+    const ready = {};
+    list.forEach(id => {
+      if (fullMem.current[id]) ready[id] = fullMem.current[id];
+      else requestFull(id, true);
+    });
+    if (Object.keys(ready).length) {
+      setFullCache(p => Object.assign({}, p, ready));
+    }
     return () => {
       list.forEach(id => fullPinned.current.delete(id));
     };
   }, [requestFull]);
-  /* The screen you are on keeps its full pictures. Opening a character used
-     to pin only the first dozen, so a larger gallery reloaded as you swiped.
-     The Characters tab and the dashboard now warm every picture they show. */
   useEffect(() => {
     quietRef.current = !!(showSettings || showGuide);
     if (quietRef.current) return;
@@ -11611,28 +11646,24 @@ function RolecraftVault() {
     pumpFull();
     flushFull();
   }, [showSettings, showGuide, pumpImg, pumpFull, flushFull]);
+  /* After unlock, walk every picture once and pull the original in the
+     background — one file at a time, no redraw until that picture is on
+     screen. Opening a character jumps its files to the front of the line. */
   useEffect(() => {
     if (!ready) return;
-    if (viewCharId || viewPersonaId) return;
-    if (!ON_PHONE) return;
     const ids = [];
-    if (view === "characters") {
-      chars.forEach(c => charImgIds(c).forEach(id => ids.push(id)));
-    } else if (view === "personas") {
-      personas.forEach(p => personaImgIds(p).forEach(id => ids.push(id)));
-    } else if (view === "dashboard") {
-      chars.forEach(c => {
-        if (c.profileImg) ids.push(c.profileImg);
-        (c.gallery || []).forEach(g => g && g.imgId && ids.push(g.imgId));
-      });
-      personas.forEach(p => {
-        if (p.avatar) ids.push(p.avatar);
-        (p.gallery || []).forEach(g => g && g.imgId && ids.push(g.imgId));
-      });
-    }
-    if (!ids.length) return;
-    return warmFull(ids);
-  }, [ready, view, viewCharId, viewPersonaId, chars, personas, warmFull]);
+    const add = id => {
+      if (id) ids.push(id);
+    };
+    chars.forEach(c => charImgIds(c).forEach(add));
+    personas.forEach(p => personaImgIds(p).forEach(add));
+    lore.forEach(e => (e.images || []).forEach(im => add(im && im.imgId)));
+    prompts.forEach(p => (p.images || []).forEach(im => add(im && im.imgId)));
+    [bucketMeta, loreMeta, promptMeta].forEach(meta => {
+      Object.values(meta || {}).forEach(m => add(m && m.cover));
+    });
+    ids.forEach(id => requestFull(id, false));
+  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, requestFull]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
