@@ -362,6 +362,15 @@
       return "Could not save on this phone: " + m;
     };
     const C = window.Capacitor;
+    const keepAlive = async on => {
+      if (!C || typeof C.nativePromise !== "function") return;
+      try {
+        await Promise.race([
+          C.nativePromise("TransferKeepAlive", on ? "start" : "stop", {}),
+          new Promise(r => setTimeout(r, 5000))
+        ]);
+      } catch (e) {}
+    };
     if (C && typeof C.nativePromise === "function") {
       try {
         await C.nativePromise("Filesystem", "requestPermissions", {});
@@ -370,6 +379,7 @@
         await C.nativePromise("Filesystem", "mkdir", { path: "vault", directory: "DATA", recursive: true });
       } catch (e) {}
     }
+    if (!preview) await keepAlive(true);
     const persistOne = async (k, v) => {
       try {
         await window.storage.set(k, v);
@@ -485,6 +495,8 @@
     } catch (e) {
       cachedLocal = null;
       return Object.assign({ ok: false, error: e && e.message ? e.message : String(e) }, who);
+    } finally {
+      if (!preview) await keepAlive(false);
     }
   }
 

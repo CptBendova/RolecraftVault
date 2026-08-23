@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.176";
+const APP_VERSION = "1.177";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.176";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.176 — current",
+  heading: "1.177 — current",
+  notes: ["A master password can be set on a phone that already has a library. It used to rewrite every picture under the new password, which on a vault of a few gigabytes sat on “Working…” and then stopped. Pictures are already in an encrypted folder; the password now locks the key to that folder, which is instant. Small text records are still encrypted with the password as before.","A copy onto a phone keeps going when the screen turns off. Android was putting the app to sleep, which killed the transfer. A small notification stays up while it copies so the work is allowed to continue. You can turn the screen off. Both of these are in the Android file."]
+}, {
+  heading: "1.176",
   notes: ["Copying a large vault between devices is much quicker to check, and a copy that hits a bad record no longer stops the rest. Checking what is already on the phone used to read every picture just to compare fingerprints; it now reads the fingerprints it already stored when those pictures were saved, so a retry after a failed copy only fetches what is still missing. If one picture cannot be written, the rest of the copy still runs, and the next try picks up the gaps. Both devices need this version."]
 }, {
   heading: "1.175",
@@ -8956,9 +8959,14 @@ function AuthForm({
   const submit = async () => {
     if (busy) return;
     setBusy(true);
-    const e2 = await onSubmit(vals);
-    setBusy(false);
-    if (e2) setErr(e2);
+    try {
+      const e2 = await onSubmit(vals);
+      setBusy(false);
+      if (e2) setErr(e2);
+    } catch (e) {
+      setBusy(false);
+      setErr(e && e.message ? e.message : "Something went wrong — try again");
+    }
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {

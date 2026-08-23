@@ -96,7 +96,9 @@
   var FS_LARGE = 16 * 1024;
   var VAULT_DIR = "vault/";
   var WRAP_KEY_ID = "__wrap__";
+  var WRAP_ENC = "enc:";
   var wrapKey = null;
+  var wrapRaw = null;
   function nativeFs() {
     var C = window.Capacitor;
     return C && typeof C.nativePromise === "function" ? C : null;
@@ -266,28 +268,47 @@
       return more();
     });
   }
+  function persistWrapKey() {
+    if (!wrapRaw || !nativeFs()) return Promise.resolve();
+    if (masterKey) {
+      return aesEncrypt(b64encode(wrapRaw), masterKey).then(function (b) {
+        return idbSet(WRAP_KEY_ID, WRAP_ENC + b);
+      });
+    }
+    return idbSet(WRAP_KEY_ID, b64encode(wrapRaw));
+  }
   function ensureWrapKey() {
     if (wrapKey) return Promise.resolve(wrapKey);
     if (!nativeFs()) return Promise.resolve(null);
     return idbGet(WRAP_KEY_ID).then(function (s) {
-      var raw;
-      if (typeof s === "string" && s.length) {
-        raw = b64decode(s);
-        return importAesKey(raw).then(function (k) { wrapKey = k; return k; });
+      var rawP;
+      if (typeof s === "string" && s.indexOf(WRAP_ENC) === 0) {
+        if (!masterKey) return Promise.reject(new Error("locked"));
+        rawP = aesDecrypt(s.slice(WRAP_ENC.length), masterKey).then(b64decode);
+      } else if (typeof s === "string" && s.length) {
+        rawP = Promise.resolve(b64decode(s));
+      } else {
+        var fresh = new Uint8Array(32);
+        crypto.getRandomValues(fresh);
+        rawP = Promise.resolve(fresh);
       }
-      raw = new Uint8Array(32);
-      crypto.getRandomValues(raw);
-      return idbSet(WRAP_KEY_ID, b64encode(raw)).then(function () {
-        return importAesKey(raw).then(function (k) { wrapKey = k; return k; });
+      return rawP.then(function (raw) {
+        wrapRaw = raw;
+        return importAesKey(raw).then(function (k) {
+          wrapKey = k;
+          var wasRaw = !s || (typeof s === "string" && s.indexOf(WRAP_ENC) !== 0);
+          return loadSecurity().then(function (sec) {
+            if (!s || (sec && masterKey && wasRaw)) return persistWrapKey().then(function () { return k; });
+            return k;
+          });
+        });
       });
     });
   }
-  /* Files are sealed with the password key when one is set, otherwise with a
-     device wrap key. Do not fall back to masterKey here: rewrapAll runs while
-     masterKey has already moved, and must decrypt with the key it was given. */
-  function sealKey(explicit) {
-    return explicit || wrapKey;
-  }
+  /* Pictures on Android are always sealed with wrapKey. Setting a master
+     password wraps that key, so a vault of several gigabytes does not have
+     to be read and rewritten. Small IndexedDB values still use the password
+     key the way the browser edition does. */
 
   /* ---------- auth state ---------- */
   var SEC_KEY = "__security__";       // security record (never enters the v: namespace)
@@ -342,10 +363,16 @@
   function plainFromStored(stored, aesKey) {
     if (stored == null) return Promise.resolve(null);
     if (typeof stored === "string" && stored.indexOf(BIN_MARK) === 0) {
-      var k = sealKey(aesKey);
-      if (!k) return Promise.reject(new Error("locked"));
       return readBin(stored.slice(BIN_MARK.length)).then(function (bin) {
-        return decryptBytes(bin, k).then(function (pt) { return td.decode(pt); });
+        var first = wrapKey || aesKey;
+        var alt = first === wrapKey ? aesKey : wrapKey;
+        function tryDec(k) {
+          if (!k) return Promise.reject(new Error("locked"));
+          return decryptBytes(bin, k);
+        }
+        return tryDec(first).catch(function () { return tryDec(alt); }).then(function (pt) {
+          return td.decode(pt);
+        });
       });
     }
     return loadPayload(stored).then(function (payload) { return decodeWith(payload, aesKey); });
@@ -363,7 +390,7 @@
       var cleared = stored ? dropPayloadFile(stored) : Promise.resolve();
       return cleared.then(function () {
         if (nativeFs() && text.length > FS_LARGE) {
-          var k = sealKey(aesKey);
+          var k = wrapKey;
           if (!k) return Promise.reject(new Error("locked"));
           return encryptBytes(te.encode(text), k).then(function (bin) {
             var path = vaultPath(key);
@@ -417,6 +444,10 @@
       keys.forEach(function (k) {
         chain = chain.then(function () {
           return idbGet("v:" + k).then(function (stored) {
+            if (stored == null) return null;
+            if (typeof stored === "string" && (stored.indexOf(BIN_MARK) === 0 || stored.indexOf(FILE_MARK) === 0)) {
+              return null;
+            }
             return plainFromStored(stored, oldKey).then(function (plain) {
               if (plain == null) return null;
               return putPlain(k, plain, newKey);
@@ -511,13 +542,18 @@
         if (!pw || pw.length < 8) return { ok: false, error: "Use at least 8 characters" };
         var salt = randomHex(16);
         return deriveFor(pw, salt).then(function (d) {
-          /* Security record first, then re-encrypt. Interrupted the other way
-             round — a closed tab, a crash — the values are already encrypted
-             but nothing records the salt they were encrypted under, and they
-             cannot be read again by anyone. This order leaves stragglers as
-             "raw:", which still decode and get encrypted on their next write. */
-          return saveSecurity({ salt: salt, verifier: d.verifier }).then(function () {
+          /* On Android, pictures are already sealed with a device wrap key.
+             The password wraps that key instead of rewriting every picture —
+             a multi-gigabyte vault used to sit on “Working…” then die. Small
+             IndexedDB values still go under the password the usual way.
+             Security record first: if we wrap values and then crash before
+             the salt is stored, they cannot be read again. */
+          return ensureWrapKey().then(function () {
+            return saveSecurity({ salt: salt, verifier: d.verifier });
+          }).then(function () {
             return setMaster(d.keyRaw);
+          }).then(function () {
+            return persistWrapKey();
           }).then(function () {
             return rewrapAll(null, d.keyRaw);
           }).then(function () { return { ok: true }; });
@@ -534,6 +570,8 @@
             return saveSecurity({ salt: salt, verifier: d.verifier }); // PIN invalidated
           }).then(function () {
             return setMaster(d.keyRaw);
+          }).then(function () {
+            return persistWrapKey();
           }).then(function () { return { ok: true }; });
         });
       });
@@ -545,13 +583,17 @@
           return saveSecurity(null);
         }).then(function () {
           return setMaster(null);
+        }).then(function () {
+          return persistWrapKey();
         }).then(function () { return { ok: true }; });
       });
     },
     unlockPassword: function (pw) {
       return verifyPassword(pw).then(function (raw) {
         if (!raw) return { ok: false, error: "That password doesn't match" };
-        return setMaster(raw).then(function () { return { ok: true }; });
+        return setMaster(raw).then(function () {
+          return ensureWrapKey();
+        }).then(function () { return { ok: true }; });
       });
     },
     setPin: function (pw, pin) {
@@ -584,12 +626,17 @@
         return kdfBits(pin, s.pinSalt + ":pin").then(importAesKey).then(function (pinKey) {
           return aesDecrypt(s.pinBlob, pinKey); // GCM auth tag rejects wrong PINs
         }).then(function (rawB64) {
-          return setMaster(b64decode(rawB64)).then(function () { return { ok: true }; });
+          return setMaster(b64decode(rawB64)).then(function () {
+            return ensureWrapKey();
+          }).then(function () { return { ok: true }; });
         }).catch(function () { return { ok: false, error: "That PIN doesn't match" }; });
       });
     },
     lock: function () {
-      return setMaster(null).then(function () { return { ok: true }; });
+      return setMaster(null).then(function () {
+        if (nativeFs()) { wrapKey = null; wrapRaw = null; }
+        return { ok: true };
+      });
     },
   };
 
