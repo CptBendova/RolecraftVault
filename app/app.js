@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.189";
+const APP_VERSION = "1.190";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.189";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.189 — current",
+  heading: "1.190 — current",
+  notes: ["The app was slow to use for a long stretch after every unlock, and Settings was where it showed most. After you unlocked, it went through the vault pulling in the full-size version of every single picture you own. On a large library that is thousands of pictures, and each one has to be unscrambled twice over, once by Windows and once by your own vault key. All of that was happening in the background while you were trying to use the app.","Almost all of that work was wasted. Only a few dozen pictures are ever held at full size at once, so the rest were read, unscrambled, and then dropped again to make room. On a library of four hundred characters it was reading four thousand four hundred pictures in order to keep sixty-four.","It now asks only for as many as it can actually hold, and it takes the portraits and covers first, because those are what the library screens draw. Opening a character is unchanged: that asks for its own pictures directly, which is what makes a gallery ready to swipe through."]
+}, {
+  heading: "1.189",
   notes: ["A tablet is no longer treated as a phone. Everything the Android app does to keep memory in check was measured for a phone and then applied to tablets as well, because the only question being asked was whether this is Android at all. So a large tablet with plenty of memory was holding back exactly as hard as a small phone with very little: fewer pictures kept ready, fewer read at a time, and a smaller allowance overall.","It now looks at the screen and at how much memory the device reports. A tablet keeps three times as many pictures ready to draw, reads more of them at once, and is given an allowance to match what it actually has, so grids and galleries fill in as you scroll rather than being fetched again. Phones are unchanged except that a phone with more memory is now allowed to use more of it, and one with less is asked to use less.","None of this changes what is stored or how it is protected. It only decides how much is kept ready to show."]
 }, {
   heading: "1.188",
@@ -11859,24 +11862,47 @@ function RolecraftVault() {
     pumpFull();
     flushFull();
   }, [showSettings, showGuide, pumpImg, pumpFull, flushFull]);
-  /* After unlock, walk every picture once and pull the original in the
-     background — one file at a time, no redraw until that picture is on
-     screen. Opening a character jumps its files to the front of the line. */
+  /* After unlock, pull some originals in the background so the first thing you
+     open is already sharp.
+
+     Only as many as can actually be kept. This used to queue every picture in
+     the vault, but no more than FULL_MEM_MAX of them are ever retained, so on a
+     large library it read and decrypted thousands of originals in order to keep
+     the last few dozen — every one of them decrypted twice over, by Windows and
+     then by the vault's own key. That is a long stretch of heavy work after
+     every unlock, and it is what made the whole app feel slow, Settings
+     included. Opening a character is unaffected: that asks for its own pictures
+     directly and pins them, which is what makes a gallery ready to swipe.
+
+     Portraits and covers go first, because those are what a library screen
+     actually draws. */
   useEffect(() => {
     if (!ready) return;
-    const ids = [];
-    const add = id => {
-      if (id) ids.push(id);
+    const lead = [], rest = [];
+    const add = (id, isLead) => {
+      if (id) (isLead ? lead : rest).push(id);
     };
-    chars.forEach(c => charImgIds(c).forEach(add));
-    personas.forEach(p => personaImgIds(p).forEach(add));
-    lore.forEach(e => (e.images || []).forEach(im => add(im && im.imgId)));
-    prompts.forEach(p => (p.images || []).forEach(im => add(im && im.imgId)));
-    [bucketMeta, loreMeta, promptMeta].forEach(meta => {
-      Object.values(meta || {}).forEach(m => add(m && m.cover));
+    chars.forEach(c => {
+      add(c.profileImg, true);
+      charImgIds(c).forEach(id => add(id, false));
     });
-    ids.forEach(id => queueFull(id, false));
-  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, queueFull]);
+    personas.forEach(p => {
+      add(p.avatar, true);
+      personaImgIds(p).forEach(id => add(id, false));
+    });
+    lore.forEach(e => (e.images || []).forEach(im => add(im && im.imgId, false)));
+    prompts.forEach(p => (p.images || []).forEach(im => add(im && im.imgId, false)));
+    [bucketMeta, loreMeta, promptMeta].forEach(meta => {
+      Object.values(meta || {}).forEach(m => add(m && m.cover, true));
+    });
+    const seen = new Set();
+    for (const id of lead.concat(rest)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      queueFull(id, false);
+      if (seen.size >= FULL_MEM_MAX) break;
+    }
+  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, queueFull, FULL_MEM_MAX]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
