@@ -3,7 +3,7 @@
 ; and runs it elevated. The window the person sees is installer/index.html.
 !define APP_NAME "Rolecraft Vault"
 !define COMPANY "Rolecraft"
-!define VERSION "1.183"
+!define VERSION "1.184"
 
 SilentInstall silent
 AutoCloseWindow true

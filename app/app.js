@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.183";
+const APP_VERSION = "1.184";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.183";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.183 — current",
+  heading: "1.184 — current",
+  notes: ["Windows was hitching — especially in Settings and when swiping pictures — because the library behind those screens kept decoding every full photo in the vault and redrawing the whole window for each one. Settings now pauses that work, swiping no longer redraws the list underneath, and Windows only loads full pictures for the character you actually opened. The phone still warms the Characters tab and dashboard as before."]
+}, {
+  heading: "1.183",
   notes: ["Opening a character on a phone now loads every full picture in that record, not just the first dozen — a larger gallery was still fetching as you swiped. The Characters tab and the dashboard do the same for every picture they show, so cards and “From your galleries” use the full image rather than a small preview."]
 }, {
   heading: "1.182",
@@ -2095,9 +2098,12 @@ function CrestMark({
   }));
 }
 function DustField({
-  count = 55
+  count = 55,
+  paused = false
 }) {
   const ref = useRef(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
@@ -2140,7 +2146,7 @@ function DustField({
     const tick = () => {
       if (!on) return;
       requestAnimationFrame(tick);
-      if (hidden) return;
+      if (hidden || pausedRef.current) return;
       ctx.clearRect(0, 0, w(), h());
       for (const m of motes) {
         m.y -= m.s;
@@ -2171,7 +2177,8 @@ function DustField({
   });
 }
 function AmbientLayer({
-  dust = 36
+  dust = 36,
+  paused = false
 }) {
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reduce) return null;
@@ -2181,7 +2188,8 @@ function AmbientLayer({
   }, /*#__PURE__*/React.createElement("div", {
     className: "amb-glow"
   }), /*#__PURE__*/React.createElement(DustField, {
-    count: dust
+    count: dust,
+    paused: paused
   }));
 }
 /* What a field costs, and when it is sent. The class matters more than the
@@ -2804,6 +2812,7 @@ function Lightbox({
     src: src,
     alt: item.caption || "gallery image",
     draggable: false,
+    decoding: "async",
     className: blurred && blurred[item.imgId] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11393,6 +11402,12 @@ function RolecraftVault() {
     fullQueue.current = [];
     fullBusy.current = 0;
     fullPinned.current.clear();
+    fullBuf.current = {};
+    fullEvict.current = [];
+    if (fullFlush.current) {
+      clearTimeout(fullFlush.current);
+      fullFlush.current = null;
+    }
     setBlurred({});
     setEditingChar(null);
     setEditingRecord(null);
@@ -11458,7 +11473,9 @@ function RolecraftVault() {
   const imgQueue = useRef([]);
   const imgBusy = useRef(0);
   const IMG_INFLIGHT = ON_PHONE ? 3 : 4;
+  const quietRef = useRef(false);
   const pumpImg = useCallback(() => {
+    if (quietRef.current) return;
     while (imgBusy.current < IMG_INFLIGHT && imgQueue.current.length) {
       const imgId = imgQueue.current.shift();
       imgBusy.current++;
@@ -11516,7 +11533,26 @@ function RolecraftVault() {
   const fullQueue = useRef([]);
   const fullBusy = useRef(0);
   const fullPinned = useRef(new Set());
+  const fullBuf = useRef({});
+  const fullEvict = useRef([]);
+  const fullFlush = useRef(null);
+  const flushFull = useCallback(() => {
+    fullFlush.current = null;
+    if (quietRef.current) return;
+    const batch = fullBuf.current;
+    fullBuf.current = {};
+    const evict = fullEvict.current;
+    fullEvict.current = [];
+    const ids = Object.keys(batch);
+    if (!ids.length && !evict.length) return;
+    setFullCache(p => {
+      const next = { ...p, ...batch };
+      evict.forEach(id => delete next[id]);
+      return next;
+    });
+  }, []);
   const pumpFull = useCallback(() => {
+    if (quietRef.current) return;
     while (fullBusy.current < FULL_INFLIGHT && fullQueue.current.length) {
       const imgId = fullQueue.current.shift();
       if (!imgId) continue;
@@ -11527,18 +11563,15 @@ function RolecraftVault() {
           return;
         }
         fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
-        const evict = [];
         while (fullOrder.current.length > FULL_CACHE_MAX) {
           const u = fullOrder.current.findIndex(id => !fullPinned.current.has(id));
-          if (u >= 0) evict.push(fullOrder.current.splice(u, 1)[0]);
-          else break;
+          if (u < 0) break;
+          const eid = fullOrder.current.splice(u, 1)[0];
+          fullEvict.current.push(eid);
+          fullLoading.current.delete(eid);
         }
-        evict.forEach(id => fullLoading.current.delete(id));
-        setFullCache(p => {
-          const next = { ...p, [imgId]: v };
-          evict.forEach(id => delete next[id]);
-          return next;
-        });
+        fullBuf.current[imgId] = v;
+        if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 40);
       }).catch(() => {
         fullLoading.current.delete(imgId);
       }).finally(() => {
@@ -11546,7 +11579,7 @@ function RolecraftVault() {
         pumpFull();
       });
     }
-  }, []);
+  }, [flushFull]);
   const requestFull = useCallback((imgId, urgent) => {
     if (!imgId || fullLoading.current.has(imgId)) return;
     fullLoading.current.add(imgId);
@@ -11572,8 +11605,16 @@ function RolecraftVault() {
      to pin only the first dozen, so a larger gallery reloaded as you swiped.
      The Characters tab and the dashboard now warm every picture they show. */
   useEffect(() => {
+    quietRef.current = !!(showSettings || showGuide);
+    if (quietRef.current) return;
+    pumpImg();
+    pumpFull();
+    flushFull();
+  }, [showSettings, showGuide, pumpImg, pumpFull, flushFull]);
+  useEffect(() => {
     if (!ready) return;
     if (viewCharId || viewPersonaId) return;
+    if (!ON_PHONE) return;
     const ids = [];
     if (view === "characters") {
       chars.forEach(c => charImgIds(c).forEach(id => ids.push(id)));
@@ -12540,6 +12581,9 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast);
+  const sheetOpen = !!(viewCharId || viewPersonaId);
+  const overlayOpen = !!(showSettings || showGuide);
+  quietRef.current = overlayOpen;
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
     "data-rcv-state": "locked",
@@ -12632,7 +12676,8 @@ function RolecraftVault() {
       "--card-min": cardMinPx
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(AmbientLayer, {
-    dust: 40
+    dust: 40,
+    paused: overlayOpen || sheetOpen
   }), /*#__PURE__*/React.createElement("div", {
     className: "sidebar",
     style: {
@@ -12761,7 +12806,7 @@ function RolecraftVault() {
       height: "100vh",
       padding: "30px 34px 70px"
     }
-  }, view === "dashboard" && (() => {
+  }, view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
     const rng = mulberry32(dashSeed);
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;
@@ -13314,7 +13359,7 @@ function RolecraftVault() {
         index: (p.index + d + p.items.length) % p.items.length
       }))
     }));
-  })(), view === "characters" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })(), view === "characters" && !sheetOpen && !overlayOpen && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -13912,7 +13957,7 @@ function RolecraftVault() {
       textOverflow: "ellipsis",
       maxWidth: 170
     }
-  }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && (() => {
+  }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !sheetOpen && !overlayOpen && (() => {
     const needle = personaQ.trim().toLowerCase();
     const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -14383,7 +14428,7 @@ function RolecraftVault() {
         maxWidth: 170
       }
     }, p.tagline || p.role)))))));
-  })(), view === "lorebooks" && (() => {
+  })(), view === "lorebooks" && !overlayOpen && (() => {
     const books = {};
     lore.forEach(e => {
       const w = (e.world || "").trim();
@@ -14566,7 +14611,7 @@ function RolecraftVault() {
         }
       }, "Updated ", timeAgo(latest))));
     })));
-  })(), view === "prompts" && (() => {
+  })(), view === "prompts" && !overlayOpen && (() => {
     const books = {};
     prompts.forEach(p => {
       const w = (p.collection || "").trim();
