@@ -268,9 +268,52 @@
 
     let bytes = 0, records = [];
     if (needed.length) {
-      phase("packing", 0, 0);
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const readProgress = async () => {
+        try {
+          return JSON.parse(new TextDecoder().decode(
+            await decryptPayload(await ask(target, "/progress", "GET", null, 8000), target.secret)));
+        } catch (e) { return null; }
+      };
+      const applyProgress = st => {
+        if (!st || !st.phase) return;
+        if (st.phase === "packing") phase("packing", st.done || 0, st.total || 0);
+        else if (st.phase === "sending") phase("receiving", st.bytes || st.done || 0, st.byteTotal || st.total || 0);
+      };
       const body = await encryptPayload(new TextEncoder().encode(JSON.stringify(needed)), target.secret);
-      const blob = await ask(target, "/delta", "POST", body, 600000);
+      let blob = null;
+      let started = false;
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(
+          await decryptPayload(await ask(target, "/delta-start", "POST", body, 30000), target.secret)));
+        started = !!(msg && msg.ok);
+        if (started) phase("packing", 0, msg.total || needed.length);
+      } catch (e) { started = false; }
+      if (started) {
+        for (;;) {
+          const st = await readProgress();
+          applyProgress(st);
+          if (st && st.phase === "ready") break;
+          if (st && st.phase === "error") {
+            return { ok: false, error: st.error || "The other device failed while gathering records." };
+          }
+          await wait(400);
+        }
+        phase("receiving", 0, 1);
+        blob = await ask(target, "/delta-file", "GET", null, 600000);
+      } else {
+        phase("packing", 0, 0);
+        const download = ask(target, "/delta", "POST", body, 600000);
+        for (;;) {
+          const winner = await Promise.race([
+            download.then(b => ({ t: "data", b }), e => ({ t: "err", e })),
+            wait(500).then(() => ({ t: "tick" }))
+          ]);
+          if (winner.t === "data") { blob = winner.b; break; }
+          if (winner.t === "err") throw winner.e;
+          applyProgress(await readProgress());
+        }
+      }
       bytes = blob.length;
       phase("unpacking", 0, 0);
       records = await decryptRecordFile(blob, target.secret);

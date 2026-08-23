@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.163";
+const APP_VERSION = "1.164";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.163";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.163 — current",
+  heading: "1.164 — current",
+  notes: ["A transfer no longer sits on “gathering the records” with no idea whether anything is happening. The computer now reports how many records it has packed and how many bytes it has sent, and the phone reads that report while it waits, so both screens show a real bar. On a large library the gathering step can still take a while — it is reading every picture that has to move — but the numbers keep moving, so you can tell it is working."]
+}, {
+  heading: "1.163",
   notes: ["The crest is new. Same shield and keyhole, drawn as brass you could almost pick up rather than a flat graphic, and it now appears on the app, the installer, the phone, and the splash.","The Windows installer looks like it belongs to the app: the welcome page and the header carry the same metal crest on the dark navy, and the setup file in Downloads is marked with a small download badge so you can tell it apart from the installed app."]
 }, {
   heading: "1.162",
@@ -8910,7 +8913,8 @@ function SettingsModal({
     preparing: "Getting this vault ready to share",
     asking: "Asking the other device what it has",
     comparing: "Working out what is different here",
-    packing: "The other device is gathering the records",
+    packing: xfer ? "Gathering records to send" : "The other device is gathering the records",
+    sending: "Sending to the other device",
     receiving: "Copying across",
     unpacking: "Unpacking",
     saving: "Saving into this vault",
@@ -8921,14 +8925,15 @@ function SettingsModal({
     const known = xferProg.total > 0;
     const pct = Math.round((xferProg.pct || 0) * 100);
     const mbOf = n => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
-    const detail = xferProg.phase === "receiving" && known ? mbOf(xferProg.done) + " of " + mbOf(xferProg.total) : known ? xferProg.done + " of " + xferProg.total : "";
+    const bytePhase = xferProg.phase === "receiving" || xferProg.phase === "sending";
+    const detail = bytePhase && known ? mbOf(xferProg.done) + " of " + mbOf(xferProg.total) : known ? xferProg.done + " of " + xferProg.total : (xferProg.phase === "packing" ? "this can take a while on a large library" : "");
     return /*#__PURE__*/React.createElement("div", {
       style: { margin: "10px 0" }
     }, /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: "var(--mut)", marginBottom: 5 }
     }, /*#__PURE__*/React.createElement("span", null, XFER_STEPS[xferProg.phase] || "Working"), /*#__PURE__*/React.createElement("span", {
       style: { color: "var(--dim)", whiteSpace: "nowrap" }
-    }, known ? pct + "%" + (detail ? " · " + detail : "") : "")), /*#__PURE__*/React.createElement("div", {
+    }, known ? pct + "%" + (detail ? " · " + detail : "") : detail)), /*#__PURE__*/React.createElement("div", {
       role: "progressbar",
       "aria-valuenow": known ? pct : undefined,
       "aria-valuemin": 0,
@@ -9732,11 +9737,13 @@ function SettingsModal({
     /*#__PURE__*/React.createElement("div", {
       style: { fontSize: 11.5, color: "var(--dim)", marginTop: 6, textAlign: "center" }
     }, "Scan with the phone"))),
+  xferBar(),
   /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: async () => {
       await window.transfer.stop();
       setXfer(null);
+      setXferProg(null);
       setXferMsg({ ok: true, text: "Sending stopped." });
     }
   }, "Stop sending")) : /*#__PURE__*/React.createElement("button", {
@@ -9850,7 +9857,7 @@ function SettingsModal({
     className: "btn btn-ghost",
     disabled: xferBusy,
     onClick: () => setXferPlan(null)
-  }, "Cancel")), (!xferProg || xferProg.phase !== "preparing") && xferBar()),
+  }, "Cancel")), !xfer && (!xferProg || xferProg.phase !== "preparing") && xferBar()),
   /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {

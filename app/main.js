@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.163";
+const FACTORY_BUILD = "1.164";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -215,7 +215,7 @@ function askThisDevice(detail, timeoutMs) {
     } catch (e) { finish("unavailable"); }
   });
 }
-let transferState = null; // { secret, code, expiresAt, timer }
+let transferState = null; // { secret, code, expiresAt, timer, pack }
 
 function lanAddress() {
   const nets = os.networkInterfaces();
@@ -356,6 +356,14 @@ function sendToWindow(channel, payload) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   } catch (e) {}
 }
+function publishShareProgress(p) {
+  if (transferState) transferState.pack = p;
+  const now = Date.now();
+  if (publishShareProgress._last && now - publishShareProgress._last < 80 && p.phase === publishShareProgress._phase && p.done !== p.total) return;
+  publishShareProgress._last = now;
+  publishShareProgress._phase = p.phase;
+  sendToWindow("transfer-progress", p);
+}
 /* Both sides of a transfer look identical once you are staring at a code, which
    is how someone mirrors the wrong way round and deletes the vault they meant to
    keep. Each device says its own name so the receiving screen can spell out
@@ -379,7 +387,7 @@ const transferPlainPath = () => path.join(updatesDir, "transfer.plain");
 /* Streams the vault to disk one record at a time as encrypted NDJSON.
    Never builds a whole-vault string, so big image libraries can't blow
    V8's max string length (the "Invalid string length" failure). */
-function buildRecordFile(secret, keys, outPath) {
+async function buildRecordFile(secret, keys, outPath, report) {
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
@@ -394,12 +402,19 @@ function buildRecordFile(secret, keys, outPath) {
       app: "rolecraft-vault", kind: "lan-delta", at: new Date().toISOString()
     }) + "\n", "utf8")));
     let count = 0;
-    for (const k of keys) {
+    let lastYield = Date.now();
+    for (let i = 0; i < keys.length; i++) {
       let v;
-      try { v = readValue(k); } catch (e) { continue; }
-      if (v === null || v === undefined) continue;
-      put(cipher.update(Buffer.from(JSON.stringify({ k: k, v: String(v) }) + "\n", "utf8")));
-      count++;
+      try { v = readValue(keys[i]); } catch (e) { v = null; }
+      if (v !== null && v !== undefined) {
+        put(cipher.update(Buffer.from(JSON.stringify({ k: keys[i], v: String(v) }) + "\n", "utf8")));
+        count++;
+      }
+      if (report) report(i + 1, keys.length);
+      if (Date.now() - lastYield > 40) {
+        await new Promise(r => setImmediate(r));
+        lastYield = Date.now();
+      }
     }
     put(cipher.final());
     fs.writeSync(fd, cipher.getAuthTag());
@@ -466,7 +481,7 @@ function startTransferServer() {
   const ip = lanAddress();
   if (!ip) return { ok: false, error: "No local network connection found. Connect both devices to the same Wi-Fi." };
   const secret = crypto.randomBytes(6);
-  const sendFile = (res, filePath) => {
+  const sendFile = (res, filePath, report) => {
     let size = 0;
     try { size = fs.statSync(filePath).size; } catch (e) {
       res.writeHead(500); res.end("gone");
@@ -474,8 +489,26 @@ function startTransferServer() {
     }
     res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": size });
     const stream = fs.createReadStream(filePath);
+    let sent = 0, last = 0;
+    stream.on("data", chunk => {
+      sent += chunk.length;
+      const now = Date.now();
+      if (report && (sent === size || now - last > 80)) {
+        last = now;
+        report(sent, size);
+      }
+    });
     stream.on("error", () => { try { res.destroy(); } catch (e) {} });
     stream.pipe(res);
+  };
+  const writeEncryptedJson = (res, obj) => {
+    try {
+      const blob = encryptPayload(Buffer.from(JSON.stringify(obj), "utf8"), secret);
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": blob.length });
+      res.end(blob);
+    } catch (e) {
+      res.writeHead(500); res.end("err");
+    }
   };
   transferServer = http.createServer((req, res) => {
     const route = (req.url || "").split("?")[0];
@@ -507,11 +540,11 @@ function startTransferServer() {
       }
       return;
     }
-    if (req.method === "POST" && route === "/delta") {
-      /* The body is only a list of keys the other device wants, so it is small.
-         Buffering it unbounded lets anything on the network — it does not need
-         the pairing code, since the code is only checked after the body has
-         arrived — push gigabytes into memory and take the app down. */
+    if (req.method === "GET" && route === "/progress") {
+      writeEncryptedJson(res, transferState && transferState.pack || { phase: "idle", done: 0, total: 0 });
+      return;
+    }
+    const readWantedKeys = (onKeys) => {
       const MAX_BODY = 4 << 20;
       const chunks = [];
       let size = 0;
@@ -525,13 +558,49 @@ function startTransferServer() {
         try {
           const wanted = JSON.parse(decryptPayload(Buffer.concat(chunks), secret).toString("utf8"));
           if (!Array.isArray(wanted)) throw new Error("bad request");
-          const built = buildRecordFile(secret, wanted, deltaFilePath());
-          sendFile(res, built.path);
+          onKeys(wanted);
         } catch (e) {
           res.writeHead(400); res.end("bad");
         }
       });
       req.on("error", () => { try { res.destroy(); } catch (e) {} });
+    };
+    const packWanted = async (wanted) => {
+      publishShareProgress({ phase: "packing", done: 0, total: wanted.length, pct: 0 });
+      const built = await buildRecordFile(secret, wanted, deltaFilePath(), (done, total) => {
+        publishShareProgress({ phase: "packing", done, total, pct: total > 0 ? done / total : 0 });
+      });
+      if (transferState) transferState.deltaPath = built.path;
+      publishShareProgress({ phase: "ready", done: wanted.length, total: wanted.length, pct: 1, bytes: 0, byteTotal: built.bytes });
+      return built;
+    };
+    if (req.method === "POST" && route === "/delta-start") {
+      readWantedKeys(wanted => {
+        writeEncryptedJson(res, { ok: true, total: wanted.length });
+        packWanted(wanted).catch(e => {
+          publishShareProgress({ phase: "error", done: 0, total: 0, error: String(e && e.message || e) });
+        });
+      });
+      return;
+    }
+    if (req.method === "GET" && route === "/delta-file") {
+      const p = transferState && transferState.deltaPath;
+      if (!p || !fs.existsSync(p)) { res.writeHead(409); res.end("not ready"); return; }
+      sendFile(res, p, (sent, total) => {
+        publishShareProgress({ phase: "sending", done: sent, total, pct: total > 0 ? sent / total : 0, bytes: sent, byteTotal: total });
+      });
+      return;
+    }
+    if (req.method === "POST" && route === "/delta") {
+      /* Old clients: pack then send on this same request. Yields while packing
+         so /progress can still be answered. */
+      readWantedKeys(wanted => {
+        packWanted(wanted).then(built => {
+          sendFile(res, built.path, (sent, total) => {
+            publishShareProgress({ phase: "sending", done: sent, total, pct: total > 0 ? sent / total : 0, bytes: sent, byteTotal: total });
+          });
+        }).catch(() => { try { res.writeHead(400); res.end("bad"); } catch (e) {} });
+      });
       return;
     }
     /* A mirror is the only thing that can delete records, so it is agreed here
@@ -861,13 +930,46 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
     };
     try {
       const body = encryptPayload(Buffer.from(JSON.stringify(needed), "utf8"), target.secret);
-      // the other device is reading its records off disk before a byte arrives
-      phase("packing", 0, 0);
-      await httpToFile(Object.assign({
-        path: "/delta",
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length }
-      }, base), body, encPath, (got, total) => phase("receiving", got, total));
+      const readShareProgress = async () => {
+        try {
+          const blob = await httpBuffer(Object.assign({}, base, { path: "/progress", method: "GET", timeout: 8000 }));
+          return JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
+        } catch (e) { return null; }
+      };
+      const applyShareProgress = st => {
+        if (!st || !st.phase) return;
+        if (st.phase === "packing") phase("packing", st.done || 0, st.total || 0);
+        else if (st.phase === "sending") phase("receiving", st.bytes || st.done || 0, st.byteTotal || st.total || 0);
+      };
+      let started = false;
+      try {
+        const startBlob = await httpBuffer(Object.assign({
+          path: "/delta-start", method: "POST",
+          headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
+          timeout: 30000
+        }, base), body);
+        const msg = JSON.parse(decryptPayload(startBlob, target.secret).toString("utf8"));
+        started = !!(msg && msg.ok);
+        if (started) phase("packing", 0, msg.total || needed.length);
+      } catch (e) { started = false; }
+      if (started) {
+        for (;;) {
+          const st = await readShareProgress();
+          applyShareProgress(st);
+          if (st && st.phase === "ready") break;
+          if (st && st.phase === "error") throw new Error(st.error || "pack failed");
+          await new Promise(r => setTimeout(r, 400));
+        }
+        await httpToFile(Object.assign({ path: "/delta-file", method: "GET", timeout: 600000 }, base), null, encPath, (got, total) => phase("receiving", got, total));
+      } else {
+        phase("packing", 0, 0);
+        await httpToFile(Object.assign({
+          path: "/delta",
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
+          timeout: 600000
+        }, base), body, encPath, (got, total) => phase("receiving", got, total));
+      }
       bytes = fs.statSync(encPath).size;
       decryptTransferFile(encPath, plainPath, target.secret, (done, total) => phase("unpacking", done, total));
     } catch (e) {

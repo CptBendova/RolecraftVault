@@ -2,7 +2,7 @@
 !define APP_NAME "Rolecraft Vault"
 !define APP_EXE "Rolecraft Vault.exe"
 !define COMPANY "Rolecraft"
-!define VERSION "1.163"
+!define VERSION "1.164"
 
 ; Modern UI rather than the classic NSIS pages. The classic ones are grey
 ; system dialogs with no artwork and "Nullsoft Install System" along the
