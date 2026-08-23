@@ -41,3 +41,10 @@ try { new Function(web); } catch (e) {
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, web);
 console.log("Wrote " + path.relative(root, outPath) + " (" + Math.round(web.length / 1024) + " KB)");
+const loopSrc = path.join(root, "app", "vendor", "crest-loop.mp4");
+if (fs.existsSync(loopSrc)) {
+  const loopDest = path.join(root, "web", "vendor", "crest-loop.mp4");
+  fs.mkdirSync(path.dirname(loopDest), { recursive: true });
+  fs.copyFileSync(loopSrc, loopDest);
+  console.log("Copied crest-loop.mp4 into web/vendor/");
+}

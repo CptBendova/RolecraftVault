@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.166";
+const APP_VERSION = "1.167";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.166";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.166 — current",
+  heading: "1.167 — current",
+  notes: ["The crest now moves. On the lock screen it sits in a field of brass dust with a breathing light, and a short looping film of the metal catching the glow. The same living crest is in the sidebar. Dust and gleam take their colour from the theme, so Dark, Light and CharSnap all keep the brass they already use. If you prefer less motion, the system setting for reduced motion stills it."]
+}, {
+  heading: "1.166",
   notes: ["Copying a vault to a phone no longer dies around 130 MB. The computer now sends the library in small pieces, and a picture larger than 10 MB is its own piece, pulled a megabyte at a time so the phone is never asked to swallow the whole file at once. Each piece is saved as it arrives, so a drop mid-way keeps what already landed. Both devices need this version: Windows needs the installer, and the phone needs the new Android file.","The letter R in the sidebar and on the lock screen is gone. The brass crest sits there instead, with a slow gleam that uses the same brass colour in Dark, Light and CharSnap."]
 }, {
   heading: "1.165",
@@ -1845,20 +1848,32 @@ const CSS = `
     background: #070a12;
     box-shadow: 0 0 0 1px var(--brass-line), 0 0 18px var(--brass-soft);
   }
-  .rcv .crest-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .rcv .crest-mark.live { border-radius: 20px; box-shadow: 0 0 0 1px var(--brass-line), 0 0 28px var(--brass-soft); }
+  .rcv .crest-mark img, .rcv .crest-mark video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .rcv .crest-mark.live video { transform: scale(1.14); }
   .rcv .crest-mark::before {
-    content: ""; position: absolute; inset: -8px; pointer-events: none; border-radius: 16px;
+    content: ""; position: absolute; inset: -8px; pointer-events: none; border-radius: 16px; z-index: 1;
     box-shadow: 0 0 16px var(--brass);
     opacity: .28; animation: crest-breathe 5s ease-in-out infinite;
   }
   .rcv .crest-mark::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,.42) 50%, transparent 68%);
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: linear-gradient(115deg, transparent 32%, color-mix(in srgb, var(--brass) 45%, transparent) 50%, transparent 68%);
     transform: translateX(-130%);
     animation: crest-shine 5s ease-in-out infinite;
   }
   @keyframes crest-shine { 0%, 58% { transform: translateX(-130%); } 82%, 100% { transform: translateX(130%); } }
   @keyframes crest-breathe { 0%, 100% { opacity: .22; } 50% { opacity: .55; } }
+  .rcv .dust-field { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+  .rcv .lock-screen { overflow: hidden; }
+  .rcv .lock-glow {
+    position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(ellipse 60% 48% at 50% 40%, var(--brass-soft), transparent 70%);
+    animation: crest-breathe 6s ease-in-out infinite;
+  }
+  .rcv .lock-card { position: relative; z-index: 1; animation: lock-rise .75s ease both; }
+  @keyframes lock-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  .rcv .sidebar .crest-mark.live { border-radius: 11px; }
   @keyframes ssfade { from { opacity: 0; } to { opacity: 1; } }
   @keyframes ssfadeout { from { opacity: 1; } to { opacity: 0; } }
   @keyframes ssprog { from { width: 0; } to { width: 100%; } }
@@ -1904,21 +1919,115 @@ const Ic = ({
   d: d
 }));
 const CREST_SRC = "data:image/png;base64,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";
-const CrestMark = ({
-  size = 38
-}) => /*#__PURE__*/React.createElement("div", {
-  className: "crest-mark",
-  style: {
+const CREST_LOOP = "vendor/crest-loop.mp4";
+function CrestMark({
+  size = 38,
+  live = false
+}) {
+  const vid = useRef(null);
+  const [failed, setFailed] = useState(false);
+  const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const useLive = !!(live && !reduce && !failed);
+  useEffect(() => {
+    const el = vid.current;
+    if (!el || typeof el.play !== "function") return;
+    const p = el.play();
+    if (p && p.catch) p.catch(() => setFailed(true));
+  }, [useLive]);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "crest-mark" + (useLive ? " live" : ""),
+    style: {
+      width: size,
+      height: size
+    },
+    "aria-hidden": "true"
+  }, useLive ? /*#__PURE__*/React.createElement("video", {
+    ref: vid,
+    src: CREST_LOOP,
+    poster: CREST_SRC,
+    autoPlay: true,
+    muted: true,
+    loop: true,
+    playsInline: true,
+    onError: () => setFailed(true)
+  }) : /*#__PURE__*/React.createElement("img", {
+    src: CREST_SRC,
+    alt: "",
     width: size,
     height: size
-  },
-  "aria-hidden": "true"
-}, /*#__PURE__*/React.createElement("img", {
-  src: CREST_SRC,
-  alt: "",
-  width: size,
-  height: size
-}));
+  }));
+}
+function DustField({
+  count = 55
+}) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = c.getContext("2d");
+    const host = c.closest(".rcv") || document.documentElement;
+    const brass = (getComputedStyle(host).getPropertyValue("--brass") || "#d9b25c").trim();
+    let rgb = [217, 178, 92];
+    const hex = brass.match(/^#([0-9a-f]{6})$/i);
+    if (hex) {
+      const n = parseInt(hex[1], 16);
+      rgb = [n >> 16 & 255, n >> 8 & 255, n & 255];
+    }
+    const motes = [];
+    const size = () => {
+      const r = (c.parentElement || c).getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      c.width = Math.max(1, Math.round(r.width * dpr));
+      c.height = Math.max(1, Math.round(r.height * dpr));
+      c.style.width = r.width + "px";
+      c.style.height = r.height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    size();
+    const w = () => c.clientWidth || 1;
+    const h = () => c.clientHeight || 1;
+    for (let i = 0; i < count; i++) {
+      motes.push({
+        x: Math.random() * w(),
+        y: Math.random() * h(),
+        r: Math.random() * 1.8 + 0.25,
+        s: Math.random() * 0.32 + 0.05,
+        a: Math.random() * 0.45 + 0.08,
+        d: Math.random() * 0.5
+      });
+    }
+    let on = true;
+    const tick = () => {
+      if (!on) return;
+      ctx.clearRect(0, 0, w(), h());
+      for (const m of motes) {
+        m.y -= m.s;
+        m.x += Math.sin(m.y * 0.012 + m.d) * 0.2;
+        if (m.y < -4) {
+          m.y = h() + 4;
+          m.x = Math.random() * w();
+        }
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + "," + m.a + ")";
+        ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+    window.addEventListener("resize", size);
+    return () => {
+      on = false;
+      window.removeEventListener("resize", size);
+    };
+  }, [count]);
+  return /*#__PURE__*/React.createElement("canvas", {
+    ref: ref,
+    className: "dust-field",
+    "aria-hidden": "true"
+  });
+}
 /* What a field costs, and when it is sent. The class matters more than the
    number: permanent text is re-sent with every reply, temporary text is trimmed
    away as a chat grows, and some fields never reach the AI at all. Stats has
@@ -2283,6 +2392,7 @@ function LockScreen({
     setBusy(false);
   };
   return /*#__PURE__*/React.createElement("div", {
+    className: "lock-screen",
     style: {
       position: "fixed",
       inset: 0,
@@ -2292,20 +2402,27 @@ function LockScreen({
       justifyContent: "center",
       zIndex: 90
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(DustField, {
+    count: 80
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "lock-glow",
+    "aria-hidden": "true"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "lock-card",
     style: {
       textAlign: "center",
       width: 330
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      margin: "0 auto 18px",
-      width: 64,
+      margin: "0 auto 22px",
+      width: 148,
       display: "flex",
       justifyContent: "center"
     }
   }, /*#__PURE__*/React.createElement(CrestMark, {
-    size: 64
+    size: 148,
+    live: true
   })), /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
   }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h1", {
@@ -12020,7 +12137,8 @@ function RolecraftVault() {
       padding: "2px 8px 20px"
     }
   }, /*#__PURE__*/React.createElement(CrestMark, {
-    size: 38
+    size: 38,
+    live: true
   }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "serif",
     style: {
