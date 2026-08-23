@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.171";
+const APP_VERSION = "1.172";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.171";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.171 — current",
+  heading: "1.172 — current",
+  notes: ["Pictures on a phone now live in an encrypted folder on the device, not inside the app. The last copies were saving into the same memory the interface uses, so a library of a few gigabytes made the app slow and then close itself. The app only reads a picture when it is actually on screen, and it lets go of ones you have scrolled past. Checking what is already there no longer loads every photo just to compare. Install this Android file over the last one and copy again. Do not uninstall."]
+}, {
+  heading: "1.171",
   notes: ["A second copy onto a phone no longer re-reads every picture already there. The last interrupted copy left a few gigabytes on the device, and checking those one by one is what made the next attempt crawl. The phone now remembers a short fingerprint when it saves a record, so a retry only fetches what is still missing. The copy also uses less memory so the app is less likely to close itself mid-way."]
 }, {
   heading: "1.170",
@@ -9397,7 +9400,7 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, desktop ? web ? (android ? "Your password encrypts every record and photo in this app's own storage (AES-256, key derived from your password and never stored). That storage is private to Rolecraft Vault: no other app and no browser can read it, and it is never backed up to Google Drive. There is no recovery if you forget your password — keep an exported backup somewhere safe. Note: uninstalling the app, or clearing its storage in Android settings, erases the vault." : "Your password encrypts every record and photo in this browser's storage (AES-256, key derived from your password and never stored). There is no recovery if you forget it — keep an exported backup somewhere safe. Note: clearing this site's browser data erases the vault.") : "Your password encrypts every record and photo on disk (AES-256), layered on top of Windows account encryption. There is no recovery if you forget it — keep an exported backup somewhere safe." : "Password and PIN protection are available in the Windows desktop app."), desktop && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("button", {
+  }, desktop ? web ? (android ? "Your password encrypts every record and photo in an encrypted folder on this phone (AES-256, key derived from your password and never stored). The app only reads a picture when it is on screen; the rest stay on disk. That folder is private to Rolecraft Vault: no other app and no browser can read it, and it is never backed up to Google Drive. There is no recovery if you forget your password — keep an exported backup somewhere safe. Note: uninstalling the app, or clearing its storage in Android settings, erases the vault." : "Your password encrypts every record and photo in this browser's storage (AES-256, key derived from your password and never stored). There is no recovery if you forget it — keep an exported backup somewhere safe. Note: clearing this site's browser data erases the vault.") : "Your password encrypts every record and photo on disk (AES-256), layered on top of Windows account encryption. There is no recovery if you forget it — keep an exported backup somewhere safe." : "Password and PIN protection are available in the Windows desktop app."), desktop && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => setForm("setup")
   }, "Set master password"), desktop && authState.passwordSet && !form && /*#__PURE__*/React.createElement("div", {
@@ -9511,7 +9514,7 @@ function SettingsModal({
       marginTop: 12,
       lineHeight: 1.5
     }
-  }, android ? "Without a master password, your vault sits unencrypted in the app's storage. Nothing else on the device can read it, but anyone holding an unlocked phone can. Setting one is strongly recommended." : "Without a master password, web data sits unencrypted in this browser's storage. Setting one is strongly recommended."), desktop && web && authState.pinSet && /*#__PURE__*/React.createElement("div", {
+  }, android ? "Without a master password, pictures still live in an encrypted folder only this app can open. Anyone holding the unlocked phone can still open the app and read them. Setting a password is strongly recommended." : "Without a master password, web data sits unencrypted in this browser's storage. Setting one is strongly recommended."), desktop && web && authState.pinSet && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--mut)",
@@ -10612,20 +10615,26 @@ function RolecraftVault() {
     })();
   }, [authState.checked, authState.locked]);
 
-  /* --- preload thumbnails for everything (dashboard wall is randomized) --- */
+  /* --- preload thumbnails for everything (dashboard wall is randomized) ---
+     On a phone the vault lives on disk and only the pictures on screen should
+     be in memory. Pulling every gallery, lore and prompt image into the cache
+     is what closed the app on a library of a few gigabytes. Portraits for the
+     cards still load; the rest wait until that screen is opened. */
   useEffect(() => {
     if (!ready) return;
+    const onPhone = typeof window !== "undefined" && !!window.Capacitor;
     chars.forEach(c => {
       if (c.profileImg) loadImage(c.profileImg);
-      (c.gallery || []).forEach(g => loadImage(g.imgId));
+      if (!onPhone) (c.gallery || []).forEach(g => loadImage(g.imgId));
     });
     personas.forEach(p => {
       if (p.avatar) loadImage(p.avatar);
-      (p.gallery || []).forEach(g => loadImage(g.imgId));
+      if (!onPhone) (p.gallery || []).forEach(g => loadImage(g.imgId));
     });
     Object.values(bucketMeta).forEach(m => {
       if (m && m.cover) loadImage(m.cover);
     });
+    if (onPhone) return;
     [...chars.map(c => ({
       u: c.updatedAt,
       img: c.profileImg
@@ -11138,6 +11147,9 @@ function RolecraftVault() {
   const imgLoading = useRef(new Set());
   const imgBuf = useRef({});
   const imgFlush = useRef(null);
+  const imgOrder = useRef([]);
+  const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
+  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11145,26 +11157,70 @@ function RolecraftVault() {
       const batch = imgBuf.current;
       imgBuf.current = {};
       imgFlush.current = null;
-      if (Object.keys(batch).length) setImgCache(p => ({ ...p, ...batch }));
+      const ids = Object.keys(batch);
+      if (!ids.length) return;
+      setImgCache(p => {
+        const next = { ...p, ...batch };
+        if (!IMG_CACHE_MAX) return next;
+        ids.forEach(i => {
+          imgOrder.current = imgOrder.current.filter(x => x !== i).concat(i);
+        });
+        const evict = [];
+        while (imgOrder.current.length > IMG_CACHE_MAX) evict.push(imgOrder.current.shift());
+        evict.forEach(eid => {
+          delete next[eid];
+          imgLoading.current.delete(eid);
+        });
+        return next;
+      });
     }, 16);
   }, []);
+  const imgQueue = useRef([]);
+  const imgBusy = useRef(0);
+  const IMG_INFLIGHT = ON_PHONE ? 3 : 16;
+  const pumpImg = useCallback(() => {
+    while (imgBusy.current < IMG_INFLIGHT && imgQueue.current.length) {
+      const imgId = imgQueue.current.shift();
+      imgBusy.current++;
+      Promise.resolve().then(async () => {
+        try {
+          const v = await sGet("th:" + imgId);
+          if (v) {
+            queueImg(imgId, v);
+            return;
+          }
+          /* Full originals stay on disk on a phone. Cards use the thumbnail.
+             Falling through to img: is how a half-copied library put every
+             full picture into memory and closed the app. */
+          if (!ON_PHONE) {
+            const full = await sGet("img:" + imgId);
+            if (full) {
+              queueImg(imgId, full);
+              return;
+            }
+          }
+          imgLoading.current.delete(imgId);
+        } catch (e) {
+          imgLoading.current.delete(imgId); // a picture that will not load shows as blank, not as a save failure
+        } finally {
+          imgBusy.current--;
+          pumpImg();
+        }
+      });
+    }
+  }, [queueImg]);
   const loadImage = useCallback(async imgId => {
     if (!imgId || imgLoading.current.has(imgId)) return;
     imgLoading.current.add(imgId);
-    try {
-      const v = (await sGet("th:" + imgId)) || (await sGet("img:" + imgId));
-      if (v) queueImg(imgId, v);
-      else imgLoading.current.delete(imgId);
-    } catch (e) {
-      imgLoading.current.delete(imgId); // a picture that will not load shows as blank, not as a save failure
-    }
-  }, [queueImg]);
+    imgQueue.current.push(imgId);
+    pumpImg();
+  }, [pumpImg]);
   const [fullCache, setFullCache] = useState({});
   /* Full-size pictures were kept for as long as the app was open, so browsing a
      gallery of twenty 5MB images held all of them at once and never let go.
      Only the most recent handful are kept now; anything dropped falls back to
      its thumbnail and is fetched again when it is actually looked at. */
-  const FULL_CACHE_MAX = 24;
+  const FULL_CACHE_MAX = typeof window !== "undefined" && window.Capacitor ? 4 : 24;
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
   const requestFull = useCallback(imgId => {

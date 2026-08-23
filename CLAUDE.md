@@ -241,6 +241,12 @@ put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 
 Since 1.168, Capacitor stores anything over 16 KB as a file under `Directory.DATA/kv/` in 384 KB chunks, with only a `file:` pointer in IDB. `window.storage` still returns the same strings. The browser edition is unchanged. Retrying a merge after install skips hashes that already match.
 
+## Encrypted vault folder on Android (1.172)
+
+Holding those files as UTF-8 data-URL strings and then `get()`-ing them back into the WebView is what made a multi-GB library slow and then close the app: the dashboard preloaded every picture, compare hashed by reading each original, and `imgCache` never let go.
+
+Since 1.172, large records on Capacitor are AES-256-GCM files under `Directory.DATA/vault/` (`RCVS1` + iv + ciphertext). The wrap key is a device key in IDB when no master password is set, or the master key when one is. IDB only keeps a `bin:` pointer and the 16-char fingerprint. `hash()` of old `file:` leftovers reads bytes, not a JavaScript string. The interface on a phone loads thumbnails only, at most three at a time, and keeps 64 thumbs / 4 full pictures. `kv/` files from 1.168–1.171 still read. The browser edition is unchanged.
+
 ## Phone copies dying around 130 MB (1.166)
 
 A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.

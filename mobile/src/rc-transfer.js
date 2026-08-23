@@ -405,6 +405,7 @@
               phase("saving", saved, needed.length);
               if (saved % 8 === 0) await wait(0);
             });
+            piece = null;
           }
         } else {
           phase("receiving", 0, 1);

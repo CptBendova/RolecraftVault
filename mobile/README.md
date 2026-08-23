@@ -7,9 +7,11 @@ actually do. Same vault, same encryption, same interface.
 
 - The whole library: characters, versions, personas, lorebooks, prompts,
   pictures, buckets, tokens, the guide. It is the same `app.js`.
-- Storage is IndexedDB + WebCrypto with the master password, the same contract
-  as the desktop build. There is no Windows account tie on Android, so the
-  master password is doing all of the work: set one.
+- Storage is an encrypted folder in the app's private files (`vault/`), plus
+  IndexedDB for pointers and fingerprints. Encryption is WebCrypto AES-256-GCM,
+  with the master password when one is set, otherwise a device wrap key. The
+  interface only reads a picture when it is on screen. There is no Windows
+  account tie on Android, so the master password is doing the real work: set one.
 - **Receiving a vault over Wi-Fi from the PC**, including mirroring, using the
   protocol the desktop already speaks. Nothing on the PC needs changing.
 - Backups: Export backup on the PC, move the file, Import backup here.

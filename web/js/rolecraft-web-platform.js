@@ -55,17 +55,22 @@
     });
   }
 
-  /* IndexedDB on Android WebView fills up around a gigabyte and then either
-     throws QuotaExceededError or never finishes a put. A 4 GB vault cannot
-     live there. On Capacitor we write anything larger than FS_LARGE as a file
-     in the app's private directory, in small chunks so the native bridge
-     (about 1 MB) is never asked to swallow a whole picture. The IDB value is
-     only a pointer. The browser edition has no Filesystem plugin and stays
+  /* Pictures and other large records on Android live as encrypted files in
+     the app's private vault folder (Directory.DATA/vault/), not as strings
+     inside IndexedDB or the WebView. IDB only holds a pointer and a short
+     fingerprint. The native bridge tops out around 1 MB, so reads and writes
+     go in small binary chunks. Builds from 1.168–1.171 wrote UTF-8 under kv/;
+     those still load. The browser edition has no Filesystem plugin and stays
      on IndexedDB. */
   var FILE_MARK = "file:";
+  var BIN_MARK = "bin:";
   var FS_DIR = "DATA";
   var FS_CHUNK = 512 * 1024;
+  var BIN_CHUNK = 384 * 1024;
   var FS_LARGE = 16 * 1024;
+  var VAULT_DIR = "vault/";
+  var WRAP_KEY_ID = "__wrap__";
+  var wrapKey = null;
   function nativeFs() {
     var C = window.Capacitor;
     return C && typeof C.nativePromise === "function" ? C : null;
@@ -73,25 +78,14 @@
   function fsCall(method, opts) {
     return nativeFs().nativePromise("Filesystem", method, opts);
   }
-  function fsPath(key) {
-    return "kv/" + encodeURIComponent(key);
+  function vaultPath(key) {
+    return VAULT_DIR + encodeURIComponent(key);
   }
-  function storePayload(key, payload) {
-    if (!(nativeFs() && payload.length > FS_LARGE)) return idbSet("v:" + key, payload);
-    var path = fsPath(key);
-    var off = 0;
-    var first = payload.slice(0, FS_CHUNK);
-    off = first.length;
-    return fsCall("writeFile", {
-      path: path, data: first, directory: FS_DIR, encoding: "utf8", recursive: true
-    }).then(function appendMore() {
-      if (off >= payload.length) return idbSet("v:" + key, FILE_MARK + path);
-      var piece = payload.slice(off, off + FS_CHUNK);
-      off += piece.length;
-      return fsCall("appendFile", {
-        path: path, data: piece, directory: FS_DIR, encoding: "utf8"
-      }).then(appendMore);
-    });
+  function filePointerPath(stored) {
+    if (typeof stored !== "string") return null;
+    if (stored.indexOf(BIN_MARK) === 0) return stored.slice(BIN_MARK.length);
+    if (stored.indexOf(FILE_MARK) === 0) return stored.slice(FILE_MARK.length);
+    return null;
   }
   function loadPayload(stored) {
     if (typeof stored !== "string" || stored.indexOf(FILE_MARK) !== 0) return Promise.resolve(stored);
@@ -114,9 +108,10 @@
     }).catch(function () { return null; });
   }
   function dropPayloadFile(stored) {
-    if (typeof stored !== "string" || stored.indexOf(FILE_MARK) !== 0 || !nativeFs()) return Promise.resolve();
+    var path = filePointerPath(stored);
+    if (!path || !nativeFs()) return Promise.resolve();
     return fsCall("deleteFile", {
-      path: stored.slice(FILE_MARK.length), directory: FS_DIR
+      path: path, directory: FS_DIR
     }).catch(function () { return true; });
   }
   if (navigator.storage && navigator.storage.persist) {
@@ -185,6 +180,80 @@
     return r === 0;
   }
 
+  function encryptBytes(plainBytes, key) {
+    var iv = new Uint8Array(12);
+    crypto.getRandomValues(iv);
+    return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, plainBytes).then(function (ct) {
+      var c = new Uint8Array(ct), out = new Uint8Array(5 + 12 + c.length);
+      out[0] = 82; out[1] = 67; out[2] = 86; out[3] = 83; out[4] = 49; // RCVS1
+      out.set(iv, 5);
+      out.set(c, 17);
+      return out;
+    });
+  }
+  function decryptBytes(buf, key) {
+    if (!buf || buf.length < 33) return Promise.reject(new Error("truncated vault file"));
+    if (buf[0] !== 82 || buf[1] !== 67 || buf[2] !== 86 || buf[3] !== 83 || buf[4] !== 49) {
+      return Promise.reject(new Error("not a vault file"));
+    }
+    return crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: buf.subarray(5, 17) },
+      key,
+      buf.subarray(17)
+    ).then(function (pt) { return new Uint8Array(pt); });
+  }
+  function writeBin(path, bytes) {
+    var off = 0, first = true;
+    function next() {
+      if (off >= bytes.length) return Promise.resolve();
+      var n = Math.min(BIN_CHUNK, bytes.length - off);
+      var b64 = b64encode(bytes.subarray(off, off + n));
+      off += n;
+      var method = first ? "writeFile" : "appendFile";
+      first = false;
+      return fsCall(method, { path: path, data: b64, directory: FS_DIR, recursive: true }).then(next);
+    }
+    return next();
+  }
+  function readBin(path) {
+    return fsCall("stat", { path: path, directory: FS_DIR }).then(function (st) {
+      var size = st.size || 0, buf = new Uint8Array(size), off = 0;
+      function more() {
+        if (off >= size) return buf;
+        var n = Math.min(BIN_CHUNK, size - off);
+        return fsCall("readFile", { path: path, directory: FS_DIR, offset: off, length: n }).then(function (r) {
+          var piece = b64decode(r.data || "");
+          buf.set(piece, off);
+          off += piece.length;
+          return more();
+        });
+      }
+      return more();
+    });
+  }
+  function ensureWrapKey() {
+    if (wrapKey) return Promise.resolve(wrapKey);
+    if (!nativeFs()) return Promise.resolve(null);
+    return idbGet(WRAP_KEY_ID).then(function (s) {
+      var raw;
+      if (typeof s === "string" && s.length) {
+        raw = b64decode(s);
+        return importAesKey(raw).then(function (k) { wrapKey = k; return k; });
+      }
+      raw = new Uint8Array(32);
+      crypto.getRandomValues(raw);
+      return idbSet(WRAP_KEY_ID, b64encode(raw)).then(function () {
+        return importAesKey(raw).then(function (k) { wrapKey = k; return k; });
+      });
+    });
+  }
+  /* Files are sealed with the password key when one is set, otherwise with a
+     device wrap key. Do not fall back to masterKey here: rewrapAll runs while
+     masterKey has already moved, and must decrypt with the key it was given. */
+  function sealKey(explicit) {
+    return explicit || wrapKey;
+  }
+
   /* ---------- auth state ---------- */
   var SEC_KEY = "__security__";       // security record (never enters the v: namespace)
   var masterRaw = null;               // Uint8Array(32) while unlocked
@@ -211,18 +280,17 @@
   }
 
   /* ---------- value layer: "pwd:" AES-GCM when a password is set, else "raw:" ---------- */
-  function encodeValue(value) {
-    if (masterKey) return aesEncrypt(String(value), masterKey).then(function (b) { return "pwd:" + b; });
-    return Promise.resolve("raw:" + String(value));
-  }
-  function decodeValue(payload) {
+  function decodeWith(payload, key) {
     if (payload == null) return Promise.resolve(null);
     if (payload.indexOf("pwd:") === 0) {
-      if (!masterKey) return Promise.reject(new Error("locked"));
-      return aesDecrypt(payload.slice(4), masterKey);
+      if (!key) return Promise.reject(new Error("locked"));
+      return aesDecrypt(payload.slice(4), key);
     }
     if (payload.indexOf("raw:") === 0) return Promise.resolve(payload.slice(4));
     return Promise.resolve(payload);
+  }
+  function decodeValue(payload) {
+    return decodeWith(payload, masterKey);
   }
   function dataKeys() {
     return idbKeys().then(function (keys) {
@@ -230,27 +298,83 @@
         .map(function (k) { return k.slice(2); });
     });
   }
+  function plainFromStored(stored, aesKey) {
+    if (stored == null) return Promise.resolve(null);
+    if (typeof stored === "string" && stored.indexOf(BIN_MARK) === 0) {
+      var k = sealKey(aesKey);
+      if (!k) return Promise.reject(new Error("locked"));
+      return readBin(stored.slice(BIN_MARK.length)).then(function (bin) {
+        return decryptBytes(bin, k).then(function (pt) { return td.decode(pt); });
+      });
+    }
+    return loadPayload(stored).then(function (payload) { return decodeWith(payload, aesKey); });
+  }
+  /* Remember the fingerprint, then write. Large values on Android become one
+     encrypted file under vault/; IDB only stores the pointer. Small values stay
+     in IDB as pwd:/raw: the way the browser edition always has. */
+  function putPlain(key, plain, aesKey) {
+    var text = String(plain);
+    function remember() {
+      return sha16plain(text).then(function (h) { return idbSet("h:" + key, h); });
+    }
+    return idbGet("v:" + key).then(dropPayloadFile).then(function () {
+      if (nativeFs() && text.length > FS_LARGE) {
+        var k = sealKey(aesKey);
+        if (!k) return Promise.reject(new Error("locked"));
+        return encryptBytes(te.encode(text), k).then(function (bin) {
+          var path = vaultPath(key);
+          return writeBin(path, bin).then(function () {
+            return idbSet("v:" + key, BIN_MARK + path);
+          });
+        });
+      }
+      var payloadP = aesKey
+        ? aesEncrypt(text, aesKey).then(function (b) { return "pwd:" + b; })
+        : Promise.resolve("raw:" + text);
+      return payloadP.then(function (payload) { return idbSet("v:" + key, payload); });
+    }).then(remember);
+  }
+  function hashUtf8File(path) {
+    /* Old 1.168–1.171 files are UTF-8 of "raw:"+dataURL. Read as bytes so we
+       never build the JavaScript string (UTF-16, twice the RAM) just to hash. */
+    return readBin(path).then(function (buf) {
+      if (buf.length >= 4 && buf[0] === 114 && buf[1] === 97 && buf[2] === 119 && buf[3] === 58) {
+        return crypto.subtle.digest("SHA-256", buf.subarray(4)).then(function (d) {
+          return hex(new Uint8Array(d)).slice(0, 16);
+        });
+      }
+      return decodeValue(td.decode(buf)).then(function (v) {
+        return v == null ? null : sha16plain(v);
+      });
+    }).catch(function () { return null; });
+  }
+  function hashStored(stored) {
+    if (typeof stored === "string" && stored.indexOf(BIN_MARK) === 0) {
+      return ensureWrapKey().then(function () {
+        return plainFromStored(stored, masterKey);
+      }).then(function (v) {
+        return v == null ? null : sha16plain(v);
+      });
+    }
+    if (typeof stored === "string" && stored.indexOf(FILE_MARK) === 0) {
+      return hashUtf8File(stored.slice(FILE_MARK.length));
+    }
+    return decodeValue(stored).then(function (v) {
+      return v == null ? null : sha16plain(v);
+    });
+  }
   function rewrapAll(oldRaw, newRaw) {
-    // re-encrypt every stored value from the old key layer to the new one
     var oldKeyP = oldRaw ? importAesKey(oldRaw) : Promise.resolve(null);
     var newKeyP = newRaw ? importAesKey(newRaw) : Promise.resolve(null);
-    return Promise.all([oldKeyP, newKeyP, dataKeys()]).then(function (r) {
+    return Promise.all([oldKeyP, newKeyP, dataKeys(), ensureWrapKey()]).then(function (r) {
       var oldKey = r[0], newKey = r[1], keys = r[2];
       var chain = Promise.resolve();
       keys.forEach(function (k) {
         chain = chain.then(function () {
-          return idbGet("v:" + k).then(loadPayload).then(function (payload) {
-            if (payload == null) return null;
-            var plainP;
-            if (payload.indexOf("pwd:") === 0) {
-              if (!oldKey) throw new Error("locked");
-              plainP = aesDecrypt(payload.slice(4), oldKey);
-            } else if (payload.indexOf("raw:") === 0) plainP = Promise.resolve(payload.slice(4));
-            else plainP = Promise.resolve(payload);
-            return plainP.then(function (plain) {
+          return idbGet("v:" + k).then(function (stored) {
+            return plainFromStored(stored, oldKey).then(function (plain) {
               if (plain == null) return null;
-              if (newKey) return aesEncrypt(plain, newKey).then(function (b) { return storePayload(k, "pwd:" + b); });
-              return storePayload(k, "raw:" + plain);
+              return putPlain(k, plain, newKey);
             });
           });
         });
@@ -267,7 +391,15 @@
   /* ---------- window.storage ---------- */
   window.storage = {
     get: function (key) {
-      return idbGet("v:" + key).then(loadPayload).then(decodeValue).then(function (value) {
+      return loadSecurity().then(function (s) {
+        if (s && !masterKey) throw new Error("locked");
+        return ensureWrapKey();
+      }).then(function () {
+        return idbGet("v:" + key);
+      }).then(function (stored) {
+        if (stored == null) throw new Error("key not found: " + key);
+        return plainFromStored(stored, masterKey);
+      }).then(function (value) {
         if (value === null || value === undefined) throw new Error("key not found: " + key);
         return { key: key, value: value };
       });
@@ -275,11 +407,9 @@
     set: function (key, value) {
       return loadSecurity().then(function (s) {
         if (s && !masterKey) throw new Error("locked");
-        return encodeValue(value);
-      }).then(function (payload) {
-        return storePayload(key, payload);
+        return ensureWrapKey();
       }).then(function () {
-        return sha16plain(value).then(function (h) { return idbSet("h:" + key, h); });
+        return putPlain(key, value, masterKey);
       }).then(function () { return { key: key, value: value }; });
     },
     delete: function (key) {
@@ -295,14 +425,15 @@
     },
     /* Tiny 16-char fingerprint. Used by a phone copy to skip records already
        here without reading every picture off disk again. Written when a value
-       is saved; computed once and remembered if an older copy is missing it. */
+       is saved; computed once and remembered if an older copy is missing it.
+       Never loads the whole picture into the interface just to hash it. */
     hash: function (key) {
       return idbGet("h:" + key).then(function (h) {
         if (typeof h === "string" && h.length === 16) return h;
-        return window.storage.get(key).then(function (r) {
-          var v = r && r.value;
-          if (v === null || v === undefined) return null;
-          return sha16plain(v).then(function (nh) {
+        return ensureWrapKey().then(function () { return idbGet("v:" + key); }).then(function (stored) {
+          if (stored == null) return null;
+          return hashStored(stored).then(function (nh) {
+            if (!nh) return null;
             return idbSet("h:" + key, nh).then(function () { return nh; });
           });
         }).catch(function () { return null; });
