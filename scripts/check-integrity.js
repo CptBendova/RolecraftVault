@@ -13,6 +13,8 @@ const parseTargets = [
   "app/main.js",
   "app/preload.js",
   "app/app.js",
+  "installer/main.js",
+  "installer/preload.js",
   "web/js/rolecraft-app.web.js",
   "web/js/rolecraft-web-platform.js",
 ];

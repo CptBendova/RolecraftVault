@@ -22,8 +22,10 @@ app/                the Electron app (this is the product)
   vendor/           React UMD builds + self-hosted fonts
 web/                embeddable web edition (same interface, browser storage)
 mobile/             Android app: the web edition in a WebView (see mobile/README.md)
-build/            installer.nsi (NSIS Modern UI) + setup-icon.ico, welcome.bmp,
-                  header.bmp — the installer's own artwork
+installer/          HD Electron setup UI (index.html + static crest backdrop,
+                    dust and light animated around it) — this is the window
+                    people see. Silent NSIS only wraps it into one .exe
+build/              installer.nsi (silent wrapper) + setup-icon.ico
 scripts/            set-version, sign-update, build-web, build-installer, check-integrity
 keys/               signing key — NEVER commit (see keys/README.txt)
 dist/               build output (gitignored)
@@ -170,7 +172,7 @@ npm run set-version 1.159    # rewrites all five display sites at once
 ```
 
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
-`app/package.json`, `!define VERSION` in `build/installer.nsi`, and both
+`app/package.json`, `installer/package.json`, `!define VERSION` in `build/installer.nsi`, and both
 `versionName` and `versionCode` in `mobile/android/app/build.gradle`. Never edit
 those by hand. `npm run sign` refuses to sign when the version does not match
 `FACTORY_BUILD`.
@@ -286,10 +288,15 @@ assembled in Node, since an ICO is just a directory followed by the PNGs.
   1.159. `scripts/build-installer.js` now stamps the icon and the version strings
   with `rcedit` on **every** build, because `dist/` is gitignored and gets
   rebuilt from scratch elsewhere. Doing it once by hand would not survive.
-- **Windows installer.** `build/setup-icon.ico` is the same crest with a download
-  badge, so setup is telling apart from the app in a Downloads folder. The wizard
-  is Modern UI 2 with `welcome.bmp` (164x314) and `header.bmp` (150x57). NSIS
-  wants BMP for those, 24-bit and bottom-up.
+- **Windows installer.** Since 1.165 this is a separate Electron app in
+  `installer/`: a frameless 16:9 window, a still of the brass crest, gold dust
+  and a breathing light around it (not a camera move — those jump when they loop).
+  `scripts/build-installer.js` stages that app with the product as `resources/payload`,
+  then a **silent** NSIS script (`build/installer.nsi`) wraps it into one Setup.exe.
+  People never see NSIS pages. `build/setup-icon.ico` is the crest with a download
+  badge so setup is telling apart from the app in a Downloads folder. Imagine
+  watermarks the bottom-right of generated art; crop it off before shipping
+  (`crop=1100:618:0:0` on the 1280x720 source).
 - **Android.** The adaptive icon is the two vectors in `drawable/` and
   `drawable-v24/`; the `mipmap-*` PNGs are only for launchers older than API 26,
   where the shape has to be baked in. The crest spans x 26..82, y 20..88 of the

@@ -42,6 +42,11 @@ const edits = [
     to: `!define VERSION "${version}"`,
   },
   {
+    file: "installer/package.json",
+    find: /"version":\s*"[^"]*"/,
+    to: `"version": "${version}"`,
+  },
+  {
     file: "mobile/android/app/build.gradle",
     find: /versionName "[^"]*"/,
     to: `versionName "${version}"`,

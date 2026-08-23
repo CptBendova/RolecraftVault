@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.164";
+const APP_VERSION = "1.165";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.164";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.164 — current",
+  heading: "1.165 — current",
+  notes: ["The Windows installer is no longer the grey wizard. Setup opens as a full-window high-definition screen with the brass crest held still, gold dust and light moving around it, and a gold progress bar, then copies the app onto this computer. If you already run Rolecraft Vault you do not need this for the app itself. It is for a fresh install, or for anyone running Setup again."]
+}, {
+  heading: "1.164",
   notes: ["A transfer no longer sits on “gathering the records” with no idea whether anything is happening. The computer now reports how many records it has packed and how many bytes it has sent, and the phone reads that report while it waits, so both screens show a real bar. On a large library the gathering step can still take a while — it is reading every picture that has to move — but the numbers keep moving, so you can tell it is working."]
 }, {
   heading: "1.163",

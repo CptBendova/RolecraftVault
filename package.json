@@ -6,6 +6,7 @@
   "main": "app/main.js",
   "scripts": {
     "start": "electron app",
+    "setup": "electron installer",
     "check": "node scripts/check-integrity.js",
     "build:web": "node scripts/build-web.js",
     "build:installer": "node scripts/build-installer.js",

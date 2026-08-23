@@ -111,9 +111,12 @@ Either way, say in the notes which of the two files people actually need.
 
 ### Building the installer
 
+The window people see is a custom Electron app in `installer/` (full-HD backdrop,
+not the NSIS wizard). NSIS is only a silent wrapper so there is one file to run.
+
 1. `winget install NSIS.NSIS`
 2. Unzip the portable build into `dist/Rolecraft Vault/` — it supplies the Electron runtime
-3. `npm run build:installer`, which syncs `app/` into that copy and runs makensis
+3. `npm run build:installer`, which syncs `app/` into that copy, stages the HD setup UI around it, and runs makensis
 
 ### Layout
 
