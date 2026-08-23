@@ -235,6 +235,12 @@ put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 - `.scrollbody` is reused by small scrollers inside panels, which is why the column
   rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
 
+## Phone copies dying while saving around 1 GB (1.168)
+
+1.166 got the bytes onto the phone. Saving then stuffed every picture into IndexedDB. Android WebView IDB fills up around a gigabyte (QuotaExceededError, or a put that never returns), so a 4 GB vault stopped at about 30%. The UI also failed to clear its busy state if `storage.set` threw.
+
+Since 1.168, Capacitor stores anything over 16 KB as a file under `Directory.DATA/kv/` in 384 KB chunks, with only a `file:` pointer in IDB. `window.storage` still returns the same strings. The browser edition is unchanged. Retrying a merge after install skips hashes that already match.
+
 ## Phone copies dying around 130 MB (1.166)
 
 A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.

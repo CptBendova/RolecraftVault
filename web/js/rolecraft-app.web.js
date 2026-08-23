@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.167";
+const APP_VERSION = "1.168";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.167";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.167 — current",
+  heading: "1.168 — current",
+  notes: ["A large copy onto a phone no longer dies while saving. The phone was putting every picture into the same small store the interface uses, which fills up around a gigabyte and then stops, even after the computer had already sent everything. Pictures now go into the app's own files on the device, in small pieces, so a library of several gigabytes can finish. If a copy was interrupted, install this Android file over the last one and copy again — records already on the phone are skipped. Do not uninstall, or you lose what landed."]
+}, {
+  heading: "1.167",
   notes: ["The crest now moves. On the lock screen it sits in a field of brass dust with a breathing light, and a short looping film of the metal catching the glow. The same living crest is in the sidebar. Dust and gleam take their colour from the theme, so Dark, Light and CharSnap all keep the brass they already use. If you prefer less motion, the system setting for reduced motion stills it."]
 }, {
   heading: "1.166",
@@ -9985,7 +9988,12 @@ function SettingsModal({
       setXferBusy(true);
       // a mirror waits on the other device now, so say so rather than sitting blank
       setXferMsg(xferReplace ? { ok: true, text: "Waiting for the other device to approve this mirror\u2026" } : null);
-      const r = await window.transfer.receive(xferCode.trim(), xferReplace);
+      let r;
+      try {
+        r = await window.transfer.receive(xferCode.trim(), xferReplace);
+      } catch (e) {
+        r = { ok: false, error: e && e.message ? e.message : "Transfer failed" };
+      }
       setXferBusy(false);
       setXferProg(null);
       setXferPlan(null);

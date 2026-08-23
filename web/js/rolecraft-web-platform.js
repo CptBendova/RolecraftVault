@@ -55,6 +55,74 @@
     });
   }
 
+  /* IndexedDB on Android WebView fills up around a gigabyte and then either
+     throws QuotaExceededError or never finishes a put. A 4 GB vault cannot
+     live there. On Capacitor we write anything larger than FS_LARGE as a file
+     in the app's private directory, in small chunks so the native bridge
+     (about 1 MB) is never asked to swallow a whole picture. The IDB value is
+     only a pointer. The browser edition has no Filesystem plugin and stays
+     on IndexedDB. */
+  var FILE_MARK = "file:";
+  var FS_DIR = "DATA";
+  var FS_CHUNK = 384 * 1024;
+  var FS_LARGE = 16 * 1024;
+  function nativeFs() {
+    var C = window.Capacitor;
+    return C && typeof C.nativePromise === "function" ? C : null;
+  }
+  function fsCall(method, opts) {
+    return nativeFs().nativePromise("Filesystem", method, opts);
+  }
+  function fsPath(key) {
+    return "kv/" + encodeURIComponent(key);
+  }
+  function storePayload(key, payload) {
+    if (!(nativeFs() && payload.length > FS_LARGE)) return idbSet("v:" + key, payload);
+    var path = fsPath(key);
+    var off = 0;
+    var first = payload.slice(0, FS_CHUNK);
+    off = first.length;
+    return fsCall("writeFile", {
+      path: path, data: first, directory: FS_DIR, encoding: "utf8", recursive: true
+    }).then(function appendMore() {
+      if (off >= payload.length) return idbSet("v:" + key, FILE_MARK + path);
+      var piece = payload.slice(off, off + FS_CHUNK);
+      off += piece.length;
+      return fsCall("appendFile", {
+        path: path, data: piece, directory: FS_DIR, encoding: "utf8"
+      }).then(appendMore);
+    });
+  }
+  function loadPayload(stored) {
+    if (typeof stored !== "string" || stored.indexOf(FILE_MARK) !== 0) return Promise.resolve(stored);
+    if (!nativeFs()) return Promise.resolve(null);
+    var path = stored.slice(FILE_MARK.length);
+    return fsCall("stat", { path: path, directory: FS_DIR }).then(function (st) {
+      var size = st.size || 0, parts = [], off = 0;
+      function readMore() {
+        if (off >= size) return parts.join("");
+        var n = Math.min(FS_CHUNK, size - off);
+        return fsCall("readFile", {
+          path: path, directory: FS_DIR, encoding: "utf8", offset: off, length: n
+        }).then(function (r) {
+          parts.push(r.data || "");
+          off += n;
+          return readMore();
+        });
+      }
+      return readMore();
+    }).catch(function () { return null; });
+  }
+  function dropPayloadFile(stored) {
+    if (typeof stored !== "string" || stored.indexOf(FILE_MARK) !== 0 || !nativeFs()) return Promise.resolve();
+    return fsCall("deleteFile", {
+      path: stored.slice(FILE_MARK.length), directory: FS_DIR
+    }).catch(function () { return true; });
+  }
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(function () {});
+  }
+
   /* ---------- crypto helpers (WebCrypto) ---------- */
   var te = new TextEncoder();
   var td = new TextDecoder();
@@ -166,7 +234,7 @@
       var chain = Promise.resolve();
       keys.forEach(function (k) {
         chain = chain.then(function () {
-          return idbGet("v:" + k).then(function (payload) {
+          return idbGet("v:" + k).then(loadPayload).then(function (payload) {
             if (payload == null) return null;
             var plainP;
             if (payload.indexOf("pwd:") === 0) {
@@ -176,8 +244,8 @@
             else plainP = Promise.resolve(payload);
             return plainP.then(function (plain) {
               if (plain == null) return null;
-              if (newKey) return aesEncrypt(plain, newKey).then(function (b) { return idbSet("v:" + k, "pwd:" + b); });
-              return idbSet("v:" + k, "raw:" + plain);
+              if (newKey) return aesEncrypt(plain, newKey).then(function (b) { return storePayload(k, "pwd:" + b); });
+              return storePayload(k, "raw:" + plain);
             });
           });
         });
@@ -194,7 +262,7 @@
   /* ---------- window.storage ---------- */
   window.storage = {
     get: function (key) {
-      return idbGet("v:" + key).then(decodeValue).then(function (value) {
+      return idbGet("v:" + key).then(loadPayload).then(decodeValue).then(function (value) {
         if (value === null || value === undefined) throw new Error("key not found: " + key);
         return { key: key, value: value };
       });
@@ -204,14 +272,16 @@
         if (s && !masterKey) throw new Error("locked");
         return encodeValue(value);
       }).then(function (payload) {
-        return idbSet("v:" + key, payload);
+        return storePayload(key, payload);
       }).then(function () { return { key: key, value: value }; });
     },
     delete: function (key) {
       // gated like set: a locked vault that can still lose records is not locked
       return loadSecurity().then(function (s) {
         if (s && !masterKey) throw new Error("locked");
-        return idbDel("v:" + key);
+        return idbGet("v:" + key).then(function (stored) {
+          return dropPayloadFile(stored).then(function () { return idbDel("v:" + key); });
+        });
       }).then(function () { return { key: key, deleted: true }; });
     },
     list: function (prefix) {

@@ -292,15 +292,27 @@
     }
 
     let bytes = 0, records = [], saved = 0;
+    const wait = ms => new Promise(r => setTimeout(r, ms));
     const saveRecords = async recs => {
       for (let i = 0; i < recs.length; i++) {
-        await window.storage.set(recs[i].k, recs[i].v);
+        try {
+          await window.storage.set(recs[i].k, recs[i].v);
+        } catch (e) {
+          recs[i].v = null;
+          const m = String((e && e.message) || e);
+          const quota = (e && e.name === "QuotaExceededError") || /quota|full|disk|space|sqlite/i.test(m);
+          throw new Error(quota
+            ? "This phone ran out of room while saving (" + saved + " of " + needed.length + " records already in). Free space and try again — what already arrived is kept."
+            : "Could not save on this phone: " + m);
+        }
+        recs[i].v = null;
         saved++;
         phase("saving", saved, needed.length);
+        await wait(0);
       }
     };
+    try {
     if (needed.length) {
-      const wait = ms => new Promise(r => setTimeout(r, ms));
       const readProgress = async () => {
         try {
           return JSON.parse(new TextDecoder().decode(
@@ -382,6 +394,9 @@
     }
     phase("done", 1, 1);
     return Object.assign({ ok: true, added, updated, removed: removable.length, unchanged, bytes }, who);
+    } catch (e) {
+      return Object.assign({ ok: false, error: e && e.message ? e.message : String(e) }, who);
+    }
   }
 
   const progressHandlers = [];
