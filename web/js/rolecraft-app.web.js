@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.162";
+const APP_VERSION = "1.163";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.162";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.162 — current",
+  heading: "1.163 — current",
+  notes: ["The crest is new. Same shield and keyhole, drawn as brass you could almost pick up rather than a flat graphic, and it now appears on the app, the installer, the phone, and the splash.","The Windows installer looks like it belongs to the app: the welcome page and the header carry the same metal crest on the dark navy, and the setup file in Downloads is marked with a small download badge so you can tell it apart from the installed app."]
+}, {
+  heading: "1.162",
   notes: ["On a phone you can scan a QR instead of typing the transfer code. Share this vault on the computer now shows the code as a QR as well; on the phone, Settings then Transfer has Scan, which fills the code in for you. You can still type it if you would rather.","Getting a vault ready to share is much faster after the first time. The wait was the computer reading and hashing every picture in the library, and it was doing that again on every press of Share, even when nothing had changed. It remembers those hashes now, so a second share on an unchanged vault is ready almost at once. The first share of a large library still has to read it once."]
 }, {
   heading: "1.161",

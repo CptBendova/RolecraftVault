@@ -2,7 +2,7 @@
 !define APP_NAME "Rolecraft Vault"
 !define APP_EXE "Rolecraft Vault.exe"
 !define COMPANY "Rolecraft"
-!define VERSION "1.162"
+!define VERSION "1.163"
 
 ; Modern UI rather than the classic NSIS pages. The classic ones are grey
 ; system dialogs with no artwork and "Nullsoft Install System" along the
@@ -37,9 +37,13 @@ VIAddVersionKey "OriginalFilename" "Rolecraft-Vault-Setup-${VERSION}.exe"
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
 !define MUI_HEADERIMAGE_BITMAP "header.bmp"
+!define MUI_HEADER_TRANSPARENT_TEXT
 !define MUI_WELCOMEFINISHPAGE_BITMAP "welcome.bmp"
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP "welcome.bmp"
 !define MUI_ABORTWARNING
+!define MUI_BGCOLOR "0A0E1C"
+!define MUI_TEXTCOLOR "E8E4D8"
+!define MUI_INSTFILESPAGE_COLORS "E8E4D8 0A0E1C"
 
 !define MUI_WELCOMEPAGE_TITLE "Rolecraft Vault"
 !define MUI_WELCOMEPAGE_TEXT "A private library for your characters, personas, lorebooks and prompts.$\r$\n$\r$\nEverything stays on this computer. The app cannot reach the internet, and your vault is encrypted where it sits.$\r$\n$\r$\nClick Next to continue."
