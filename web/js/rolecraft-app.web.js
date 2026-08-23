@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.178";
+const APP_VERSION = "1.179";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.178";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.178 — current",
+  heading: "1.179 — current",
+  notes: ["The last Android file never reached the unlock screen. A new picture-preparing step ran as soon as the app opened, before it knew the vault was locked, and that closed the app on start. Unlock is first again. After you unlock, the library opens, then picture previews for the cards and “From your galleries” load from the encrypted folder — originals stay on disk, so a large vault is not held inside the app."]
+}, {
+  heading: "1.178",
   notes: ["After you unlock on a phone there is a preparing screen that reads every picture preview from the encrypted folder on the device. Originals stay on disk, so a large library does not sit inside the app. “From your galleries” and the cards then have their pictures ready instead of sitting empty."]
 }, {
   heading: "1.177",
@@ -10253,7 +10256,6 @@ function VaultBusyScreen({
 }
 function RolecraftVault() {
   const [ready, setReady] = useState(false);
-  const [picPrep, setPicPrep] = useState(null); // null | {done,total} | "done"
   const [loadError, setLoadError] = useState(null); // [damaged keys] — the vault refused to open
   const [authState, setAuthState] = useState({
     passwordSet: false,
@@ -10724,84 +10726,43 @@ function RolecraftVault() {
     })();
   }, [authState.checked, authState.locked]);
 
-  /* After unlock, a phone reads every thumbnail from the encrypted folder
-     before the library opens. Originals stay on disk; only the small
-     previews go into memory, so the dashboard and cards have pictures
-     ready without holding a multi-gigabyte vault inside the app. */
+  /* --- preload thumbnails for everything (dashboard wall is randomized) ---
+     On a phone the vault lives on disk and only the pictures on screen should
+     be in memory. Pulling every gallery, lore and prompt image into the cache
+     is what closed the app on a library of a few gigabytes. Portraits for the
+     cards still load; the rest wait until that screen is opened. The dashboard
+     wall asks for the tiles it is actually showing. */
   useEffect(() => {
     if (!ready) return;
     const onPhone = typeof window !== "undefined" && !!window.Capacitor;
-    if (!onPhone) {
-      chars.forEach(c => {
-        if (c.profileImg) loadImage(c.profileImg);
-        (c.gallery || []).forEach(g => loadImage(g.imgId));
-      });
-      personas.forEach(p => {
-        if (p.avatar) loadImage(p.avatar);
-        (p.gallery || []).forEach(g => loadImage(g.imgId));
-      });
-      Object.values(bucketMeta).forEach(m => {
-        if (m && m.cover) loadImage(m.cover);
-      });
-      lore.forEach(e => (e.images || []).forEach(im => loadImage(im.imgId)));
-      Object.values(loreMeta).forEach(m => {
-        if (m && m.cover) loadImage(m.cover);
-      });
-      prompts.forEach(p => (p.images || []).forEach(im => loadImage(im.imgId)));
-      Object.values(promptMeta).forEach(m => {
-        if (m && m.cover) loadImage(m.cover);
-      });
-      setPicPrep("done");
-      return;
-    }
-    if (picPrep === "done") return;
-    let cancel = false;
-    (async () => {
-      const ids = new Set();
-      chars.forEach(c => charImgIds(c).forEach(id => ids.add(id)));
-      personas.forEach(p => personaImgIds(p).forEach(id => ids.add(id)));
-      lore.forEach(e => (e.images || []).forEach(im => im && im.imgId && ids.add(im.imgId)));
-      prompts.forEach(p => (p.images || []).forEach(im => im && im.imgId && ids.add(im.imgId)));
-      [bucketMeta, loreMeta, promptMeta, pBucketMeta].forEach(meta => {
-        Object.values(meta || {}).forEach(m => {
-          if (m && m.cover) ids.add(m.cover);
-        });
-      });
-      const list = Array.from(ids);
-      if (!list.length) {
-        setPicPrep("done");
-        return;
-      }
-      setPicPrep({
-        done: 0,
-        total: list.length
-      });
-      const warm = {};
-      for (let i = 0; i < list.length; i++) {
-        if (cancel) return;
-        try {
-          const th = await sGet("th:" + list[i]);
-          if (th) {
-            warm[list[i]] = th;
-            imgLoading.current.add(list[i]);
-          }
-        } catch (e) {}
-        if (i % 3 === 2 || i === list.length - 1) {
-          setPicPrep({
-            done: i + 1,
-            total: list.length
-          });
-          await new Promise(r => setTimeout(r, 0));
-        }
-      }
-      if (cancel) return;
-      setImgCache(p => Object.assign({}, p, warm));
-      setPicPrep("done");
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, [ready, chars, personas, bucketMeta, lore, loreMeta, prompts, promptMeta, pBucketMeta]);
+    chars.forEach(c => {
+      if (c.profileImg) loadImage(c.profileImg);
+      if (!onPhone) (c.gallery || []).forEach(g => loadImage(g.imgId));
+    });
+    personas.forEach(p => {
+      if (p.avatar) loadImage(p.avatar);
+      if (!onPhone) (p.gallery || []).forEach(g => loadImage(g.imgId));
+    });
+    Object.values(bucketMeta).forEach(m => {
+      if (m && m.cover) loadImage(m.cover);
+    });
+    if (onPhone) return;
+    [...chars.map(c => ({
+      u: c.updatedAt,
+      img: c.profileImg
+    })), ...personas.map(p => ({
+      u: p.updatedAt,
+      img: p.avatar
+    }))].filter(r => r.u && r.img).sort((a, b) => b.u - a.u).slice(0, 8).forEach(r => loadImage(r.img));
+    lore.forEach(e => (e.images || []).forEach(im => loadImage(im.imgId)));
+    Object.values(loreMeta).forEach(m => {
+      if (m && m.cover) loadImage(m.cover);
+    });
+    prompts.forEach(p => (p.images || []).forEach(im => loadImage(im.imgId)));
+    Object.values(promptMeta).forEach(m => {
+      if (m && m.cover) loadImage(m.cover);
+    });
+  }, [ready, chars, personas, bucketMeta, lore, loreMeta, prompts, promptMeta]);
 
   /* --- one-time thumbnail upgrade: regenerate crisp 1000px thumbs from originals --- */
   useEffect(() => {
@@ -11250,7 +11211,6 @@ function RolecraftVault() {
   const lockVault = async () => {
     if (window.auth) await window.auth.lock();
     setReady(false);
-    setPicPrep(null);
     setChars([]);
     setPersonas([]);
     setLore([]);
@@ -11301,7 +11261,7 @@ function RolecraftVault() {
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
-  const IMG_CACHE_MAX = 0;
+  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -12410,7 +12370,21 @@ function RolecraftVault() {
       lineHeight: 1.6
     }
   }, "Restore your most recent export, or reopen the app to try again. Don't add or edit anything until it opens normally.")));
-  if (!authState.checked || !ready) return /*#__PURE__*/React.createElement("div", {
+  /* First paint must not mount extra screens. 1.178 did, and on a phone that
+     threw before auth had been read, so the lock screen never appeared. */
+  if (!authState.checked) return /*#__PURE__*/React.createElement("div", {
+    className: rootClass,
+    "data-rcv-state": "loading",
+    style: {
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--mut)"
+    }
+  }, "Opening the vault\u2026"));
+  if (!ready) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
     "data-rcv-state": "loading",
     style: {
@@ -12420,19 +12394,6 @@ function RolecraftVault() {
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(VaultBusyScreen, {
     title: "Opening the vault",
     detail: "Reading your library from this device."
-  }));
-  if (ON_PHONE && picPrep !== "done") return /*#__PURE__*/React.createElement("div", {
-    className: rootClass,
-    "data-rcv-state": "pictures",
-    style: {
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(VaultBusyScreen, {
-    title: "Preparing pictures",
-    detail: "Loading previews from the encrypted folder on this phone. Originals stay on disk, so the library stays light.",
-    done: picPrep && picPrep.done || 0,
-    total: picPrep && picPrep.total || 0
   }));
   return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
