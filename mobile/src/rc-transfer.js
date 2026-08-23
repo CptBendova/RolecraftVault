@@ -132,6 +132,32 @@
     if (head.app !== "rolecraft-vault") throw new Error("That file is not from Rolecraft Vault");
     return lines.slice(1).map(l => JSON.parse(l));
   }
+  /* Save one record at a time so a 6 MB batch of pictures is not all held as
+     parsed JSON at once. That was blowing the phone's memory on a multi-GB copy. */
+  async function decryptAndSave(bytes, secret, saveOne) {
+    if (!sameBytes(bytes.slice(0, 5), ascii("RCVX2"))) throw new Error("Not a Rolecraft record file");
+    const salt = bytes.slice(5, 21), iv = bytes.slice(21, 33);
+    const key = await keyFrom(secret, salt);
+    const plain = new Uint8Array(await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv, tagLength: 128 }, key, bytes.slice(33)));
+    const text = new TextDecoder().decode(plain);
+    let start = 0, first = true;
+    while (start < text.length) {
+      let nl = text.indexOf("\n", start);
+      if (nl < 0) nl = text.length;
+      const line = text.slice(start, nl);
+      start = nl + 1;
+      if (!line) continue;
+      if (first) {
+        first = false;
+        const head = JSON.parse(line);
+        if (head.app !== "rolecraft-vault") throw new Error("That file is not from Rolecraft Vault");
+        continue;
+      }
+      const rec = JSON.parse(line);
+      await saveOne(rec.k, rec.v);
+    }
+  }
 
   /* ---------- talking to the other device ---------- */
   const b64ToBytes = b64 => {
@@ -207,11 +233,18 @@
   async function localManifest(report) {
     const keys = (await window.storage.list()).keys;
     const m = {};
+    const hasher = window.storage.hash
+      ? k => window.storage.hash(k)
+      : async k => {
+          const got = await window.storage.get(k);
+          const v = got && got.value;
+          if (v === null || v === undefined) return null;
+          return sha16(String(v));
+        };
     for (let i = 0; i < keys.length; i++) {
       try {
-        const got = await window.storage.get(keys[i]);
-        const v = got && got.value;
-        if (v !== null && v !== undefined) m[keys[i]] = await sha16(String(v));
+        const h = await hasher(keys[i]);
+        if (h) m[keys[i]] = h;
       } catch (e) {}
       if (report) report(i + 1, keys.length);
     }
@@ -358,7 +391,20 @@
             bytes += piece.length;
             bytesDone += want || piece.length;
             phase("unpacking", i + 1, batchSizes.length);
-            await saveRecords(await decryptRecordFile(piece, target.secret));
+            await decryptAndSave(piece, target.secret, async (k, v) => {
+              try {
+                await window.storage.set(k, v);
+              } catch (e) {
+                const m = String((e && e.message) || e);
+                const quota = (e && e.name === "QuotaExceededError") || /quota|full|disk|space|sqlite/i.test(m);
+                throw new Error(quota
+                  ? "This phone ran out of room while saving (" + saved + " of " + needed.length + " records already in). Free space and try again — what already arrived is kept."
+                  : "Could not save on this phone: " + m);
+              }
+              saved++;
+              phase("saving", saved, needed.length);
+              if (saved % 8 === 0) await wait(0);
+            });
           }
         } else {
           phase("receiving", 0, 1);

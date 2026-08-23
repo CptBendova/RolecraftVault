@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.170";
+const APP_VERSION = "1.171";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.170";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.170 — current",
+  heading: "1.171 — current",
+  notes: ["A second copy onto a phone no longer re-reads every picture already there. The last interrupted copy left a few gigabytes on the device, and checking those one by one is what made the next attempt crawl. The phone now remembers a short fingerprint when it saves a record, so a retry only fetches what is still missing. The copy also uses less memory so the app is less likely to close itself mid-way."]
+}, {
+  heading: "1.170",
   notes: ["Copying a large vault to a phone is less slow. Each piece on the wire is a little bigger (still far under the size that used to kill a copy around 130 MB), and the phone spends less time pausing between records while it saves. Both devices need this version. If a copy stopped around two and a half gigabytes, install the new Android file over the last one and copy again — records already on the phone are skipped."]
 }, {
   heading: "1.169",
@@ -1951,11 +1954,14 @@ const CREST_1024 = "vendor/crest-1024.png";
 const CREST_LOOP = "vendor/crest-loop.mp4";
 function preloadBrandMedia() {
   if (typeof window === "undefined" || window.__rcvBrand) return;
+  const phone = !!window.Capacitor;
   const a = new Image();
   a.src = CREST_256;
   const b = new Image();
   b.src = CREST_1024;
   if (b.decode) b.decode().catch(function () {});
+  window.__rcvBrand = { a, b, v: null };
+  if (phone) return;
   const v = document.createElement("video");
   v.muted = true;
   v.defaultMuted = true;
@@ -1964,7 +1970,7 @@ function preloadBrandMedia() {
   v.preload = "auto";
   v.src = CREST_LOOP;
   try { v.load(); } catch (e) {}
-  window.__rcvBrand = { a, b, v };
+  window.__rcvBrand.v = v;
 }
 if (typeof window !== "undefined") preloadBrandMedia();
 function useViewSize() {
@@ -1994,7 +2000,8 @@ function CrestMark({
   const vid = useRef(null);
   const [failed, setFailed] = useState(false);
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const useLive = !!(live && size >= 96 && !reduce && !failed);
+  const phone = typeof window !== "undefined" && !!window.Capacitor;
+  const useLive = !!(live && size >= 96 && !reduce && !failed && !phone);
   const src = crestFile(size);
   useEffect(() => {
     const el = vid.current;

@@ -143,6 +143,11 @@
     for (var i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
     return s;
   }
+  function sha16plain(text) {
+    return crypto.subtle.digest("SHA-256", te.encode(String(text))).then(function (d) {
+      return hex(new Uint8Array(d)).slice(0, 16);
+    });
+  }
   function randomHex(n) {
     var b = new Uint8Array(n);
     crypto.getRandomValues(b);
@@ -273,6 +278,8 @@
         return encodeValue(value);
       }).then(function (payload) {
         return storePayload(key, payload);
+      }).then(function () {
+        return sha16plain(value).then(function (h) { return idbSet("h:" + key, h); });
       }).then(function () { return { key: key, value: value }; });
     },
     delete: function (key) {
@@ -280,9 +287,26 @@
       return loadSecurity().then(function (s) {
         if (s && !masterKey) throw new Error("locked");
         return idbGet("v:" + key).then(function (stored) {
-          return dropPayloadFile(stored).then(function () { return idbDel("v:" + key); });
+          return dropPayloadFile(stored).then(function () {
+            return Promise.all([idbDel("v:" + key), idbDel("h:" + key)]);
+          });
         });
       }).then(function () { return { key: key, deleted: true }; });
+    },
+    /* Tiny 16-char fingerprint. Used by a phone copy to skip records already
+       here without reading every picture off disk again. Written when a value
+       is saved; computed once and remembered if an older copy is missing it. */
+    hash: function (key) {
+      return idbGet("h:" + key).then(function (h) {
+        if (typeof h === "string" && h.length === 16) return h;
+        return window.storage.get(key).then(function (r) {
+          var v = r && r.value;
+          if (v === null || v === undefined) return null;
+          return sha16plain(v).then(function (nh) {
+            return idbSet("h:" + key, nh).then(function () { return nh; });
+          });
+        }).catch(function () { return null; });
+      });
     },
     list: function (prefix) {
       return dataKeys().then(function (keys) {
