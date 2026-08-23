@@ -31,7 +31,7 @@ if (!fs.existsSync(staged)) {
 }
 
 const target = path.join(staged, "resources", "app");
-for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json", "icon.ico", "icon.png", path.join("vendor", "qrcode.js"), path.join("vendor", "crest-loop.mp4")]) {
+for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json", "icon.ico", "icon.png", path.join("vendor", "qrcode.js"), path.join("vendor", "crest-loop.mp4"), path.join("vendor", "crest-256.png"), path.join("vendor", "crest-1024.png")]) {
   const from = path.join(root, "app", f);
   if (fs.existsSync(from)) {
     const dest = path.join(target, f);
