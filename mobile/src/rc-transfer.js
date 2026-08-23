@@ -168,9 +168,9 @@
   }
 
   /* CapacitorHttp loads a whole response into JS as base64. Around 130 MB the
-     phone stops. Slices stay at 1 MB, so a 12 MB picture is twelve calls that
+     phone stops. Slices stay at 2 MB, so a 12 MB picture is six calls that
      are joined here, never one giant native payload. */
-  const SLICE_BYTES = 1 << 20;
+  const SLICE_BYTES = 2 * 1024 * 1024;
   async function downloadSliced(target, path, totalBytes, timeoutMs, onBytes) {
     if (!totalBytes || totalBytes <= SLICE_BYTES) {
       const blob = await ask(target, path, "GET", null, timeoutMs);
@@ -308,7 +308,7 @@
         recs[i].v = null;
         saved++;
         phase("saving", saved, needed.length);
-        await wait(0);
+        if (i % 8 === 7) await wait(0);
       }
     };
     try {

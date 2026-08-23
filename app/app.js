@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.169";
+const APP_VERSION = "1.170";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.169";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.169 — current",
+  heading: "1.170 — current",
+  notes: ["Copying a large vault to a phone is less slow. Each piece on the wire is a little bigger (still far under the size that used to kill a copy around 130 MB), and the phone spends less time pausing between records while it saves. Both devices need this version. If a copy stopped around two and a half gigabytes, install the new Android file over the last one and copy again — records already on the phone are skipped."]
+}, {
+  heading: "1.169",
   notes: ["The lock screen crest is sharp now. It was a tiny picture stretched up, which is why it looked blocky on a phone and on a large monitor. It uses a high-resolution mark, grows with the screen, and the looping film of the metal uses that same sharp still as its first frame. Menu icons and the sidebar crest also change size with the window, so they stay even on a narrow pane or a 4K display. Behind the library, brass light and dust drift slowly so the page does not sit dead; they take their colour from Dark, Light and CharSnap, pause when the app is in the background, and still if you have asked the system for less motion."]
 }, {
   heading: "1.168",

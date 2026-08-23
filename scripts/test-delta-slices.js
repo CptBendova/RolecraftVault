@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const BATCH_PLAIN_MAX = 4 * 1024 * 1024;
+const BATCH_PLAIN_MAX = 6 * 1024 * 1024;
 const SLICE = 1 << 20;
 
 function splitKeysIntoBatches(keys, sizes) {
@@ -44,8 +44,8 @@ check("a 12 MB photo is its own batch", batches.length === 3
 const small = splitKeysIntoBatches(["a", "b", "c"], { a: 100, b: 100, c: 100 });
 check("tiny records share one batch", small.length === 1 && small[0].length === 3);
 
-const two = splitKeysIntoBatches(["p", "q"], { p: 3 * 1024 * 1024, q: 3 * 1024 * 1024 });
-check("two 3 MB pictures do not share a 4 MB batch", two.length === 2);
+const two = splitKeysIntoBatches(["p", "q"], { p: 4 * 1024 * 1024, q: 4 * 1024 * 1024 });
+check("two 4 MB pictures do not share a 6 MB batch", two.length === 2);
 
 const tmp = path.join(os.tmpdir(), "rcv-slice-test.bin");
 const payload = Buffer.alloc(SLICE * 2 + 12345);

@@ -64,7 +64,7 @@
      on IndexedDB. */
   var FILE_MARK = "file:";
   var FS_DIR = "DATA";
-  var FS_CHUNK = 384 * 1024;
+  var FS_CHUNK = 512 * 1024;
   var FS_LARGE = 16 * 1024;
   function nativeFs() {
     var C = window.Capacitor;

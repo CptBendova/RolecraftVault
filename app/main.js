@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.169";
+const FACTORY_BUILD = "1.170";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -258,10 +258,11 @@ function clearDeltaFiles() {
   } catch (e) {}
 }
 /* A phone cannot hold a whole vault in one Capacitor HTTP response: around
-   130 MB the native layer stops. Batches stay small, but one picture can be
+   130 MB the native layer stops. Batches stay modest, but one picture can be
    larger than the cap — that picture is still its own file, and the phone
-   pulls it in 1 MB slices. */
-const BATCH_PLAIN_MAX = 4 * 1024 * 1024;
+   pulls it in 2 MB slices. 6 MB is a little larger than 4 MB so a multi-GB
+   copy makes fewer round trips without going near that cliff. */
+const BATCH_PLAIN_MAX = 6 * 1024 * 1024;
 
 /* A short fingerprint per record lets the two devices work out exactly which
    records differ, so only those travel. Fingerprinting means reading and hashing
