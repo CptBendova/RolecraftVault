@@ -326,17 +326,34 @@
 
     let bytes = 0, records = [], saved = 0;
     const wait = ms => new Promise(r => setTimeout(r, ms));
+    const saveError = e => {
+      const m = String((e && e.message) || e);
+      const quota = (e && e.name === "QuotaExceededError") || /quota|full|disk|space|sqlite/i.test(m);
+      const perm = /permission|denied|OS-PLUG-FILE-0007|not allowed/i.test(m);
+      if (quota) {
+        return "This phone ran out of room while saving (" + saved + " of " + needed.length + " records already in). Free space and try again — what already arrived is kept.";
+      }
+      if (perm) {
+        return "This phone blocked the app from saving the vault. Open Android settings for Rolecraft Vault, allow storage, and copy again — what already arrived is kept.";
+      }
+      return "Could not save on this phone: " + m;
+    };
+    const C = window.Capacitor;
+    if (C && typeof C.nativePromise === "function") {
+      try {
+        await C.nativePromise("Filesystem", "requestPermissions", {});
+      } catch (e) {}
+      try {
+        await C.nativePromise("Filesystem", "mkdir", { path: "vault", directory: "DATA", recursive: true });
+      } catch (e) {}
+    }
     const saveRecords = async recs => {
       for (let i = 0; i < recs.length; i++) {
         try {
           await window.storage.set(recs[i].k, recs[i].v);
         } catch (e) {
           recs[i].v = null;
-          const m = String((e && e.message) || e);
-          const quota = (e && e.name === "QuotaExceededError") || /quota|full|disk|space|sqlite/i.test(m);
-          throw new Error(quota
-            ? "This phone ran out of room while saving (" + saved + " of " + needed.length + " records already in). Free space and try again — what already arrived is kept."
-            : "Could not save on this phone: " + m);
+          throw new Error(saveError(e));
         }
         recs[i].v = null;
         saved++;
@@ -395,11 +412,7 @@
               try {
                 await window.storage.set(k, v);
               } catch (e) {
-                const m = String((e && e.message) || e);
-                const quota = (e && e.name === "QuotaExceededError") || /quota|full|disk|space|sqlite/i.test(m);
-                throw new Error(quota
-                  ? "This phone ran out of room while saving (" + saved + " of " + needed.length + " records already in). Free space and try again — what already arrived is kept."
-                  : "Could not save on this phone: " + m);
+                throw new Error(saveError(e));
               }
               saved++;
               phase("saving", saved, needed.length);

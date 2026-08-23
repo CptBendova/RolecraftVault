@@ -78,6 +78,15 @@
   function fsCall(method, opts) {
     return nativeFs().nativePromise("Filesystem", method, opts);
   }
+  var vaultReady = null;
+  function ensureVaultDir() {
+    if (vaultReady) return vaultReady;
+    if (!nativeFs()) return Promise.resolve();
+    vaultReady = fsCall("requestPermissions", {}).catch(function () { return true; }).then(function () {
+      return fsCall("mkdir", { path: "vault", directory: FS_DIR, recursive: true });
+    }).catch(function () { return true; });
+    return vaultReady;
+  }
   function vaultPath(key) {
     return VAULT_DIR + encodeURIComponent(key);
   }
@@ -408,6 +417,8 @@
       return loadSecurity().then(function (s) {
         if (s && !masterKey) throw new Error("locked");
         return ensureWrapKey();
+      }).then(function () {
+        return ensureVaultDir();
       }).then(function () {
         return putPlain(key, value, masterKey);
       }).then(function () { return { key: key, value: value }; });

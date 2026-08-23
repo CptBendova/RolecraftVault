@@ -247,6 +247,8 @@ Holding those files as UTF-8 data-URL strings and then `get()`-ing them back int
 
 Since 1.172, large records on Capacitor are AES-256-GCM files under `Directory.DATA/vault/` (`RCVS1` + iv + ciphertext). The wrap key is a device key in IDB when no master password is set, or the master key when one is. IDB only keeps a `bin:` pointer and the 16-char fingerprint. `hash()` of old `file:` leftovers reads bytes, not a JavaScript string. The interface on a phone loads thumbnails only, at most three at a time, and keeps 64 thumbs / 4 full pictures. `kv/` files from 1.168–1.171 still read. The browser edition is unchanged.
 
+1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
+
 ## Phone copies dying around 130 MB (1.166)
 
 A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.

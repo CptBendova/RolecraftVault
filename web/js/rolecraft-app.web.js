@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.172";
+const APP_VERSION = "1.173";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.172";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.172 — current",
+  heading: "1.173 — current",
+  notes: ["The lock screen crest sits straight now. The keyhole was up and to the left of centre in the picture, so on a phone or a tablet it looked like the shield had been nudged. It is cropped so the keyhole is in the middle of the tile.","A copy onto a phone asks Android for storage before it starts saving, and creates the encrypted vault folder first. Without that, a large copy could fail as soon as it tried to write. Install this Android file over the last one and copy again. Do not uninstall."]
+}, {
+  heading: "1.172",
   notes: ["Pictures on a phone now live in an encrypted folder on the device, not inside the app. The last copies were saving into the same memory the interface uses, so a library of a few gigabytes made the app slow and then close itself. The app only reads a picture when it is actually on screen, and it lets go of ones you have scrolled past. Checking what is already there no longer loads every photo just to compare. Install this Android file over the last one and copy again. Do not uninstall."]
 }, {
   heading: "1.171",
@@ -1866,7 +1869,8 @@ const CSS = `
   }
   .rcv .crest-mark.live { border-radius: 20px; box-shadow: 0 0 0 1px var(--brass-line), 0 0 28px var(--brass-soft); }
   .rcv .crest-mark img, .rcv .crest-mark video { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .rcv .crest-mark.live video { transform: scale(1.14); }
+  .rcv .crest-mark.live video { transform: scale(1.22); transform-origin: 50% 48%; }
+  .rcv .lock-screen .crest-mark { overflow: hidden; }
   .rcv .crest-mark::before {
     content: ""; position: absolute; inset: -8px; pointer-events: none; border-radius: 16px; z-index: 1;
     box-shadow: 0 0 16px var(--brass);
@@ -2519,8 +2523,11 @@ function LockScreen({
     style: {
       margin: "0 auto 22px",
       width: crest,
+      height: crest,
       display: "flex",
-      justifyContent: "center"
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement(CrestMark, {
     size: crest,
