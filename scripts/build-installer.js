@@ -19,9 +19,13 @@ if (!fs.existsSync(staged)) {
 
 // keep the packaged copy in step with the working app/ folder
 const target = path.join(staged, "resources", "app");
-for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json", "icon.ico", "icon.png"]) {
+for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json", "icon.ico", "icon.png", path.join("vendor", "qrcode.js")]) {
   const from = path.join(root, "app", f);
-  if (fs.existsSync(from)) fs.copyFileSync(from, path.join(target, f));
+  if (fs.existsSync(from)) {
+    const dest = path.join(target, f);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(from, dest);
+  }
 }
 console.log("Synced app/ into the packaged build.");
 

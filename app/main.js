@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.161";
+const FACTORY_BUILD = "1.162";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -270,11 +270,44 @@ function vaultSignature() {
 }
 /* Reading a record and hashing it. Pulled out so the blocking build and the
    yielding one below cannot drift apart in what they produce. */
+/* Per-file hash cache. Sharing used to decrypt and hash every picture on every
+   press of Share, which is most of the wait. Each record is one .dat file, and
+   writeFileAtomic always changes mtime, so size+mtime is enough to reuse a hash.
+   Kept beside the vault rather than inside it, so it is not itself a record. */
+function hashCachePath() { return path.join(dataDir, "_xfer-hash-cache.json"); }
+let hashCache = null;
+function loadHashCache() {
+  if (hashCache) return hashCache;
+  try { hashCache = JSON.parse(fs.readFileSync(hashCachePath(), "utf8")) || {}; }
+  catch { hashCache = {}; }
+  return hashCache;
+}
+function saveHashCache() {
+  if (!hashCache) return;
+  try { writeFileAtomic(hashCachePath(), JSON.stringify(hashCache)); } catch (e) {}
+}
+function rememberHash(key, value) {
+  try {
+    const f = keyToFile(key);
+    const st = fs.statSync(f);
+    const h = crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
+    loadHashCache()[path.basename(f)] = { size: st.size, mtimeMs: st.mtimeMs, hash: h };
+    return h;
+  } catch (e) { return null; }
+}
+function forgetHash(key) {
+  try { delete loadHashCache()[path.basename(keyToFile(key))]; } catch (e) {}
+}
 function hashOfRecord(k) {
+  const f = keyToFile(k);
+  let st;
+  try { st = fs.statSync(f); } catch (e) { return null; }
+  const rec = loadHashCache()[path.basename(f)];
+  if (rec && rec.size === st.size && rec.mtimeMs === st.mtimeMs && rec.hash) return rec.hash;
   try {
     const v = readValue(k);
     if (v === null || v === undefined) return null;
-    return crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 16);
+    return rememberHash(k, v);
   } catch (e) { return null; }
 }
 function buildManifest(report) {
@@ -291,24 +324,30 @@ function buildManifest(report) {
     if (h !== null) m[k] = h;
     if (report) report(++i, keys.length);
   }
-  // only cache a scan that matches the folder it started from
   if (sig && sig === vaultSignature()) manifestCache = { sig, manifest: m };
+  saveHashCache();
   return m;
 }
-/* The same scan, done before anyone is waiting on it. Yields every few records
-   so the window keeps painting and can say how far along it is. */
+/* Same scan, before anyone is waiting. Yields on a clock rather than every
+   handful of records, because a cached hash is cheap and yielding was most of
+   the remaining wait once the pictures had already been hashed once. */
 async function warmManifest(report) {
   const sig = vaultSignature();
   if (sig && manifestCache && manifestCache.sig === sig) return;
   const keys = allKeys();
   const m = {};
+  let lastYield = Date.now();
   for (let i = 0; i < keys.length; i++) {
     const h = hashOfRecord(keys[i]);
     if (h !== null) m[keys[i]] = h;
     if (report) report(i + 1, keys.length);
-    if ((i & 15) === 15) await new Promise(r => setImmediate(r));
+    if (Date.now() - lastYield > 40) {
+      await new Promise(r => setImmediate(r));
+      lastYield = Date.now();
+    }
   }
   if (sig && sig === vaultSignature()) manifestCache = { sig, manifest: m };
+  saveHashCache();
 }
 function sendToWindow(channel, payload) {
   try {
@@ -889,6 +928,7 @@ function writeFileAtomic(file, payload) {
 }
 function writeValue(key, value) {
   writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
+  rememberHash(key, value);
 }
 function readValue(key) {
   const f = keyToFile(key);
@@ -1211,7 +1251,7 @@ app.whenReady().then(() => {
   ipcMain.handle("vault-set", (e, key, value) => { if (isLocked()) throw new Error("locked"); writeValue(key, value); return true; });
   // deleting is as destructive as writing, so it is gated the same way — a locked
   // vault that could still have records removed is not locked
-  ipcMain.handle("vault-delete", (e, key) => { if (isLocked()) throw new Error("locked"); const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); return true; });
+  ipcMain.handle("vault-delete", (e, key) => { if (isLocked()) throw new Error("locked"); const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); forgetHash(key); return true; });
   ipcMain.handle("vault-list", (e, prefix) => allKeys().filter(k => !prefix || k.startsWith(prefix)));
   setupAuthIpc();
   createWindow();

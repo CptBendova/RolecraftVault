@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.161";
+const APP_VERSION = "1.162";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.161";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.161 — current",
+  heading: "1.162 — current",
+  notes: ["On a phone you can scan a QR instead of typing the transfer code. Share this vault on the computer now shows the code as a QR as well; on the phone, Settings then Transfer has Scan, which fills the code in for you. You can still type it if you would rather.","Getting a vault ready to share is much faster after the first time. The wait was the computer reading and hashing every picture in the library, and it was doing that again on every press of Share, even when nothing had changed. It remembers those hashes now, so a second share on an unchanged vault is ready almost at once. The first share of a large library still has to read it once."]
+}, {
+  heading: "1.161",
   notes: ["The Android app is a real installed app now: it opens on its own screen, keeps your vault in the app's private storage on the device, and no longer stalls on the crest. The previous Android build could fail to install, and when it did open it could look like a web page whose storage would not last. This one is signed so phones will take it, then hands off from the crest into the library.","If a Rolecraft Vault is already on the phone from 1.158, 1.159 or 1.160, uninstall that copy first. Android will not put this file over a copy signed as a test build, and uninstalling erases what is in it, so export a backup from Settings if you have anything you want to keep. After this, later APKs install over it normally.","Windows is unchanged. If you already run 1.160, the small update file is enough."]
 }, {
   heading: "1.160",
@@ -2119,18 +2122,18 @@ const GUIDE = [
     "summary": "Copying your vault across your own network.",
     "body": [
       "Settings has a device transfer that copies your vault to another computer over your own network. Nothing goes to the internet. The two machines talk directly, and only while you have that panel open.",
-      "This is in the Windows app only. The web edition has no device transfer, because a page in a browser cannot open a connection for another machine to reach. To move a vault out of the web edition, use Export backup in Settings and import that file wherever you want it.",
+      "Sharing starts on the Windows app. A phone or tablet with the Android app can receive by scanning the QR. The web edition has no device transfer, because a page in a browser cannot open a connection for another machine to reach. To move a vault out of the web edition, use Export backup in Settings and import that file wherever you want it.",
       [
         "Start on the device you are copying from. It shows a one-time code.",
-        "On the other device, type that code. What is sent is encrypted with a key made from it.",
+        "On the other device, scan the QR that appears with the code, or type the code. What is sent is encrypted with a key made from it.",
         "Before anything is written you get a summary: which device is sending, which is receiving, and how many records will be added, overwritten or removed. Nothing happens until you confirm."
       ],
       "Both devices show the same panel, and that is the thing worth knowing. Each one has a Share this vault button at the top and a Receive onto box underneath it, so each one also has its own mirror tick box. The tick box you are looking at belongs to the machine you are looking at, and decides what happens to that machine and nothing else. The other device's tick box has no bearing on it.",
       "Mirroring is not something you start on its own, which is why there seems to be no button for it. It is a setting on a copy you are about to receive, so it does nothing until you type the other device's code into the box above it and press the button underneath, on that same machine.",
       [
-        "On the device that has the writing, press Share this vault. It shows a one-time code and then waits. Nothing leaves it unless the other device asks, and nothing on it is changed by any of this.",
-        "On the device you want changed, tick the box if you want mirroring, type the code, and press the button. Leave the box alone and the transfer only adds and updates, removing nothing.",
-        "Press once to see what would happen and again to do it. So a machine cannot lose your work unless you are standing at that machine, typing the other one's code into it."
+        "On the device that has the writing, press Share this vault. It shows a one-time code and a QR and then waits. Nothing leaves it unless the other device asks, and nothing on it is changed by any of this.",
+        "On the device you want changed, tick the box if you want mirroring, scan the QR or type the code, and press the button. Leave the box alone and the transfer only adds and updates, removing nothing.",
+        "Press once to see what would happen and again to do it. So a machine cannot lose your work unless you are standing at that machine, scanning or typing the other one's code into it."
       ],
       "A mirror then asks the other device as well, because it is the only thing that can delete anything. A box appears over there naming both machines and saying how many records would be copied, overwritten and deleted, and whoever is sitting at it can allow it, refuse it, or turn it around. Nothing is written anywhere until that is answered, and a question nobody answers counts as a refusal.",
       "Turning it around is there for the case you are worried about: you set it up the wrong way and notice on the other screen. Choosing it makes the machine that was sharing the one that gets overwritten instead, and it then shows its own summary and its own red confirm button before anything happens. You do not have to start again.",
@@ -8729,6 +8732,45 @@ function AuthForm({
     onClick: onCancel
   }, "Cancel")));
 }
+function qrMatrix(text) {
+  if (typeof qrcode !== "function") return null;
+  const str = String(text || "");
+  if (!str) return null;
+  for (let type = 1; type <= 6; type++) {
+    try {
+      const qr = qrcode(type, "M");
+      qr.addData(str);
+      qr.make();
+      const n = qr.getModuleCount();
+      const m = [];
+      for (let y = 0; y < n; y++) {
+        const row = [];
+        for (let x = 0; x < n; x++) row.push(qr.isDark(y, x) ? 1 : 0);
+        m.push(row);
+      }
+      return m;
+    } catch (e) {}
+  }
+  return null;
+}
+function TransferQr(props) {
+  const m = useMemo(() => qrMatrix(props.text), [props.text]);
+  if (!m) return null;
+  const n = m.length, q = 4, d = n + q * 2;
+  let path = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    if (m[y][x]) path += "M" + (x + q) + " " + (y + q) + "h1v1h-1z";
+  }
+  const px = props.size || 188;
+  return /*#__PURE__*/React.createElement("svg", {
+    width: px,
+    height: px,
+    viewBox: "0 0 " + d + " " + d,
+    shapeRendering: "crispEdges",
+    "aria-hidden": true,
+    style: { display: "block", background: "#fff", borderRadius: 10 }
+  }, /*#__PURE__*/React.createElement("rect", { width: d, height: d, fill: "#ffffff" }), /*#__PURE__*/React.createElement("path", { d: path, fill: "#111111" }));
+}
 function SettingsModal({
   onResetLayout,
   onClose,
@@ -8757,6 +8799,10 @@ function SettingsModal({
   const [xferBusy, setXferBusy] = useState(false);
   // which half of the panel is working, so the other one does not claim to be
   const [xferSharing, setXferSharing] = useState(false);
+  const [xferScan, setXferScan] = useState(false);
+  const scanVideoRef = useRef(null);
+  const canShare = !(window.transfer && window.transfer.canShare === false);
+  const canScan = typeof navigator !== "undefined" && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.Capacitor;
   const spinner = label => React.createElement("span", {
     style: { display: "inline-flex", gap: 8, alignItems: "center" }
   }, React.createElement("span", { className: "spin" }), label);
@@ -8798,6 +8844,62 @@ function SettingsModal({
     if (!window.transfer || !window.transfer.onProgress) return;
     return window.transfer.onProgress(p => setXferProg(p && p.phase === "done" ? null : p));
   }, []);
+  useEffect(() => {
+    if (!xferScan) return;
+    const video = scanVideoRef.current;
+    if (!video) return;
+    let stream = null, raf = 0, dead = false, detector = null;
+    if (typeof BarcodeDetector === "function") {
+      try { detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (e) {}
+    }
+    if (!detector) {
+      setXferMsg({ ok: false, text: "This device cannot scan a QR. Type the code instead." });
+      setXferScan(false);
+      return;
+    }
+    const stop = () => {
+      dead = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    };
+    const tick = async () => {
+      if (dead) return;
+      if (video.readyState >= 2 && video.videoWidth) {
+        let text = null;
+        if (detector) {
+          try {
+            const codes = await detector.detect(video);
+            if (codes && codes[0] && codes[0].rawValue) text = String(codes[0].rawValue);
+          } catch (e) {}
+        }
+        if (text) {
+          const cleaned = text.replace(/^RC:/i, "").trim();
+          setXferCode(cleaned);
+          setXferPlan(null);
+          setXferScan(false);
+          return;
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    const start = constraints => navigator.mediaDevices.getUserMedia(constraints);
+    start({ video: { facingMode: { ideal: "environment" } }, audio: false }).catch(() => start({ video: true, audio: false }))
+      .then(s => {
+        if (dead) { s.getTracks().forEach(t => t.stop()); return; }
+        stream = s;
+        video.srcObject = s;
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        return video.play();
+      })
+      .then(() => { if (!dead) tick(); })
+      .catch(() => {
+        if (dead) return;
+        setXferMsg({ ok: false, text: "Couldn't open the camera. Type the code instead." });
+        setXferScan(false);
+      });
+    return stop;
+  }, [xferScan]);
   /* Named steps, because they are not the same length and a bar that sits at
      one number for a minute reads as a hang. The two that know how much is left
      say so; the two that cannot are honest about it and stripe instead. */
@@ -9579,7 +9681,24 @@ function SettingsModal({
     onClick: () => { const a = mirrorAsk; setMirrorAsk(null); window.transfer.respondMirror(a.id, "refuse"); }
   }, "Refuse")))), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.55 }
-  }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network, and the receiving device needs the one\u2011time code."),
+  }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network. On a phone, scan the QR instead of typing the code."),
+  xferScan && /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: { zIndex: 70, background: "rgba(5,8,16,.92)" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 14, padding: 20 }
+  }, /*#__PURE__*/React.createElement("video", {
+    ref: scanVideoRef,
+    playsInline: true,
+    muted: true,
+    autoPlay: true,
+    style: { width: "min(100%, 420px)", maxHeight: "70vh", borderRadius: 12, background: "#000", objectFit: "cover" }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 14, color: "var(--mut)", textAlign: "center" }
+  }, "Point the camera at the code on the other device"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setXferScan(false)
+  }, "Cancel"))),
   /* Which vault you are standing in. A transfer only ever writes to the device
      you are sitting at, and that is the one sentence people needed. */
   /*#__PURE__*/React.createElement("div", {
@@ -9588,19 +9707,28 @@ function SettingsModal({
   xferMsg && /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: xferMsg.ok ? "var(--brass)" : "#e2698a", marginBottom: 10, lineHeight: 1.5 }
   }, xferMsg.text),
-  /*#__PURE__*/React.createElement("div", {
+  canShare && /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
   }, "Send ", here, " to another device"),
-  xfer ? /*#__PURE__*/React.createElement("div", {
+  canShare && (xfer ? /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: { padding: "14px 16px", marginBottom: 10 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { flex: "1 1 180px", minWidth: 160 }
   }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Code for the other device"),
   /*#__PURE__*/React.createElement("div", {
     className: "serif",
-    style: { fontSize: 26, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
+    style: { fontSize: 22, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
   }, xfer.code), /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10 }
-  }, "On the other device: Settings \u2192 Transfer \u2192 type this code. It pulls from ", thisDevice || "this device", "; nothing here is altered. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes."),
+    style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10, lineHeight: 1.5 }
+  }, "On a phone: Settings, Transfer, Scan the code. Or type it. It pulls from ", thisDevice || "this device", "; nothing here is altered. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes.")),
+  /*#__PURE__*/React.createElement("div", { style: { flex: "0 0 auto" } },
+    /*#__PURE__*/React.createElement(TransferQr, { text: xfer.code, size: 168 }),
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 11.5, color: "var(--dim)", marginTop: 6, textAlign: "center" }
+    }, "Scan with the phone"))),
   /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: async () => {
@@ -9624,20 +9752,26 @@ function SettingsModal({
         if (r.device) setThisDevice(r.device);
       } else setXferMsg({ ok: false, text: r && r.error || "Couldn't start sending" });
     }
-  }, xferBusy ? spinner(xferProg && xferProg.phase === "preparing" ? "Getting ready\u2026" : "Starting\u2026") : "Share this vault"),
+  }, xferBusy ? spinner(xferProg && xferProg.phase === "preparing" ? "Getting ready\u2026" : "Starting\u2026") : "Share this vault")),
   xferProg && xferProg.phase === "preparing" && xferBar(),
   xferProg && xferProg.phase === "preparing" && /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginTop: -4, marginBottom: 8 }
-  }, "Reading through the vault so the other device gets an answer straight away. A large library takes a moment, and the code appears when it is ready."),
+  }, "Reading through the vault so the other device gets an answer straight away. The first time on a large library takes a moment; after that, if nothing has changed, it is almost immediate."),
   /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--mut)", margin: "12px 0 6px", fontWeight: 700 }
   }, "Receive onto ", here),
-  /*#__PURE__*/React.createElement("input", {
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "stretch" }
+  }, /*#__PURE__*/React.createElement("input", {
     value: xferCode,
     onChange: e => { setXferCode(e.target.value); setXferPlan(null); },
-    placeholder: "Type the code shown on the other device",
-    style: { width: "100%", marginBottom: 8 }
-  }),
+    placeholder: canScan ? "Scan the QR, or type the code" : "Type the code shown on the other device",
+    style: { flex: 1, marginBottom: 0, minWidth: 0 }
+  }), canScan && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    disabled: xferBusy,
+    onClick: () => { setXferMsg(null); setXferScan(true); }
+  }, "Scan")),
   /*#__PURE__*/React.createElement("label", {
     style: { display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: "var(--mut)", marginBottom: 10, lineHeight: 1.5 }
   }, /*#__PURE__*/React.createElement("input", {
