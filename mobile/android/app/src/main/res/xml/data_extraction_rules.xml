@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing in this app is copied off the device by Android.
+
+  Android's automatic backup would otherwise upload an app's private data to the
+  user's Google Drive, and this app's private data is the whole vault. That
+  directly contradicts what it promises: the interface cannot reach the network,
+  the only transfer is one the person starts themselves on their own Wi-Fi, and a
+  silent copy to somebody else's servers is exactly the thing being avoided.
+
+  cloud-backup is excluded outright. Device-to-device transfer is excluded too:
+  moving to a new phone should go through the app's own transfer or a backup file
+  the person made deliberately, not through a channel they did not ask for.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
