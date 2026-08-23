@@ -3,9 +3,12 @@
   "appName": "Rolecraft Vault",
   "webDir": "www",
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "backgroundColor": "#0a0e1c",
+    "captureInput": true
   },
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "http",
+    "hostname": "localhost"
   }
 }

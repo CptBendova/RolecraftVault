@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.160";
+const APP_VERSION = "1.161";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.160";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.160 — current",
+  heading: "1.161 — current",
+  notes: ["The Android app is a real installed app now: it opens on its own screen, keeps your vault in the app's private storage on the device, and no longer stalls on the crest. The previous Android build could fail to install, and when it did open it could look like a web page whose storage would not last. This one is signed so phones will take it, then hands off from the crest into the library.","If a Rolecraft Vault is already on the phone from 1.158, 1.159 or 1.160, uninstall that copy first. Android will not put this file over a copy signed as a test build, and uninstalling erases what is in it, so export a backup from Settings if you have anything you want to keep. After this, later APKs install over it normally.","Windows is unchanged. If you already run 1.160, the small update file is enough."]
+}, {
+  heading: "1.160",
   notes: ["Transfers to and from the Android app now actually work. The fix in 1.159 was aimed at the wrong thing. The app asks Android to make the network request on its behalf, and it was asking through a door that does not exist in this kind of build, so every attempt failed before anything was sent and the panel reported that the bridge had not loaded. It asks the right way now.","A second fault sat behind that one and would have broken a transfer even once it connected. The vault is encrypted and then handed over as raw data, but Android was being told to send it as plain text, so it arrived about half again as long and could not be unscrambled. Nothing reported an error; it would simply have looked like a wrong pairing code. Both are fixed together, and the fix is tested against the exact bytes rather than by eye.","The Android app is now signed properly rather than shipped as a test build. This is the one change that asks something of you: because the old copy was signed differently, Android will not install this one over it. Uninstall the old app first, and note that uninstalling erases whatever is in it, so export a backup first if you have anything you want to keep.","Settings told Android users the wrong story about their own vault. It said the vault lived in “this browser's storage” and that clearing site data would erase it, which is what the web edition says because the Android app is built from it. On a phone or tablet the vault is private to the app, no browser or other app can read it, and it is never copied to Google Drive. It says that now, and it names what does erase it: uninstalling, or clearing the app's storage.","Android 7.0 and 7.1 are no longer supported. The part of Android that unpacks a transfer only exists from Android 8 onwards, so on those two versions a transfer would have sent an empty payload and failed silently. Refusing to install is the more honest outcome."]
 }, {
   heading: "1.159",
