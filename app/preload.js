@@ -53,6 +53,17 @@ contextBridge.exposeInMainWorld("updater", {
   revert: () => ipcRenderer.invoke("updates-revert"),
   relaunch: () => ipcRenderer.invoke("updates-relaunch"),
 });
+/* The window's own shape. Read only apart from full screen, which the Settings
+   panel offers because a full screen window has no title bar to close from. */
+contextBridge.exposeInMainWorld("win", {
+  state: () => ipcRenderer.invoke("window-state"),
+  setFullScreen: on => ipcRenderer.invoke("window-fullscreen", !!on),
+  onChange: cb => {
+    const h = (e, s) => cb(s);
+    ipcRenderer.on("window-state", h);
+    return () => ipcRenderer.removeListener("window-state", h);
+  }
+});
 contextBridge.exposeInMainWorld("vaultInfo", {
   encrypted: () => ipcRenderer.invoke("vault-encrypted"),
 });

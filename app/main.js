@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.191";
+const FACTORY_BUILD = "1.192";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1424,12 +1424,42 @@ function setupAuthIpc() {
     dpapi: safeStorage.isEncryptionAvailable(),
     password: passwordSet(),
   }));
+  /* Full screen. Nothing here touches the vault, so none of it is gated on the
+     lock: the view should be changeable from the lock screen too. */
+  const theWindow = () => {
+    const w = BrowserWindow.getAllWindows()[0];
+    return w && !w.isDestroyed() ? w : null;
+  };
+  ipcMain.handle("window-state", () => {
+    const w = theWindow();
+    return w ? { fullScreen: w.isFullScreen(), maximized: w.isMaximized() } : { fullScreen: false, maximized: false };
+  });
+  ipcMain.handle("window-fullscreen", (e, on) => {
+    const w = theWindow();
+    if (!w) return { ok: false };
+    w.setFullScreen(!!on);
+    return { ok: true, fullScreen: w.isFullScreen() };
+  });
 }
 
 /* ---- window ---- */
 function loadBounds() { try { return JSON.parse(fs.readFileSync(boundsFile, "utf8")); } catch { return null; } }
 function saveBounds(win) {
-  try { const b = win.getNormalBounds(); fs.writeFileSync(boundsFile, JSON.stringify({ ...b, maximized: win.isMaximized() })); } catch {}
+  /* getNormalBounds reports the windowed size even while full screen, so the
+     window always has somewhere sensible to return to. */
+  try {
+    const b = win.getNormalBounds();
+    fs.writeFileSync(boundsFile, JSON.stringify({ ...b, maximized: win.isMaximized(), fullScreen: win.isFullScreen() }));
+  } catch {}
+}
+/* The interface cannot ask the window about itself, so it is told: on every
+   change as well as on request, because full screen can also be entered from
+   the keyboard or by Windows. */
+function sendWindowState() {
+  try {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) sendToWindow("window-state", { fullScreen: win.isFullScreen(), maximized: win.isMaximized() });
+  } catch (e) {}
 }
 
 function createWindow() {
@@ -1445,8 +1475,32 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
   if (saved && saved.maximized) win.maximize();
-  win.once("ready-to-show", () => { win.show(); });
+  win.once("ready-to-show", () => {
+    win.show();
+    /* after show: entering full screen on a window that has not painted yet
+       leaves a black rectangle until the first frame arrives */
+    if (saved && saved.fullScreen) win.setFullScreen(true);
+    sendWindowState();
+  });
   win.setMenuBarVisibility(false);
+  win.on("enter-full-screen", sendWindowState);
+  win.on("leave-full-screen", sendWindowState);
+  win.on("maximize", sendWindowState);
+  win.on("unmaximize", sendWindowState);
+  /* F11 toggles, Escape leaves. Separate from the handler below because that
+     one only looks at combinations held with Control. Escape is left alone
+     unless the window is actually full screen, since the interface uses it to
+     close dialogs everywhere. */
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.control || input.alt || input.meta) return;
+    if (input.key === "F11" || input.key === "f11") {
+      win.setFullScreen(!win.isFullScreen());
+      event.preventDefault();
+    } else if (input.key === "Escape" && win.isFullScreen()) {
+      win.setFullScreen(false);
+      event.preventDefault();
+    }
+  });
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown" || !input.control) return;
     const wc = win.webContents;

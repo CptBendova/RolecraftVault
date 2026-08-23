@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.191";
+const APP_VERSION = "1.192";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.191";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.191 — current",
+  heading: "1.192 — current",
+  notes: ["The Windows app can run full screen. Settings has a Screen setting with two choices, Window and Full screen, and F11 switches between them at any time from anywhere in the app.","There is no title bar in full screen, so there is a plain way back out rather than a shortcut you have to know: open Settings and the Screen setting offers Leave full screen. Escape does the same, and so does F11 again. Escape is left alone everywhere else, so it still closes whatever you have open as it always did.","The app opens the way you left it. If you close it full screen it opens full screen, and the windowed size you had is remembered separately, so switching back puts the window where it was rather than somewhere arbitrary.","This is the Windows app only. The web edition and the Android app are already whatever size their browser or their device gives them, so the setting is not shown there."]
+}, {
+  heading: "1.191",
   notes: ["The crest went missing from the lock screen and the sidebar, showing a broken picture in its place. It was not a passing glitch: it happened every time an update was installed, and it would have happened again on the next one.","An update replaces the interface only, and it is kept in a folder of its own. The page it runs in is written into that same folder, so when the app asked for its own artwork by name it was looking beside the update, where there is no artwork at all. Everything else still worked, which is why it looked so odd: your pictures appeared, the writing was in the right typeface, and only the crest was gone.","The app now works out where its own files really live rather than assuming they sit beside it, and the folder an update runs from also points back at them, so anything added later is safe the same way. If you install this and the crest is there, that is the fix."]
 }, {
   heading: "1.190",
@@ -9486,6 +9489,32 @@ function SettingsModal({
   useEffect(() => {
     if (window.vaultInfo) window.vaultInfo.encrypted().then(setEnc).catch(() => {});
   }, [authState]);
+  /* The window owns whether it is full screen, so this asks once and then
+     listens. It can change without the panel being involved — F11, or Windows
+     itself — and the buttons must not end up describing the wrong thing.
+     window.win exists only in the desktop app; the web and Android builds have
+     no window to resize, so the whole section is left out there. */
+  const [winView, setWinView] = useState(null);
+  useEffect(() => {
+    if (!window.win) return;
+    let alive = true;
+    const read = () => {
+      window.win.state().then(v => { if (alive) setWinView(v); }).catch(() => {});
+    };
+    read();
+    /* Twice a second, and only while this panel is open. The window can be put
+       into full screen from the keyboard or by Windows itself, and the buttons
+       must not sit there describing the wrong thing. The call is a single
+       question to the window and touches nothing else. */
+    const t = setInterval(read, 500);
+    const off = window.win.onChange && window.win.onChange(v => { if (alive) setWinView(v); });
+    return () => {
+      alive = false;
+      clearInterval(t);
+      if (off) off();
+    };
+  }, []);
+  const fullScreen = !!(winView && winView.fullScreen);
   const importRef = useRef(null);
   // version history is collapsed by default — it is reference material, not
   // something to scroll past every time Settings is opened
@@ -9580,7 +9609,41 @@ function SettingsModal({
     onClick: onResetLayout
   }, "Reset layout to defaults"), /*#__PURE__*/React.createElement("div", {
     className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
+  }), window.win && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 10
+    }
+  }, "Screen"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, [[false, "Window"], [true, "Full screen"]].map(([on, label]) => /*#__PURE__*/React.createElement("button", {
+    key: label,
+    className: "btn " + (fullScreen === on ? "btn-primary" : "btn-ghost"),
+    style: {
+      flex: 1
+    },
+    /* Not set here: the window reports back and the buttons follow, so they
+       cannot disagree with it. */
+    onClick: () => window.win.setFullScreen(on).then(() => window.win.state()).then(setWinView).catch(() => {})
+  }, label))), fullScreen && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    style: {
+      width: "100%",
+      marginTop: 8
+    },
+    onClick: () => window.win.setFullScreen(false).then(() => window.win.state()).then(setWinView).catch(() => {})
+  }, "Leave full screen"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      margin: "8px 0 0",
+      fontSize: 13
+    }
+  }, fullScreen ? "There is no title bar in full screen, so this is the way out. F11 and Escape do the same." : "F11 switches to full screen and back at any time."), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       marginBottom: 10
