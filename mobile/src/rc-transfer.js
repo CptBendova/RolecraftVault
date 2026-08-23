@@ -402,7 +402,11 @@
           let bytesDone = 0;
           for (let i = 0; i < batchSizes.length; i++) {
             const want = Number(batchSizes[i]) || 0;
-            const piece = await downloadSliced(target, "/delta-file?i=" + i, want, 600000, got => {
+            /* let, not const: it is released below once its records are saved,
+               so a 6 MB batch is not still held while the next one downloads.
+               Declared const, that release threw and killed the transfer after
+               the first batch had already been written. */
+            let piece = await downloadSliced(target, "/delta-file?i=" + i, want, 600000, got => {
               phase("receiving", bytesDone + got, totalBytes);
             });
             bytes += piece.length;

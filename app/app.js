@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.173";
+const APP_VERSION = "1.174";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.173";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.173 — current",
+  heading: "1.174 — current",
+  notes: ["A phone copy stopped as soon as it had collected the records and never unpacked any of them. Each batch of records is released from memory once it has been saved, so a large batch is not still being held while the next one arrives. That release was written in a way the phone refuses to run, and it sat immediately after the first batch was saved, so the copy failed there every time. The message it gave was a line of programmer's shorthand rather than anything you could act on, which is why it looked like it had simply stopped.","The copy now runs through every batch as intended. If it does fail, it still reports the reason, and that reason is now the only thing that can appear rather than being hidden behind this fault."]
+}, {
+  heading: "1.173",
   notes: ["The lock screen crest sits straight now. The keyhole was up and to the left of centre in the picture, so on a phone or a tablet it looked like the shield had been nudged. It is cropped so the keyhole is in the middle of the tile.","A copy onto a phone asks Android for storage before it starts saving, and creates the encrypted vault folder first. Without that, a large copy could fail as soon as it tried to write. Install this Android file over the last one and copy again. Do not uninstall."]
 }, {
   heading: "1.172",
