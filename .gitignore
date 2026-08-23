@@ -17,3 +17,4 @@ keys/*.keystore
 keys/*.p12
 keys/android-keystore.txt
 mobile/android/keystore.properties
+tmp-vault/

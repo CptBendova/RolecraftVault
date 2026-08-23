@@ -26,8 +26,12 @@ installer/          HD Electron setup UI (index.html + static crest backdrop,
                     dust and light animated around it) — this is the window
                     people see. Silent NSIS only wraps it into one .exe
 build/              installer.nsi (silent wrapper) + setup-icon.ico
-scripts/            set-version, sign-update, build-web, build-installer, check-integrity
-keys/               signing key — NEVER commit (see keys/README.txt)
+scripts/            set-version, sign-update, build-web, build-installer,
+                    check-integrity, scan-js, and the test-* checks below
+keys/               signing keys — NEVER commit. private_key.pem signs .rcvup
+                    updates; rolecraft-release.jks signs the APK and its password
+                    is in android-keystore.txt. Losing the jks means no phone can
+                    update without uninstalling, which erases that vault
 dist/               build output (gitignored)
 ```
 
@@ -82,6 +86,18 @@ Editing it by script is normal here. Two things bite repeatedly:
    needed in the release notes regardless.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
+6. **Never reference a file from `app.js` by a bare relative path.** A patch is
+   loaded from the updates folder and `resolveEntryFile` writes the page it runs
+   in there too, so `"vendor/crest-256.png"` resolves beside the patch, where
+   there is no `vendor/`. It rewrites `src=`/`href=` in the HTML and `url('vendor/`
+   in the CSS, but it cannot rewrite a string the interface builds at runtime.
+   Use `ASSET_BASE`, which reads back a script tag the shell has already
+   rewritten and is correct with a patch, without one, and in the web and Android
+   builds. This cost the crest on the lock screen and in the sidebar for every
+   patched copy from 1.166 to 1.191, and looked like a one-off glitch because
+   pictures (data URLs) and fonts (named in the CSS) kept working. Since 1.192
+   `main.js` also writes a `<base>` into that page, so a bare path degrades to
+   merely wrong rather than broken — do not rely on it.
 
 ## Data model (all values are strings in encrypted key/value storage)
 
@@ -164,11 +180,11 @@ root**. They are not interchangeable.
 
 ## Versioning
 
-The displayed version is a flat number — **1.159** — not semver. It lived in five
+The displayed version is a flat number — **1.192** — not semver. It lived in five
 places that had drifted to three different values, so it now has one owner:
 
 ```bash
-npm run set-version 1.159    # rewrites all five display sites at once
+npm run set-version 1.192    # rewrites all six display sites at once
 ```
 
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
@@ -178,7 +194,7 @@ those by hand. `npm run sign` refuses to sign when the version does not match
 `FACTORY_BUILD`.
 
 The Android `versionCode` has to be a plain increasing integer, so it is derived
-by flattening the display version: 1.159 becomes 1159. It was added late — the
+by flattening the display version: 1.192 becomes 1192. It was added late — the
 Android project sat at `versionName "1.0"` / `versionCode 1` for every release up
 to and including 1.158, which is exactly the drift this script exists to stop.
 
@@ -338,7 +354,28 @@ coordinate space and the capture is cropped.
 
 ## Testing notes
 
-There is no test suite yet. What has worked well, and is worth continuing:
+There is no `npm test`, but `scripts/` now holds runnable checks, each written
+because something shipped broken. Run them with `node scripts/<name>.js`:
+
+| Script | What it catches |
+|---|---|
+| `scan-js.js` | assignment to a `const` binding — a runtime TypeError `node --check` cannot see. One of these killed every phone copy in 1.173. Takes file paths; scope-aware, and skips strings, templates, comments and regex |
+| `test-update-assets.js` | the crest failing to load under an active patch (rule 6). Needs Electron; `NO_BASE=1` simulates a shell older than 1.192 |
+| `test-warm-pass.js` | the background warm asking for more originals than it can keep |
+| `test-image-eviction.js` | both picture caches, including that neither eviction loop can spin forever |
+| `test-device-limits.js` | phone vs tablet vs desktop limits, across reported and unreported memory |
+| `test-phone-image-guard.js` | the rule keeping full originals off a phone, including when a picture has never been measured |
+| `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
+
+They all follow the same rule, which is the point:
+
+**Lift the real code and run it.** Find it in the file by name or by its first and
+last line, brace-match to its end, and `new Function` it with stubs. Never retype
+the logic into the test — lift it, or the test proves nothing about what ships. A
+test that cannot fail proves nothing either: run it against the code *before* the
+fix and watch it fail before trusting it.
+
+What has worked well besides:
 
 - **Lift the real function out of `app.js` and run it.** Find it by name, brace-match
   to its end, and `new Function` it with stubs for what it closes over. This has
@@ -352,7 +389,14 @@ There is no test suite yet. What has worked well, and is worth continuing:
 Things a harness **cannot** check, which must be tried by hand:
 
 - Image uploads (needs a real canvas for thumbnails).
-- **A real two-device Wi-Fi transfer.** Nothing in 1.152, 1.153 or 1.154 has been
-  run against a second machine. Both devices need 1.153+ before mirroring works.
+- **A real two-device Wi-Fi transfer.** PC to phone has been run against real
+  hardware repeatedly since 1.166 and is the source of most of the transfer
+  notes above. PC to PC still has not, and mirroring needs 1.153+ on both.
+- **Anything needing the window itself**: full screen, and the Settings control
+  for it, were checked by driving the real window and measuring its rectangle.
+  Match the Electron process by pid, not by window title — `*Rolecraft*` also
+  matches a browser tab on the GitHub page and the installed copy, and keys sent
+  to the wrong window produce a confident, meaningless pass.
 
-Good first improvement: move the ad-hoc harnesses into `tests/` and add `npm test`.
+Still worth doing: a single `npm test` that runs the scripts above, and moving
+them into `tests/`.
