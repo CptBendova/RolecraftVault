@@ -315,8 +315,10 @@ assembled in Node, since an ICO is just a directory followed by the PNGs.
   then a **silent** NSIS script (`build/installer.nsi`) wraps it into one Setup.exe.
   People never see NSIS pages. `build/setup-icon.ico` is the crest with a download
   badge so setup is telling apart from the app in a Downloads folder. Imagine
-  watermarks the bottom-right of generated art; crop it off before shipping
-  (`crop=1100:618:0:0` on the 1280x720 source).
+  watermarks the bottom-right of generated art; crop it off before shipping.
+  A top-left crop (`crop=1100:618:0:0`) throws the subject off-centre. Take a
+  square centred on the shield instead so the mark is gone and the keyhole stays
+  in the middle of the lock-screen tile.
 - **Android.** The adaptive icon is the two vectors in `drawable/` and
   `drawable-v24/`; the `mipmap-*` PNGs are only for launchers older than API 26,
   where the shape has to be baked in. The crest spans x 26..82, y 20..88 of the

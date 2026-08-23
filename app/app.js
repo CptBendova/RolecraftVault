@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.174";
+const APP_VERSION = "1.175";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.174";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.174 — current",
+  heading: "1.175 — current",
+  notes: ["The lock screen crest is a new loop of the still shield, with gold dust and light moving around it. Imagine puts a Grok mark in the corner of that film; cutting the mark off a wide frame used to slide the shield to the side. The square on the lock screen is taken from the middle of the wide frame, around the shield, so the mark is gone and the keyhole stays in the centre."]
+}, {
+  heading: "1.174",
   notes: ["A phone copy stopped as soon as it had collected the records and never unpacked any of them. Each batch of records is released from memory once it has been saved, so a large batch is not still being held while the next one arrives. That release was written in a way the phone refuses to run, and it sat immediately after the first batch was saved, so the copy failed there every time. The message it gave was a line of programmer's shorthand rather than anything you could act on, which is why it looked like it had simply stopped.","The copy now runs through every batch as intended. If it does fail, it still reports the reason, and that reason is now the only thing that can appear rather than being hidden behind this fault."]
 }, {
   heading: "1.173",
@@ -1872,7 +1875,6 @@ const CSS = `
   }
   .rcv .crest-mark.live { border-radius: 20px; box-shadow: 0 0 0 1px var(--brass-line), 0 0 28px var(--brass-soft); }
   .rcv .crest-mark img, .rcv .crest-mark video { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .rcv .crest-mark.live video { transform: scale(1.22); transform-origin: 50% 48%; }
   .rcv .lock-screen .crest-mark { overflow: hidden; }
   .rcv .crest-mark::before {
     content: ""; position: absolute; inset: -8px; pointer-events: none; border-radius: 16px; z-index: 1;
@@ -1964,14 +1966,12 @@ const CREST_1024 = "vendor/crest-1024.png";
 const CREST_LOOP = "vendor/crest-loop.mp4";
 function preloadBrandMedia() {
   if (typeof window === "undefined" || window.__rcvBrand) return;
-  const phone = !!window.Capacitor;
   const a = new Image();
   a.src = CREST_256;
   const b = new Image();
   b.src = CREST_1024;
   if (b.decode) b.decode().catch(function () {});
   window.__rcvBrand = { a, b, v: null };
-  if (phone) return;
   const v = document.createElement("video");
   v.muted = true;
   v.defaultMuted = true;
@@ -2010,8 +2010,7 @@ function CrestMark({
   const vid = useRef(null);
   const [failed, setFailed] = useState(false);
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const phone = typeof window !== "undefined" && !!window.Capacitor;
-  const useLive = !!(live && size >= 96 && !reduce && !failed && !phone);
+  const useLive = !!(live && size >= 96 && !reduce && !failed);
   const src = crestFile(size);
   useEffect(() => {
     const el = vid.current;
