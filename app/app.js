@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.180";
+const APP_VERSION = "1.181";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.180";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.180 — current",
+  heading: "1.181 — current",
+  notes: ["If a PIN is set, the lock screen is a number pad. A PIN is digits only, but the field used to open the full keyboard, which on a phone covered the screen and offered letters you cannot use. Tap the digits, or use a hardware number row. You can still switch to the master password."]
+}, {
+  heading: "1.180",
   notes: ["The app icon on a phone showed the crest too close, as if it had been zoomed in, because Android cuts a circle out of the middle of the picture. The shield now sits smaller in the tile so the whole mark is visible.","Opening a picture from a grid now fills the screen, and you can swipe to the next one. The same swipe works in the slideshow. A Grid button sits next to Slideshow at the top of a character or persona, so you do not have to scroll past the writing to find it. Tap a picture to open it; the circle in the corner still selects."]
 }, {
   heading: "1.179",
@@ -1944,6 +1947,19 @@ const CSS = `
     to { transform: translate3d(1.8%, 1.4%, 0) scale(1.05); }
   }
   .rcv .lock-screen .lock-card { width: min(380px, calc(100vw - 40px)); }
+  .rcv .pin-dots { display: flex; justify-content: center; align-items: center; gap: 10px;
+    min-height: 18px; margin: 2px 0 14px; }
+  .rcv .pin-dot { width: 10px; height: 10px; border-radius: 99px; border: 1.5px solid var(--brass-line);
+    background: transparent; }
+  .rcv .pin-dot.on { background: var(--brass); border-color: var(--brass); }
+  .rcv .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    width: min(280px, 100%); margin: 0 auto; }
+  .rcv .pin-key { height: 54px; border-radius: 999px; font-size: 22px; font-weight: 600;
+    font-family: inherit; color: var(--text); background: rgba(150,166,214,.08);
+    border: 1px solid var(--line2); cursor: pointer; }
+  .rcv .pin-key:active { background: var(--brass-soft); border-color: var(--brass-line); }
+  .rcv .pin-key:disabled { opacity: .45; }
+  .rcv .pin-key.ghost { font-size: 15px; color: var(--mut); }
   .rcv .navitem svg { flex: 0 0 auto; }
   @keyframes ssfade { from { opacity: 0; } to { opacity: 1; } }
   @keyframes ssfadeout { from { opacity: 1; } to { opacity: 0; } }
@@ -2500,18 +2516,77 @@ const icons = {
 };
 
 /* ---------- lock screen ---------- */
+function PinPad({
+  value,
+  onChange,
+  onSubmit,
+  disabled
+}) {
+  const press = k => {
+    if (disabled) return;
+    if (k === "back") onChange((value || "").slice(0, -1));
+    else if (k === "go") onSubmit();
+    else if ((value || "").length < 32) onChange((value || "") + k);
+  };
+  useEffect(() => {
+    const h = e => {
+      if (disabled) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onSubmit();
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        onChange((value || "").slice(0, -1));
+      } else if (/^\d$/.test(e.key)) {
+        e.preventDefault();
+        if ((value || "").length < 32) onChange((value || "") + e.key);
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [value, onChange, onSubmit, disabled]);
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "go"];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "pin-pad",
+    role: "group",
+    "aria-label": "PIN number pad"
+  }, keys.map(k => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    type: "button",
+    className: "pin-key" + (k === "back" || k === "go" ? " ghost" : ""),
+    disabled: disabled,
+    "aria-label": k === "back" ? "Delete" : k === "go" ? "Unlock" : "Digit " + k,
+    onClick: () => press(k)
+  }, k === "back" ? /*#__PURE__*/React.createElement(Ic, {
+    d: icons.left,
+    size: 18
+  }) : k === "go" ? /*#__PURE__*/React.createElement(Ic, {
+    d: icons.check,
+    size: 18
+  }) : k)));
+}
 function LockScreen({
   authState,
   onUnlocked
 }) {
   const view = useViewSize();
-  const crest = Math.round(Math.min(280, Math.max(176, Math.min(view.w * 0.26, view.h * 0.28))));
-  const [mode, setMode] = useState(authState.pinSet ? "pin" : "password");
+  const pinMode = authState.pinSet;
+  const [mode, setMode] = useState(pinMode ? "pin" : "password");
+  const pin = mode === "pin";
+  const crest = Math.round(pin ? Math.min(148, Math.max(96, Math.min(view.w * 0.2, view.h * 0.16))) : Math.min(280, Math.max(176, Math.min(view.w * 0.26, view.h * 0.28))));
   const [val, setVal] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const submit = async () => {
+  const setDigits = useCallback(v => {
+    setVal(String(v || "").replace(/\D/g, "").slice(0, 32));
+    setErr("");
+  }, []);
+  const submit = useCallback(async () => {
     if (!val || busy) return;
+    if (mode === "pin" && val.length < 4) {
+      setErr("PIN needs at least 4 digits");
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -2526,7 +2601,7 @@ function LockScreen({
       setErr("Something went wrong — try again");
     }
     setBusy(false);
-  };
+  }, [val, busy, mode, onUnlocked]);
   return /*#__PURE__*/React.createElement("div", {
     className: "lock-screen",
     style: {
@@ -2551,7 +2626,7 @@ function LockScreen({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      margin: "0 auto 22px",
+      margin: "0 auto " + (pin ? 14 : 22) + "px",
       width: crest,
       height: crest,
       display: "flex",
@@ -2567,21 +2642,32 @@ function LockScreen({
   }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h1", {
     className: "serif",
     style: {
-      fontSize: 30,
+      fontSize: pin ? 24 : 30,
       margin: "6px 0 6px"
     }
   }, "Vault locked"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--mut)",
-      marginBottom: 18
+      marginBottom: pin ? 10 : 18
     }
-  }, "Your library is encrypted with your master password."), /*#__PURE__*/React.createElement("input", {
+  }, pin ? "Enter your PIN." : "Your library is encrypted with your master password."), pin ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "pin-dots",
+    "aria-live": "polite",
+    "aria-label": val.length ? val.length + " digits entered" : "No digits yet"
+  }, (val.length ? val : "    ").split("").map((_, i) => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    className: "pin-dot" + (val.length ? " on" : "")
+  }))), /*#__PURE__*/React.createElement(PinPad, {
+    value: val,
+    onChange: setDigits,
+    onSubmit: submit,
+    disabled: busy
+  })) : /*#__PURE__*/React.createElement("input", {
     type: "password",
-    inputMode: mode === "pin" ? "numeric" : "text",
     autoFocus: true,
     value: val,
-    placeholder: mode === "pin" ? "Enter your PIN" : "Enter your master password",
+    placeholder: "Enter your master password",
     onChange: e => {
       setVal(e.target.value);
       setErr("");
@@ -2589,7 +2675,7 @@ function LockScreen({
     onKeyDown: e => e.key === "Enter" && submit(),
     style: {
       textAlign: "center",
-      letterSpacing: mode === "pin" ? "0.3em" : "0.05em",
+      letterSpacing: "0.05em",
       fontSize: 17
     }
   }), err && /*#__PURE__*/React.createElement("div", {
@@ -2598,7 +2684,7 @@ function LockScreen({
       fontSize: 13,
       marginTop: 10
     }
-  }, err), /*#__PURE__*/React.createElement("button", {
+  }, err), !pin && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     style: {
       width: "100%",
@@ -2606,7 +2692,7 @@ function LockScreen({
     },
     disabled: busy,
     onClick: submit
-  }, busy ? "Unlocking…" : "Unlock"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
+  }, busy ? "Unlocking\u2026" : "Unlock"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
       background: "none",
@@ -2619,7 +2705,7 @@ function LockScreen({
       setVal("");
       setErr("");
     }
-  }, mode === "pin" ? "Use master password instead" : "Use PIN instead")));
+  }, pin ? "Use master password instead" : "Use PIN instead")));
 }
 
 /* ---------- lightbox ---------- */
@@ -9047,14 +9133,19 @@ function AuthForm({
     }
   }, fields.map((f, i) => /*#__PURE__*/React.createElement("input", {
     key: f.key,
-    type: "password",
+    type: f.kind === "pin" ? "tel" : "password",
+    inputMode: f.kind === "pin" ? "numeric" : undefined,
+    pattern: f.kind === "pin" ? "[0-9]*" : undefined,
+    autoComplete: f.kind === "pin" ? "one-time-code" : "current-password",
     placeholder: f.label,
     autoFocus: i === 0,
     value: vals[f.key] || "",
     onChange: e => {
+      const raw = e.target.value;
+      const next = f.kind === "pin" ? raw.replace(/\D/g, "").slice(0, 32) : raw;
       setVals(p => ({
         ...p,
-        [f.key]: e.target.value
+        [f.key]: next
       }));
       setErr("");
     },
@@ -9573,13 +9664,15 @@ function SettingsModal({
       label: "Master password"
     }, {
       key: "p",
-      label: "New PIN (4+ digits)"
+      label: "New PIN (4+ digits)",
+      kind: "pin"
     }, {
       key: "q",
-      label: "Repeat PIN"
+      label: "Repeat PIN",
+      kind: "pin"
     }],
     onSubmit: async v => {
-      if ((v.p || "").length < 4) return "PIN needs at least 4 digits";
+      if (!/^\d{4,}$/.test(v.p || "")) return "PIN needs at least 4 digits";
       if (v.p !== v.q) return "PINs don't match";
       const r = await window.auth.setPin(v.o || "", v.p);
       if (!r.ok) return r.error;
