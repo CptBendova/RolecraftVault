@@ -233,6 +233,43 @@ put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
 - `.scrollbody` is reused by small scrollers inside panels, which is why the column
   rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
 
+## Android: the two things that broke transfers (1.160)
+
+Both were found by reading Capacitor's own Android source in
+`mobile/node_modules/@capacitor/android/.../CapacitorHttpUrlConnection.java`,
+after two releases had shipped fixes aimed at the wrong thing. Read that file
+before theorising about the transfer again.
+
+- **`window.Capacitor.Plugins` does not exist here.** It is built by Capacitor's
+  JS runtime (`@capacitor/core`), and `index.html` loads `rc-transfer.js` as a
+  plain script with no bundler, so nothing ever creates it. `native-bridge.js`
+  only ever *reads* `cap.Plugins`. The call that works is
+  **`Capacitor.nativePromise("CapacitorHttp", "request", opts)`**, which is the
+  same channel `Plugins` would have used underneath. Reaching for
+  `Plugins.CapacitorHttp` threw on every request, and the error said the bridge
+  had not loaded when it was the lookup that was wrong — which sent the diagnosis
+  off toward Android permissions for two rounds. `INTERNET` was never missing.
+- **A binary request body needs `dataType: "file"`.** Android base64-decodes the
+  body *only* in that branch; otherwise it writes the string as UTF-8, so the
+  payload arrives ~4/3 the length and fails to decrypt with nothing logged. It
+  looks exactly like a wrong pairing code. That decode is also guarded by
+  `SDK_INT >= 26`, which is why `minSdkVersion` is 26 and not 24: on 24 and 25 the
+  guard skips the write entirely and the body goes out empty.
+- Responses are fine as they are: `responseType: "arraybuffer"` comes back as a
+  base64 string, which `ask()` already handles.
+- `tests/` still does not exist, but `scratchpad/test-transfer.js` shows the shape
+  that caught this: lift `ask` and `nativeRequest` out of the real file by brace
+  matching, stub `nativePromise` to decode the body *the way Android does*, and
+  assert the bytes an actual HTTP server receives. Note `lift()` must look for
+  `async function` first or it silently drops the keyword.
+
+**Release APKs do not look like debug APKs inside.** AGP renames resources to
+short paths (`res/o-.png`, no `mipmap-` directories) and re-compresses PNGs, so
+verifying an icon by path or by sha256 against the source raster both fail. Match
+by decoded dimensions and look at the image. `keytool -printcert -jarfile` also
+reports "Not a signed jar file" for a correctly signed APK, because it only
+understands v1 JAR signing; use `apksigner verify --print-certs`.
+
 ## Icons and installer branding (1.159)
 
 One mark across all three editions: a brass crest with a keyhole on the app's

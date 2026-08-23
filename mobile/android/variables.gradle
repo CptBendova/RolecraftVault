@@ -1,5 +1,11 @@
 ext {
-    minSdkVersion = 24
+    // 26, not 24. A transfer sends its payload as base64 and asks the native
+    // side to decode it, and that decode is guarded by SDK_INT >= 26 in
+    // Capacitor's own code. On 24 and 25 the guard simply skips the write, so
+    // the body goes out empty with nothing reporting an error and the transfer
+    // fails at the far end for no visible reason. Refusing to install on those
+    // two versions is better than installing and quietly not working.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

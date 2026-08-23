@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.159";
+const APP_VERSION = "1.160";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.159";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.159 — current",
+  heading: "1.160 — current",
+  notes: ["Transfers to and from the Android app now actually work. The fix in 1.159 was aimed at the wrong thing. The app asks Android to make the network request on its behalf, and it was asking through a door that does not exist in this kind of build, so every attempt failed before anything was sent and the panel reported that the bridge had not loaded. It asks the right way now.","A second fault sat behind that one and would have broken a transfer even once it connected. The vault is encrypted and then handed over as raw data, but Android was being told to send it as plain text, so it arrived about half again as long and could not be unscrambled. Nothing reported an error; it would simply have looked like a wrong pairing code. Both are fixed together, and the fix is tested against the exact bytes rather than by eye.","The Android app is now signed properly rather than shipped as a test build. This is the one change that asks something of you: because the old copy was signed differently, Android will not install this one over it. Uninstall the old app first, and note that uninstalling erases whatever is in it, so export a backup first if you have anything you want to keep.","Settings told Android users the wrong story about their own vault. It said the vault lived in “this browser's storage” and that clearing site data would erase it, which is what the web edition says because the Android app is built from it. On a phone or tablet the vault is private to the app, no browser or other app can read it, and it is never copied to Google Drive. It says that now, and it names what does erase it: uninstalling, or clearing the app's storage.","Android 7.0 and 7.1 are no longer supported. The part of Android that unpacks a transfer only exists from Android 8 onwards, so on those two versions a transfer would have sent an empty payload and failed silently. Refusing to install is the more honest outcome."]
+}, {
+  heading: "1.159",
   notes: ["The app has an icon of its own at last. It was built on a shell called Electron and had been wearing that shell's plain icon ever since, so on the taskbar, in the Start menu and in alt-tab it looked like a generic app rather than this one, and Windows called it Electron in its file details. It is a brass crest with a keyhole now, and it calls itself Rolecraft Vault everywhere Windows shows a name.","The Android app has the same crest. It is drawn as a proper adaptive icon, which means your launcher can mask it to whatever shape it likes, a circle, a rounded square or a squircle, and the crest sits well inside that shape rather than having its edges clipped.","The setup program looks like part of the app now. It was the plain grey wizard that comes as standard: no artwork, someone else's name along the bottom, and a Properties dialog with nothing in it. It opens on a page with the crest and a line about what the app is, it wears the crest with a small download badge so you can tell it apart from the app itself in a Downloads folder, and it offers to open Rolecraft Vault when it has finished.","Starting a transfer on the Android app could fail before it began, and the transfer panel would simply not be there to explain why. The part that reaches the other device was being set up at the moment the app loaded, which is slightly before Android has finished providing it, and when that failed it took the whole panel with it. It is set up when a transfer is actually made now, and if it still cannot start, the panel appears and says so rather than disappearing."]
 }, {
   heading: "1.158",
@@ -8861,6 +8864,13 @@ function SettingsModal({
   const [openRel, setOpenRel] = useState(0);
   const desktop = !!window.auth;
   const web = typeof window !== "undefined" && window.vaultPlatform === "web";
+  /* The Android app is this same web build inside a WebView, so it reports
+     itself as web. window.Capacitor is injected by the native bridge and exists
+     in no browser, which is what separates the two. Storage behaves differently
+     enough to be worth saying out loud: it is private to the app rather than
+     shared with a browser, and it goes away with the app rather than with site
+     data. */
+  const android = web && typeof window !== "undefined" && !!window.Capacitor;
   const done = async msg => {
     await refreshAuth();
     setForm(null);
@@ -9024,7 +9034,7 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, desktop ? web ? "Your password encrypts every record and photo in this browser's storage (AES-256, key derived from your password and never stored). There is no recovery if you forget it — keep an exported backup somewhere safe. Note: clearing this site's browser data erases the vault." : "Your password encrypts every record and photo on disk (AES-256), layered on top of Windows account encryption. There is no recovery if you forget it — keep an exported backup somewhere safe." : "Password and PIN protection are available in the Windows desktop app."), desktop && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("button", {
+  }, desktop ? web ? (android ? "Your password encrypts every record and photo in this app's own storage (AES-256, key derived from your password and never stored). That storage is private to Rolecraft Vault: no other app and no browser can read it, and it is never backed up to Google Drive. There is no recovery if you forget your password — keep an exported backup somewhere safe. Note: uninstalling the app, or clearing its storage in Android settings, erases the vault." : "Your password encrypts every record and photo in this browser's storage (AES-256, key derived from your password and never stored). There is no recovery if you forget it — keep an exported backup somewhere safe. Note: clearing this site's browser data erases the vault.") : "Your password encrypts every record and photo on disk (AES-256), layered on top of Windows account encryption. There is no recovery if you forget it — keep an exported backup somewhere safe." : "Password and PIN protection are available in the Windows desktop app."), desktop && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => setForm("setup")
   }, "Set master password"), desktop && authState.passwordSet && !form && /*#__PURE__*/React.createElement("div", {
@@ -9138,21 +9148,21 @@ function SettingsModal({
       marginTop: 12,
       lineHeight: 1.5
     }
-  }, "Without a master password, web data sits unencrypted in this browser's storage. Setting one is strongly recommended."), desktop && web && authState.pinSet && /*#__PURE__*/React.createElement("div", {
+  }, android ? "Without a master password, your vault sits unencrypted in the app's storage. Nothing else on the device can read it, but anyone holding an unlocked phone can. Setting one is strongly recommended." : "Without a master password, web data sits unencrypted in this browser's storage. Setting one is strongly recommended."), desktop && web && authState.pinSet && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--mut)",
       marginTop: 12,
       lineHeight: 1.5
     }
-  }, "On the web there is no OS key store, so the quick-unlock PIN is only as strong as the digits you pick. Prefer the master password on shared devices."), desktop && /*#__PURE__*/React.createElement("div", {
+  }, android ? "On Android there is no OS key store behind the PIN, so the quick-unlock PIN is only as strong as the digits you pick. Prefer the master password on a shared device." : "On the web there is no OS key store, so the quick-unlock PIN is only as strong as the digits you pick. Prefer the master password on shared devices."), desktop && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
       gap: 10,
       marginTop: 14
     }
-  }, (web ? [["Password encryption", enc == null ? "…" : enc.password ? "On (AES-256)" : "Off", enc && enc.password], ["Storage", "This browser (IndexedDB)", true]] : [["Windows encryption", enc == null ? "…" : enc.dpapi ? "On (DPAPI)" : "Unavailable", enc && enc.dpapi], ["Password encryption", enc == null ? "…" : enc.password ? "On (AES-256)" : "Off", enc && enc.password]]).map(([k, v, on]) => /*#__PURE__*/React.createElement("div", {
+  }, (web ? [["Password encryption", enc == null ? "…" : enc.password ? "On (AES-256)" : "Off", enc && enc.password], ["Storage", android ? "This app only (private)" : "This browser (IndexedDB)", true]] : [["Windows encryption", enc == null ? "…" : enc.dpapi ? "On (DPAPI)" : "Unavailable", enc && enc.dpapi], ["Password encryption", enc == null ? "…" : enc.password ? "On (AES-256)" : "Off", enc && enc.password]]).map(([k, v, on]) => /*#__PURE__*/React.createElement("div", {
     key: k,
     style: {
       border: "1px solid var(--line)",

@@ -10,7 +10,7 @@
    Sending FROM the device would need a listening socket, which means a native
    plugin. Not done: the PC is the source of truth.
 
-   Everything below runs in the WebView. CapacitorHttp is used rather than fetch
+   Everything below runs in the WebView. The native HTTP plugin is used rather than fetch
    because the page is served over https: and the other device is a plain http://
    address on the LAN, which the WebView blocks as mixed content, and those
    endpoints send no CORS headers either. A native request is subject to neither.
@@ -41,11 +41,13 @@
      leave window.transfer undefined. The interface only shows a transfer panel
      when window.transfer exists, so the failure looked like the feature simply
      not being there, with nothing on screen to explain it. */
-  function nativeHttp() {
+  function nativeRequest(opts) {
     const C = window.Capacitor;
-    const http = C && C.Plugins && C.Plugins.CapacitorHttp;
-    if (!http) throw new Error("The native network bridge did not load, so this device cannot reach the other one.");
-    return http;
+    if (!C) throw new Error("This is not running inside the app, so it cannot reach the other device.");
+    const plugin = C.Plugins && C.Plugins.CapacitorHttp;
+    if (plugin && typeof plugin.request === "function") return plugin.request(opts);
+    if (typeof C.nativePromise === "function") return C.nativePromise("CapacitorHttp", "request", opts);
+    throw new Error("The native network bridge did not load, so this device cannot reach the other one.");
   }
 
   /* ---------- the pairing code ---------- */
@@ -145,13 +147,20 @@
   };
 
   async function ask(base, path, method, bodyBytes, timeoutMs) {
-    const res = await nativeHttp().request({
+    const res = await nativeRequest({
       url: "http://" + base.ip + ":" + base.port + path,
       method: method,
       responseType: "arraybuffer",
       connectTimeout: timeoutMs || 30000,
       readTimeout: timeoutMs || 30000,
       headers: bodyBytes ? { "Content-Type": "application/octet-stream" } : undefined,
+      /* base64 goes in, raw bytes must go out. Android only runs the body
+         through a base64 decoder when dataType is "file"; without it the
+         base64 text is sent as the body verbatim, and the other device gets a
+         payload half again as long that it cannot decrypt. Nothing reports an
+         error, so a transfer would have failed at the far end looking like a
+         wrong pairing code. */
+      dataType: bodyBytes ? "file" : undefined,
       data: bodyBytes ? bytesToB64(bodyBytes) : undefined
     });
     if (res.status !== 200) throw new Error("status " + res.status);
