@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.157";
+const APP_VERSION = "1.158";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.157";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.157 — current",
+  heading: "1.158 — current",
+  notes: ["Pictures can be reordered without dragging them. Dragging is the only way a gallery could be rearranged, and dragging does not work on a touch screen at all, so on a tablet or a phone the order of your pictures was simply fixed. Open the grid and every picture now has an arrow on each side that moves it one place. Dragging still works exactly as it did.","Sections and the dashboard were already fine, because both have had move up and move down buttons beside the grip for a while. The gallery had the grip without the buttons. It matches now.","The arrows sit along the bottom of a picture, clear of the buttons for opening, blurring and selecting it, and they work with a finger, a mouse or the keyboard."]
+}, {
+  heading: "1.157",
   notes: ["“Download all images” said every image in the vault and meant every image attached to a character or a persona. Bucket covers were left behind, and so were lorebook and collection covers and the pictures inside lore entries and prompts. It now takes all of them: covers go into their own folders, and a picture inside an entry is filed under its book and named after the entry it belongs to.","Everything in that zip is the original, at full size, and always was. It reads the stored picture rather than the smaller version used for the cards, so what lands on disk is exactly what you put in.","Bucket covers now have a download corner of their own. Point at a bucket and there is a small arrow beside the buttons for setting and removing its cover, which saves just that picture at full size rather than making you fetch the whole library to get one image.","A bucket whose name cannot be used as a folder name no longer overwrites another one. Two buckets called “A/B” and “A:B” both reduce to the same safe name, and the zip used to keep only whichever was written last."]
 }, {
   heading: "1.156",
@@ -1683,6 +1686,9 @@ const CSS = `
   .rcv .blurbtn.on, .rcv .blurbtn:focus-visible { opacity: 1; }
   .rcv .blurbtn { z-index: 3; }
   .rcv .blurbtn.on { color: #d9b25c; border-color: rgba(217,178,92,.55); }
+  /* Moving a picture without dragging it, which is the only way on a touch
+     screen. Along the bottom because every other corner of a tile is taken. */
+  .rcv .movebtn { top: auto; bottom: 8px; opacity: 1; }
   .rcv .draghandle { cursor: grab; color: var(--dim); padding: 4px 6px; border-radius: 7px; display: inline-flex; }
   .rcv .draghandle:hover { color: var(--text); background: var(--nav-hov); }
   .rcv .draghandle:active { cursor: grabbing; }
@@ -4349,7 +4355,52 @@ function ImageGridView({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     label: it.label
-  }), onSetAlbum && (it.album || "").trim() && /*#__PURE__*/React.createElement("span", {
+  }), onMoveImage && it.movable && shownItems.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, i > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "blurbtn on movebtn",
+    role: "button",
+    tabIndex: 0,
+    "aria-label": "Move " + (it.label || "this picture") + " earlier",
+    title: "Move earlier",
+    style: {
+      left: 8,
+      right: "auto"
+    },
+    onClick: e => {
+      e.stopPropagation();
+      onMoveImage(it.imgId, shownItems[i - 1].imgId);
+    },
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.stopPropagation();
+        onMoveImage(it.imgId, shownItems[i - 1].imgId);
+      }
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.left,
+    size: 14
+  })), i < shownItems.length - 1 && /*#__PURE__*/React.createElement("span", {
+    className: "blurbtn on movebtn",
+    role: "button",
+    tabIndex: 0,
+    "aria-label": "Move " + (it.label || "this picture") + " later",
+    title: "Move later",
+    style: {
+      right: 8
+    },
+    onClick: e => {
+      e.stopPropagation();
+      onMoveImage(it.imgId, shownItems[i + 1].imgId);
+    },
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.stopPropagation();
+        onMoveImage(it.imgId, shownItems[i + 1].imgId);
+      }
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.right,
+    size: 14
+  }))), onSetAlbum && (it.album || "").trim() && /*#__PURE__*/React.createElement("span", {
     title: "Album: " + it.album,
     style: {
       position: "absolute",
@@ -5886,7 +5937,7 @@ function CharacterPage({
     },
     onClick: () => setGrid(true),
     "aria-label": "Open image grid",
-    title: "Drag to reorder · click to open grid"
+    title: "Drag to reorder, or open the grid and use the arrows · click to open grid"
   }, /*#__PURE__*/React.createElement(BlurBtn, {
     imgId: g.imgId,
     blurred: blurred,
@@ -6506,7 +6557,7 @@ function PersonaPage({
     },
     onClick: () => setGrid(true),
     "aria-label": "Open image grid",
-    title: "Drag to reorder · click to open grid"
+    title: "Drag to reorder, or open the grid and use the arrows · click to open grid"
   }, /*#__PURE__*/React.createElement(BlurBtn, {
     imgId: g.imgId,
     blurred: blurred,

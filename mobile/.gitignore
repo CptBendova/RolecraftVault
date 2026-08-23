@@ -1,0 +1,15 @@
+node_modules/
+# generated from ../web by scripts/build-www.js
+www/
+# Gradle and Android Studio output
+android/build/
+android/app/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+*.apk
+*.aab
+*.keystore

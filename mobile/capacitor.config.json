@@ -1,0 +1,11 @@
+{
+  "appId": "com.cptbendova.rolecraftvault",
+  "appName": "Rolecraft Vault",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

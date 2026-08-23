@@ -19,6 +19,7 @@ app/                the Electron app (this is the product)
   app.js            THE ENTIRE INTERFACE (~640 KB, compiled React) — see below
   vendor/           React UMD builds + self-hosted fonts
 web/                embeddable web edition (same interface, browser storage)
+mobile/             Android app: the web edition in a WebView (see mobile/README.md)
 build/installer.nsi NSIS script for the Windows installer
 scripts/            set-version, sign-update, build-web, build-installer, check-integrity
 keys/               signing key — NEVER commit (see keys/README.txt)

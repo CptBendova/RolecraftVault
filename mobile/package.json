@@ -1,0 +1,18 @@
+{
+  "name": "rolecraft-vault-mobile",
+  "version": "1.0.0",
+  "description": "Rolecraft Vault for Android — wraps the web edition, adds LAN transfer",
+  "scripts": {
+    "build": "node scripts/build-www.js",
+    "sync": "node scripts/build-www.js && cap sync android",
+    "open": "cap open android"
+  },
+  "type": "commonjs",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.1.3"
+  }
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android has refused cleartext HTTP by default since API 28, and a vault
+  transfer is cleartext HTTP to a private address on your own network: the
+  computer sharing the vault serves plain http on a port it opens for a few
+  minutes. Without this the transfer fails before it starts.
+
+  What travels over it is not readable regardless. Every request and response is
+  encrypted with AES-256-GCM under a key derived from the one-time code shown on
+  the other device, so the plain socket carries ciphertext only. The interface
+  itself cannot open a connection at all; the transfer is the one piece of code
+  in the app that touches a network, and only while you have that panel open.
+
+  Android's network security config cannot express "private ranges only" (it
+  matches domains, not CIDR blocks), so this permits cleartext generally rather
+  than pretending to a precision the format does not offer.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
