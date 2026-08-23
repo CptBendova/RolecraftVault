@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.177";
+const APP_VERSION = "1.178";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.177";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.177 — current",
+  heading: "1.178 — current",
+  notes: ["After you unlock on a phone there is a preparing screen that reads every picture preview from the encrypted folder on the device. Originals stay on disk, so a large library does not sit inside the app. “From your galleries” and the cards then have their pictures ready instead of sitting empty."]
+}, {
+  heading: "1.177",
   notes: ["A master password can be set on a phone that already has a library. It used to rewrite every picture under the new password, which on a vault of a few gigabytes sat on “Working…” and then stopped. Pictures are already in an encrypted folder; the password now locks the key to that folder, which is instant. Small text records are still encrypted with the password as before.","A copy onto a phone keeps going when the screen turns off. Android was putting the app to sleep, which killed the transfer. A small notification stays up while it copies so the work is allowed to continue. You can turn the screen off. Both of these are in the Android file."]
 }, {
   heading: "1.176",
@@ -10166,8 +10169,91 @@ const blankChar = () => ({
   createdAt: null,
   updatedAt: null
 });
+function VaultBusyScreen({
+  title,
+  detail,
+  done,
+  total
+}) {
+  const known = total > 0;
+  const pct = known ? Math.round(100 * done / total) : 0;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "lock-screen",
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "var(--lockbg)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 90
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      width: "min(380px, calc(100vw - 40px))"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "0 auto 22px",
+      width: 96,
+      height: 96
+    }
+  }, /*#__PURE__*/React.createElement(CrestMark, {
+    size: 96
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h1", {
+    className: "serif",
+    style: {
+      fontSize: 26,
+      margin: "6px 0 8px"
+    }
+  }, title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--mut)",
+      marginBottom: 18,
+      lineHeight: 1.5
+    }
+  }, detail), known ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 12.5,
+      color: "var(--dim)",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", null, done, " of ", total), /*#__PURE__*/React.createElement("span", null, pct, "%")), /*#__PURE__*/React.createElement("div", {
+    role: "progressbar",
+    "aria-valuenow": pct,
+    "aria-valuemin": 0,
+    "aria-valuemax": 100,
+    style: {
+      height: 6,
+      borderRadius: 999,
+      background: "var(--line)",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      width: pct + "%",
+      background: "var(--brass)",
+      borderRadius: 999
+    }
+  }))) : /*#__PURE__*/React.createElement("div", {
+    className: "spin",
+    style: {
+      width: 18,
+      height: 18,
+      margin: "0 auto"
+    }
+  })));
+}
 function RolecraftVault() {
   const [ready, setReady] = useState(false);
+  const [picPrep, setPicPrep] = useState(null); // null | {done,total} | "done"
   const [loadError, setLoadError] = useState(null); // [damaged keys] — the vault refused to open
   const [authState, setAuthState] = useState({
     passwordSet: false,
@@ -10638,42 +10724,84 @@ function RolecraftVault() {
     })();
   }, [authState.checked, authState.locked]);
 
-  /* --- preload thumbnails for everything (dashboard wall is randomized) ---
-     On a phone the vault lives on disk and only the pictures on screen should
-     be in memory. Pulling every gallery, lore and prompt image into the cache
-     is what closed the app on a library of a few gigabytes. Portraits for the
-     cards still load; the rest wait until that screen is opened. */
+  /* After unlock, a phone reads every thumbnail from the encrypted folder
+     before the library opens. Originals stay on disk; only the small
+     previews go into memory, so the dashboard and cards have pictures
+     ready without holding a multi-gigabyte vault inside the app. */
   useEffect(() => {
     if (!ready) return;
     const onPhone = typeof window !== "undefined" && !!window.Capacitor;
-    chars.forEach(c => {
-      if (c.profileImg) loadImage(c.profileImg);
-      if (!onPhone) (c.gallery || []).forEach(g => loadImage(g.imgId));
-    });
-    personas.forEach(p => {
-      if (p.avatar) loadImage(p.avatar);
-      if (!onPhone) (p.gallery || []).forEach(g => loadImage(g.imgId));
-    });
-    Object.values(bucketMeta).forEach(m => {
-      if (m && m.cover) loadImage(m.cover);
-    });
-    if (onPhone) return;
-    [...chars.map(c => ({
-      u: c.updatedAt,
-      img: c.profileImg
-    })), ...personas.map(p => ({
-      u: p.updatedAt,
-      img: p.avatar
-    }))].filter(r => r.u && r.img).sort((a, b) => b.u - a.u).slice(0, 8).forEach(r => loadImage(r.img));
-    lore.forEach(e => (e.images || []).forEach(im => loadImage(im.imgId)));
-    Object.values(loreMeta).forEach(m => {
-      if (m && m.cover) loadImage(m.cover);
-    });
-    prompts.forEach(p => (p.images || []).forEach(im => loadImage(im.imgId)));
-    Object.values(promptMeta).forEach(m => {
-      if (m && m.cover) loadImage(m.cover);
-    });
-  }, [ready, chars, personas, bucketMeta, lore, loreMeta, prompts, promptMeta]);
+    if (!onPhone) {
+      chars.forEach(c => {
+        if (c.profileImg) loadImage(c.profileImg);
+        (c.gallery || []).forEach(g => loadImage(g.imgId));
+      });
+      personas.forEach(p => {
+        if (p.avatar) loadImage(p.avatar);
+        (p.gallery || []).forEach(g => loadImage(g.imgId));
+      });
+      Object.values(bucketMeta).forEach(m => {
+        if (m && m.cover) loadImage(m.cover);
+      });
+      lore.forEach(e => (e.images || []).forEach(im => loadImage(im.imgId)));
+      Object.values(loreMeta).forEach(m => {
+        if (m && m.cover) loadImage(m.cover);
+      });
+      prompts.forEach(p => (p.images || []).forEach(im => loadImage(im.imgId)));
+      Object.values(promptMeta).forEach(m => {
+        if (m && m.cover) loadImage(m.cover);
+      });
+      setPicPrep("done");
+      return;
+    }
+    if (picPrep === "done") return;
+    let cancel = false;
+    (async () => {
+      const ids = new Set();
+      chars.forEach(c => charImgIds(c).forEach(id => ids.add(id)));
+      personas.forEach(p => personaImgIds(p).forEach(id => ids.add(id)));
+      lore.forEach(e => (e.images || []).forEach(im => im && im.imgId && ids.add(im.imgId)));
+      prompts.forEach(p => (p.images || []).forEach(im => im && im.imgId && ids.add(im.imgId)));
+      [bucketMeta, loreMeta, promptMeta, pBucketMeta].forEach(meta => {
+        Object.values(meta || {}).forEach(m => {
+          if (m && m.cover) ids.add(m.cover);
+        });
+      });
+      const list = Array.from(ids);
+      if (!list.length) {
+        setPicPrep("done");
+        return;
+      }
+      setPicPrep({
+        done: 0,
+        total: list.length
+      });
+      const warm = {};
+      for (let i = 0; i < list.length; i++) {
+        if (cancel) return;
+        try {
+          const th = await sGet("th:" + list[i]);
+          if (th) {
+            warm[list[i]] = th;
+            imgLoading.current.add(list[i]);
+          }
+        } catch (e) {}
+        if (i % 3 === 2 || i === list.length - 1) {
+          setPicPrep({
+            done: i + 1,
+            total: list.length
+          });
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+      if (cancel) return;
+      setImgCache(p => Object.assign({}, p, warm));
+      setPicPrep("done");
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [ready, chars, personas, bucketMeta, lore, loreMeta, prompts, promptMeta, pBucketMeta]);
 
   /* --- one-time thumbnail upgrade: regenerate crisp 1000px thumbs from originals --- */
   useEffect(() => {
@@ -11122,6 +11250,7 @@ function RolecraftVault() {
   const lockVault = async () => {
     if (window.auth) await window.auth.lock();
     setReady(false);
+    setPicPrep(null);
     setChars([]);
     setPersonas([]);
     setLore([]);
@@ -11172,7 +11301,7 @@ function RolecraftVault() {
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
-  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
+  const IMG_CACHE_MAX = 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11212,10 +11341,19 @@ function RolecraftVault() {
             queueImg(imgId, v);
             return;
           }
-          /* Full originals stay on disk on a phone. Cards use the thumbnail.
-             Falling through to img: is how a half-copied library put every
-             full picture into memory and closed the app. */
-          if (!ON_PHONE) {
+          /* Full originals stay on disk on a phone unless there is no
+             thumbnail and the original is small enough for a card. Loading
+             every gallery original is what closed the app. */
+          let allowFull = !ON_PHONE;
+          if (ON_PHONE) {
+            try {
+              const n = Number(await sGet("sz:" + imgId));
+              allowFull = !n || n < 1000000;
+            } catch (e) {
+              allowFull = false;
+            }
+          }
+          if (allowFull) {
             const full = await sGet("img:" + imgId);
             if (full) {
               queueImg(imgId, full);
@@ -12279,11 +12417,23 @@ function RolecraftVault() {
       alignItems: "center",
       justifyContent: "center"
     }
-  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(VaultBusyScreen, {
+    title: "Opening the vault",
+    detail: "Reading your library from this device."
+  }));
+  if (ON_PHONE && picPrep !== "done") return /*#__PURE__*/React.createElement("div", {
+    className: rootClass,
+    "data-rcv-state": "pictures",
     style: {
-      color: "var(--mut)"
+      alignItems: "center",
+      justifyContent: "center"
     }
-  }, "Opening the vault…"));
+  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(VaultBusyScreen, {
+    title: "Preparing pictures",
+    detail: "Loading previews from the encrypted folder on this phone. Originals stay on disk, so the library stays light.",
+    done: picPrep && picPrep.done || 0,
+    total: picPrep && picPrep.total || 0
+  }));
   return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
     "data-rcv-state": "ready",
@@ -12455,6 +12605,8 @@ function RolecraftVault() {
     }
     const off = wall.length > 1 ? wallTick % wall.length : 0;
     const wallShow = wall.slice(off).concat(wall.slice(0, off)).slice(0, 18);
+    const wallVisible = wallShow.slice(0, Math.max(1, wallCols) * 2);
+    wallVisible.forEach(w => w.imgId && loadImage(w.imgId));
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
     const quick = [{
       label: "New character",
@@ -12828,7 +12980,7 @@ function RolecraftVault() {
           rowGap: 14,
           overflow: "hidden"
         }
-      }, wallShow.slice(0, Math.max(1, wallCols) * 2).map((w, i) => /*#__PURE__*/React.createElement("div", {
+      }, wallVisible.map((w, i) => /*#__PURE__*/React.createElement("div", {
         key: w.imgId + i,
         className: "wtile",
         tabIndex: 0,
@@ -12859,7 +13011,7 @@ function RolecraftVault() {
           minWidth: 150
         },
         onClick: () => setWallLb({
-          items: wallShow.slice(0, Math.max(1, wallCols) * 2).map(x => ({
+          items: wallVisible.map(x => ({
             imgId: x.imgId,
             caption: x.label
           })),
