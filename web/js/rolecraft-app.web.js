@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.187";
+const APP_VERSION = "1.188";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.187";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.187 — current",
+  heading: "1.188 — current",
+  notes: ["A library of more than sixty-four characters stopped blanking cards as you scrolled. The phone was keeping a fixed number of picture previews and letting the rest go, so once you had more characters than that, scrolling far enough pushed the earlier ones out and they had to be read again on the way back. It now budgets by how much memory the pictures actually take rather than by how many there are, and since a preview is small, hundreds stay ready at once instead of sixty-four.","Opening a character no longer makes you wait in the grid. Every picture in that character is already read when you open it, but only a handful were being kept ready to draw, so a long gallery fetched them again as you swiped. The pictures belonging to the character you have open are now all kept ready. This costs nothing extra: they were already in memory, and what the screen holds is the same picture rather than a second copy of it.","The dashboard spotlight is drawn from the original now. It is the one picture on that page shown large enough to tell the difference, and on a wide screen it was being enlarged past the size of the preview it was drawn from. The smaller tiles beside it are unchanged, because at the size they are shown the preview is already sharper than the screen can display."]
+}, {
+  heading: "1.187",
   notes: ["Two limits that keep a phone from running out of memory had stopped doing their job. Neither showed up as a message: the app simply became heavier the longer you used it, and on a large vault it could close on its own.","The first is the small preview of each picture. The phone is meant to keep the last sixty-four and let the rest go, but since 1.182 it kept every one it had ever read, so scrolling a big library slowly filled the phone's memory and never gave any of it back. It lets them go again.","The second is the rule that keeps full-size originals off a phone. A picture is only drawn from its original when it has no smaller preview, and then only if it is small. That test relied on a note of how much each picture weighs, and a picture that had never been measured was let through instead of held back, which is the opposite of what was meant. Those are the pictures most likely to be old and large. Each one is now measured the first time it comes up, kept only if it is genuinely small, and skipped without being read at all from then on."]
 }, {
   heading: "1.186",
@@ -11566,11 +11569,15 @@ function RolecraftVault() {
   const imgBuf = useRef({});
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
+  const imgBytes = useRef({});
+  const imgTotal = useRef(0);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
   /* A picture with no thumbnail may still be drawn on a card from its
      original, but only on a phone if it is small. */
   const PHONE_CARD_MAX = 1000000;
-  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
+  /* A data URL is a JavaScript string, so it costs about two bytes of memory
+     per character. The budget below is that memory cost, not the file size. */
+  const IMG_CACHE_BYTES = ON_PHONE ? 220 * 1024 * 1024 : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11582,12 +11589,26 @@ function RolecraftVault() {
       if (!ids.length) return;
       setImgCache(p => {
         const next = { ...p, ...batch };
-        if (!IMG_CACHE_MAX) return next;
+        if (!IMG_CACHE_BYTES) return next;
         ids.forEach(i => {
+          const had = imgBytes.current[i] || 0;
+          imgBytes.current[i] = String(batch[i] || "").length * 2;
+          imgTotal.current += imgBytes.current[i] - had;
           imgOrder.current = imgOrder.current.filter(x => x !== i).concat(i);
         });
         const evict = [];
-        while (imgOrder.current.length > IMG_CACHE_MAX) evict.push(imgOrder.current.shift());
+        /* Never drop what is on screen right now, however long the queue gets. */
+        while (imgTotal.current > IMG_CACHE_BYTES && imgOrder.current.length > 1) {
+          const eid = imgOrder.current.shift();
+          if (fullPinned.current.has(eid)) {
+            imgOrder.current.push(eid);
+            if (imgOrder.current.every(x => fullPinned.current.has(x))) break;
+            continue;
+          }
+          evict.push(eid);
+          imgTotal.current -= imgBytes.current[eid] || 0;
+          delete imgBytes.current[eid];
+        }
         evict.forEach(eid => {
           delete next[eid];
           imgLoading.current.delete(eid);
@@ -11695,6 +11716,14 @@ function RolecraftVault() {
     fullShowOrder.current = fullShowOrder.current.filter(x => x !== imgId).concat(imgId);
     while (fullShowOrder.current.length > FULL_CACHE_MAX) {
       const eid = fullShowOrder.current.shift();
+      /* Pinned means the open character or persona: those are already in
+         memory, and the cache holds the same string rather than a copy, so
+         keeping them on screen costs nothing and saves reading them again. */
+      if (fullPinned.current.has(eid)) {
+        fullShowOrder.current.push(eid);
+        if (fullShowOrder.current.every(x => fullPinned.current.has(x))) break;
+        continue;
+      }
       fullShow.current.delete(eid);
       if (eid !== imgId) fullEvict.current.push(eid);
     }
@@ -13071,6 +13100,7 @@ function RolecraftVault() {
     const wallShow = wall.slice(off).concat(wall.slice(0, off)).slice(0, 18);
     const wallVisible = wallShow.slice(0, Math.max(1, wallCols) * 2);
     wallVisible.forEach(w => w.imgId && loadImage(w.imgId));
+    if (spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
     const quick = [{
       label: "New character",
