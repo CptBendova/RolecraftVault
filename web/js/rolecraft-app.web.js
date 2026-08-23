@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.190";
+const APP_VERSION = "1.191";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.190";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.190 — current",
+  heading: "1.191 — current",
+  notes: ["The crest went missing from the lock screen and the sidebar, showing a broken picture in its place. It was not a passing glitch: it happened every time an update was installed, and it would have happened again on the next one.","An update replaces the interface only, and it is kept in a folder of its own. The page it runs in is written into that same folder, so when the app asked for its own artwork by name it was looking beside the update, where there is no artwork at all. Everything else still worked, which is why it looked so odd: your pictures appeared, the writing was in the right typeface, and only the crest was gone.","The app now works out where its own files really live rather than assuming they sit beside it, and the folder an update runs from also points back at them, so anything added later is safe the same way. If you install this and the crest is there, that is the fix."]
+}, {
+  heading: "1.190",
   notes: ["The app was slow to use for a long stretch after every unlock, and Settings was where it showed most. After you unlocked, it went through the vault pulling in the full-size version of every single picture you own. On a large library that is thousands of pictures, and each one has to be unscrambled twice over, once by Windows and once by your own vault key. All of that was happening in the background while you were trying to use the app.","Almost all of that work was wasted. Only a few dozen pictures are ever held at full size at once, so the rest were read, unscrambled, and then dropped again to make room. On a library of four hundred characters it was reading four thousand four hundred pictures in order to keep sixty-four.","It now asks only for as many as it can actually hold, and it takes the portraits and covers first, because those are what the library screens draw. Opening a character is unchanged: that asks for its own pictures directly, which is what makes a gallery ready to swipe through."]
 }, {
   heading: "1.189",
@@ -2032,9 +2035,28 @@ const Ic = ({
 }, /*#__PURE__*/React.createElement("path", {
   d: d
 }));
-const CREST_256 = "vendor/crest-256.png";
-const CREST_1024 = "vendor/crest-1024.png";
-const CREST_LOOP = "vendor/crest-loop.mp4";
+/* Where the app's own files actually live.
+
+   An update replaces the interface only, and it is loaded from a folder of its
+   own. The page it runs in is written into that same folder, so "vendor/x.png"
+   resolves next to the update, where there is no vendor folder at all, and the
+   crest quietly fails to load on the lock screen and in the sidebar. It looked
+   like a one-off; it happens every time a patch is installed.
+
+   The shell rewrites the page's own script tags to absolute paths, so reading
+   one back says where the real files are. With no update installed the same
+   read gives the ordinary answer, and the web and Android builds resolve their
+   own layout the same way, so there is one rule rather than three. */
+const ASSET_BASE = (() => {
+  if (typeof document === "undefined") return "";
+  const s = document.querySelector('script[src*="react.production.min.js"]');
+  const src = s && s.src;
+  if (!src) return "";
+  return src.replace(/[^/]+\/[^/]+$/, "");   // drop "<dir>/react.production.min.js"
+})();
+const CREST_256 = ASSET_BASE + "vendor/crest-256.png";
+const CREST_1024 = ASSET_BASE + "vendor/crest-1024.png";
+const CREST_LOOP = ASSET_BASE + "vendor/crest-loop.mp4";
 function preloadBrandMedia() {
   if (typeof window === "undefined" || window.__rcvBrand) return;
   const a = new Image();

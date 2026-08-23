@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.190";
+const FACTORY_BUILD = "1.191";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -91,6 +91,12 @@ function resolveEntryFile() {
       .replace("script-src 'self'", "script-src 'self' file:")
       .replace("font-src 'self'", "font-src 'self' file:")
       .replace("img-src 'self'", "img-src 'self' file: data: blob:");
+    /* Everything above rewrites what is written in the page. Nothing can
+       rewrite a path the interface builds while it runs, and the page now sits
+       in the updates folder, so those resolve to the wrong place — which is how
+       the crest disappeared. A base element answers all of them at once,
+       including any asset added later. */
+    html = html.replace(/<head>/i, '<head><base href="' + base + '">');
     const eff = path.join(updatesDir, "current", "index.effective.html");
     fs.writeFileSync(eff, html);
     return eff;
