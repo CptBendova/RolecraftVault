@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.179";
+const APP_VERSION = "1.180";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.179";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.179 — current",
+  heading: "1.180 — current",
+  notes: ["The app icon on a phone showed the crest too close, as if it had been zoomed in, because Android cuts a circle out of the middle of the picture. The shield now sits smaller in the tile so the whole mark is visible.","Opening a picture from a grid now fills the screen, and you can swipe to the next one. The same swipe works in the slideshow. A Grid button sits next to Slideshow at the top of a character or persona, so you do not have to scroll past the writing to find it. Tap a picture to open it; the circle in the corner still selects."]
+}, {
+  heading: "1.179",
   notes: ["The last Android file never reached the unlock screen. A new picture-preparing step ran as soon as the app opened, before it knew the vault was locked, and that closed the app on start. Unlock is first again. After you unlock, the library opens, then picture previews for the cards and “From your galleries” load from the encrypted folder — originals stay on disk, so a large vault is not held inside the app."]
 }, {
   heading: "1.178",
@@ -1874,6 +1877,19 @@ const CSS = `
   .rcv .ss-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.09); z-index: 3; }
   .rcv .ss-progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #d9b25c, #8aa2f2);
     animation: ssprog 8s linear both; }
+  /* Full-screen picture viewer. The old lightbox sat in a 900px card at 72vh,
+     which on a phone was a postage stamp with no swipe. */
+  .rcv .lb-root { position: fixed; inset: 0; z-index: 92; background: #04060d; overflow: hidden; }
+  .rcv .lb-back { position: absolute; inset: -70px; background-size: cover; background-position: center;
+    filter: blur(46px) brightness(.35) saturate(1.1); pointer-events: none; }
+  .rcv .lb-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    touch-action: none; }
+  .rcv .lb-stage img { max-width: 100vw; max-height: 100vh; object-fit: contain; }
+  .rcv .lb-chrome { position: absolute; left: 0; right: 0; z-index: 3; display: flex; align-items: center;
+    gap: 10px; flex-wrap: wrap; padding: 14px 16px; pointer-events: none; }
+  .rcv .lb-chrome > * { pointer-events: auto; }
+  .rcv .lb-chrome.top { top: 0; background: linear-gradient(180deg, rgba(4,6,13,.72), transparent); }
+  .rcv .lb-chrome.bot { bottom: 0; background: linear-gradient(0deg, rgba(4,6,13,.78), transparent); }
   @keyframes rcvspin { to { transform: rotate(360deg); } }
   /* the indeterminate transfer bar: a step that cannot know how far along it is */
   @keyframes rcv-sweep { from { transform: translateX(-120%); } to { transform: translateX(400%); } }
@@ -2607,6 +2623,31 @@ function LockScreen({
 }
 
 /* ---------- lightbox ---------- */
+function useSwipeNav(onNav) {
+  const start = useRef(null);
+  return {
+    onPointerDown: e => {
+      if (e.button) return;
+      if (e.target && e.target.closest && e.target.closest("button, input, textarea, a, [role='button']")) return;
+      start.current = {
+        x: e.clientX,
+        y: e.clientY
+      };
+    },
+    onPointerUp: e => {
+      const s = start.current;
+      start.current = null;
+      if (!s) return;
+      const dx = e.clientX - s.x;
+      const dy = e.clientY - s.y;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+      onNav(dx > 0 ? -1 : 1);
+    },
+    onPointerCancel: () => {
+      start.current = null;
+    }
+  };
+}
 function Lightbox({
   items,
   index,
@@ -2640,144 +2681,113 @@ function Lightbox({
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose, onNav]);
+  const swipe = useSwipeNav(d => {
+    if (items.length > 1) onNav(d);
+  });
+  const hold = e => e.stopPropagation();
   const item = items[index];
   if (!item) return null;
   const src = fullCache && fullCache[item.imgId] || imgCache[item.imgId];
   return /*#__PURE__*/React.createElement("div", {
-    className: "modal-back",
+    className: "lb-root",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": item.caption || "Picture"
+  }, src ? /*#__PURE__*/React.createElement("div", {
+    className: "lb-back",
     style: {
-      zIndex: 80
-    },
-    onClick: onClose
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      maxWidth: 900,
-      width: "100%",
-      display: "flex",
-      flexDirection: "column",
-      gap: 12
-    },
-    onClick: e => e.stopPropagation()
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      borderRadius: 16,
-      overflow: "hidden",
-      border: "1px solid var(--line2)",
-      background: "#05070f",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: 320,
-      maxHeight: "72vh"
+      backgroundImage: "url(" + src + ")"
     }
+  }) : null, /*#__PURE__*/React.createElement("div", {
+    className: "lb-stage",
+    onPointerDown: swipe.onPointerDown,
+    onPointerUp: swipe.onPointerUp,
+    onPointerCancel: swipe.onPointerCancel
   }, src ? /*#__PURE__*/React.createElement("img", {
     src: src,
     alt: item.caption || "gallery image",
-    className: blurred && blurred[item.imgId] ? "blur-img" : undefined,
-    style: {
-      maxWidth: "100%",
-      maxHeight: "72vh",
-      objectFit: "contain"
-    }
+    draggable: false,
+    className: blurred && blurred[item.imgId] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--dim)",
       padding: 60
     }
-  }, "Loading image…"), items.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+  }, "Loading image\u2026"), items.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    className: "ss-btn",
     "aria-label": "Previous image",
+    onPointerDown: hold,
     onClick: () => onNav(-1),
     style: {
       position: "absolute",
       left: 12,
       top: "50%",
-      transform: "translateY(-50%)",
-      padding: 10,
-      borderRadius: 99,
-      background: "rgba(6,9,20,.6)"
+      transform: "translateY(-50%)"
     }
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.left
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "ss-btn",
     "aria-label": "Next image",
+    onPointerDown: hold,
     onClick: () => onNav(1),
     style: {
       position: "absolute",
       right: 12,
       top: "50%",
-      transform: "translateY(-50%)",
-      padding: 10,
-      borderRadius: 99,
-      background: "rgba(6,9,20,.6)"
+      transform: "translateY(-50%)"
     }
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.right
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: "lb-chrome top"
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
-      position: "absolute",
-      top: 12,
-      right: 12,
+      fontSize: 12.5,
+      color: "rgba(231,235,247,.8)",
+      textShadow: "0 1px 8px rgba(0,0,0,.8)"
+    }
+  }, index + 1, " of ", items.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
       display: "flex",
       gap: 8
     }
   }, items.length > 1 && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      background: "rgba(6,9,20,.6)",
-      padding: "8px 10px"
-    },
+    className: "ss-btn",
     "aria-label": playing ? "Pause slideshow" : "Play slideshow",
     onClick: () => setPlaying(p => !p)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: playing ? icons.pause : icons.play
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
-    style: {
-      background: "rgba(6,9,20,.6)",
-      padding: "8px 10px"
-    },
+    className: "ss-btn",
     "aria-label": "Close",
     onClick: onClose
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.x
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      bottom: 12,
-      left: 12,
-      fontSize: 12.5,
-      color: "var(--mut)",
-      background: "rgba(6,9,20,.6)",
-      padding: "4px 12px",
-      borderRadius: 99
-    }
-  }, index + 1, " of ", items.length)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10,
-      alignItems: "center",
-      flexWrap: "wrap"
-    }
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: "lb-chrome bot"
   }, onCaption ? /*#__PURE__*/React.createElement("input", {
     value: item.caption || "",
-    placeholder: "Add a caption for this image…",
+    placeholder: "Add a caption for this image\u2026",
     onChange: e => onCaption(index, e.target.value),
     style: {
       flex: 1,
-      minWidth: 200
+      minWidth: 160,
+      background: "rgba(6,9,20,.55)",
+      color: "#e7ebf7",
+      border: "1px solid rgba(180,195,235,.25)"
     }
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
-      minWidth: 200,
+      minWidth: 120,
       fontSize: 13.5,
-      color: "var(--mut)"
+      color: "rgba(231,235,247,.85)",
+      textShadow: "0 1px 8px rgba(0,0,0,.8)"
     }
   }, item.caption || ""), onToggleBlur && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "ss-btn",
     onClick: () => onToggleBlur(item.imgId)
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -2789,14 +2799,14 @@ function Lightbox({
     d: blurred && blurred[item.imgId] ? icons.eyeoff : icons.eye,
     size: 14
   }), blurred && blurred[item.imgId] ? "Unblur" : "Blur")), onSetProfile && /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-brass",
+    className: "ss-btn",
     onClick: () => onSetProfile(item.imgId)
   }, "Set as profile"), onRemove && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-danger",
     label: "Remove",
-    armedLabel: "Click again — this picture is gone",
+    armedLabel: "Click again \u2014 this picture is gone",
     onConfirm: () => onRemove(index)
-  }))));
+  })));
 }
 
 /* One button instead of five. Import and export had spread across every screen
@@ -4020,12 +4030,21 @@ function SlideshowMode({
       setShuffled(false);
     }
   };
+  const swipe = useSwipeNav(d => {
+    if (n > 1) advance(d);
+  });
   if (!item) return null;
   const prevSrc = prevImg ? fullCache[prevImg.imgId] || imgCache[prevImg.imgId] : null;
   return /*#__PURE__*/React.createElement("div", {
     className: "ss-root" + (hidden && playing ? " ss-hide" : "") + (playing ? "" : " ss-paused"),
     onMouseMove: wake,
-    onClick: wake
+    onClick: wake,
+    onPointerDown: e => {
+      wake();
+      swipe.onPointerDown(e);
+    },
+    onPointerUp: swipe.onPointerUp,
+    onPointerCancel: swipe.onPointerCancel
   }, src && /*#__PURE__*/React.createElement("div", {
     className: "ss-back",
     style: {
@@ -4595,13 +4614,28 @@ function ImageGridView({
     },
     style: {
       aspectRatio: "1",
-      cursor: "pointer",
+      cursor: "zoom-in",
       borderColor: sel[it.imgId] ? "var(--brass)" : undefined,
       boxShadow: sel[it.imgId] ? "0 0 0 2px var(--brass-line)" : undefined
     },
-    onClick: () => toggle(it.imgId),
-    onKeyDown: e => e.key === "Enter" && toggle(it.imgId)
+    onClick: () => setLb(i),
+    onKeyDown: e => e.key === "Enter" && setLb(i)
   }, /*#__PURE__*/React.createElement("span", {
+    role: "checkbox",
+    "aria-checked": !!sel[it.imgId],
+    "aria-label": "Select " + (it.label || "image"),
+    tabIndex: 0,
+    onClick: e => {
+      e.stopPropagation();
+      toggle(it.imgId);
+    },
+    onKeyDown: e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggle(it.imgId);
+      }
+    },
     style: {
       position: "absolute",
       top: 8,
@@ -4613,6 +4647,7 @@ function ImageGridView({
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
+      cursor: "pointer",
       background: sel[it.imgId] ? "var(--brass)" : "rgba(10,14,26,.6)",
       color: sel[it.imgId] ? "#141414" : "rgba(231,235,247,.8)",
       border: "1px solid " + (sel[it.imgId] ? "var(--brass)" : "rgba(180,195,235,.4)")
@@ -5975,7 +6010,19 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.play,
     size: 13
-  }), " Slideshow")), ((c.gallery || []).length > 0 || c.profileImg) && /*#__PURE__*/React.createElement("button", {
+  }), " Slideshow")), hasAside && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setGrid(true)
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.expand,
+    size: 13
+  }), " Grid")), ((c.gallery || []).length > 0 || c.profileImg) && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onDownloadImages
   }, /*#__PURE__*/React.createElement("span", {
@@ -6227,9 +6274,11 @@ function CharacterPage({
       setRailDrag(null);
       setRailOver(null);
     },
-    onClick: () => setGrid(true),
-    "aria-label": "Open image grid",
-    title: "Drag to reorder, or open the grid and use the arrows · click to open grid"
+    onClick: () => setLb({
+      index: vi
+    }),
+    "aria-label": "Open " + (g.caption || "image " + (i + 1)),
+    title: "Open this picture full screen · drag to reorder"
   }, /*#__PURE__*/React.createElement(BlurBtn, {
     imgId: g.imgId,
     blurred: blurred,
@@ -6286,7 +6335,7 @@ function CharacterPage({
     blurred: blurred,
     onClose: () => setSs(false)
   }), lb !== null && /*#__PURE__*/React.createElement(Lightbox, {
-    items: c.gallery || [], // the lightbox maps over this
+    items: visGallery.map(x => x.g),
     index: lb.index,
     imgCache: imgCache,
     fullCache: fullCache,
@@ -6297,18 +6346,21 @@ function CharacterPage({
     onClose: () => setLb(null),
     onNav: d => setLb(p => ({
       ...p,
-      index: (p.index + d + (c.gallery || []).length) % (c.gallery || []).length
+      index: (p.index + d + visGallery.length) % visGallery.length
     })),
     onSetProfile: imgId => {
       onSetProfile(imgId);
       toast("Profile image updated");
     },
-    onCaption: onCaption,
+    onCaption: (i, text) => {
+      const oi = visGallery[i] && visGallery[i].oi;
+      if (oi != null) onCaption(oi, text);
+    },
     onRemove: onDeleteImages ? i => {
-      const removedId = (c.gallery || [])[i] && (c.gallery || [])[i].imgId;
+      const removedId = visGallery[i] && visGallery[i].g && visGallery[i].g.imgId;
       onDeleteImages(removedId ? [removedId] : []);
       setLb(p => {
-        const remaining = (c.gallery || []).length - 1;
+        const remaining = visGallery.length - 1;
         if (remaining <= 0) return null;
         return {
           ...p,
@@ -6615,7 +6667,19 @@ function PersonaPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.play,
     size: 13
-  }), " Slideshow")), (gallery.length > 0 || p.avatar) && /*#__PURE__*/React.createElement("button", {
+  }), " Slideshow")), hasAside && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setGrid(true)
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.expand,
+    size: 13
+  }), " Grid")), (gallery.length > 0 || p.avatar) && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onDownloadImages
   }, /*#__PURE__*/React.createElement("span", {
@@ -6847,9 +6911,9 @@ function PersonaPage({
       setRailDrag(null);
       setRailOver(null);
     },
-    onClick: () => setGrid(true),
-    "aria-label": "Open image grid",
-    title: "Drag to reorder, or open the grid and use the arrows · click to open grid"
+    onClick: () => setLb(i),
+    "aria-label": "Open " + (g.caption || "image " + (i + 1)),
+    title: "Open this picture full screen · drag to reorder"
   }, /*#__PURE__*/React.createElement(BlurBtn, {
     imgId: g.imgId,
     blurred: blurred,
@@ -12945,7 +13009,22 @@ function RolecraftVault() {
         key: w.imgId + i,
         className: "wtile",
         tabIndex: 0,
-        "aria-label": w.label
+        "aria-label": w.label,
+        role: "button",
+        onClick: () => setWallLb({
+          items: wallVisible.map(x => ({
+            imgId: x.imgId,
+            caption: x.label
+          })),
+          index: i
+        }),
+        onKeyDown: e => e.key === "Enter" && setWallLb({
+          items: wallVisible.map(x => ({
+            imgId: x.imgId,
+            caption: x.label
+          })),
+          index: i
+        })
       }, /*#__PURE__*/React.createElement(BlurBtn, {
         imgId: w.imgId,
         blurred: blurred,
@@ -12971,19 +13050,25 @@ function RolecraftVault() {
         style: {
           minWidth: 150
         },
-        onClick: () => setWallLb({
-          items: wallVisible.map(x => ({
-            imgId: x.imgId,
-            caption: x.label
-          })),
-          index: i
-        })
+        onClick: e => {
+          e.stopPropagation();
+          setWallLb({
+            items: wallVisible.map(x => ({
+              imgId: x.imgId,
+              caption: x.label
+            })),
+            index: i
+          });
+        }
       }, "View image"), /*#__PURE__*/React.createElement("button", {
         className: "btn btn-primary",
         style: {
           minWidth: 150
         },
-        onClick: w.open
+        onClick: e => {
+          e.stopPropagation();
+          w.open();
+        }
       }, w.kind === "persona" ? "Open persona" : "Open character")))))))) : null
     };
     return /*#__PURE__*/React.createElement("div", {
