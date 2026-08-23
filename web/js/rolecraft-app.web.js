@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.182";
+const APP_VERSION = "1.183";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.182";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.182 — current",
+  heading: "1.183 — current",
+  notes: ["Opening a character on a phone now loads every full picture in that record, not just the first dozen — a larger gallery was still fetching as you swiped. The Characters tab and the dashboard do the same for every picture they show, so cards and “From your galleries” use the full image rather than a small preview."]
+}, {
+  heading: "1.182",
   notes: ["Pictures on a phone stay visible while you scroll the library. Only a handful of previews were being kept, so cards further down went blank. After unlock the phone now reads every picture preview in the background; originals stay on disk until you open a character or persona, and then that record’s full pictures are loaded so swiping is already ready. Windows no longer decodes every gallery in the vault the moment it opens, which is what made it feel slow."]
 }, {
   heading: "1.181",
@@ -3342,6 +3345,9 @@ function personaImgIds(p) {
   if (!p) return [];
   return [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean);
 }
+function picOf(fullCache, imgCache, id) {
+  return id ? fullCache && fullCache[id] || imgCache && imgCache[id] : null;
+}
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
   (c.sections || []).forEach(s => parts.push(s.title, s.content));
@@ -4858,8 +4864,8 @@ function ImageGridView({
       textOverflow: "ellipsis",
       pointerEvents: "none"
     }
-  }, variantNameOf(it.variantId)), imgCache[it.imgId] ? /*#__PURE__*/React.createElement("img", {
-    src: imgCache[it.imgId],
+  }, variantNameOf(it.variantId)), picOf(fullCache, imgCache, it.imgId) ? /*#__PURE__*/React.createElement("img", {
+    src: picOf(fullCache, imgCache, it.imgId),
     alt: it.label || "image",
     className: blurred[it.imgId] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
@@ -5644,13 +5650,10 @@ function CharacterPage({
     return out;
   })();
   useEffect(() => {
-    const ids = [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)];
-    (c.variants || []).forEach(v => {
-      if (v.profileImg) ids.push(v.profileImg);
-    });
-    ids.forEach(id => id && loadImage(id));
+    const ids = charImgIds(c);
+    ids.forEach(id => loadImage(id));
     return warmFull(ids);
-  }, [c.id, c.profileImg, c.banner, c.gallery, c.variants, loadImage, warmFull]);
+  }, [c, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -6379,8 +6382,8 @@ function CharacterPage({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     label: "image " + (i + 1)
-  }), imgCache[g.imgId] ? /*#__PURE__*/React.createElement("img", {
-    src: imgCache[g.imgId],
+  }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
+    src: picOf(fullCache, imgCache, g.imgId),
     className: blurred[g.imgId] ? "blur-img" : undefined,
     alt: g.caption || "gallery image " + (i + 1)
   }) : /*#__PURE__*/React.createElement("div", {
@@ -6569,10 +6572,10 @@ function PersonaPage({
     return out;
   })();
   useEffect(() => {
-    const ids = [p.avatar, ...(p.gallery || []).map(g => g.imgId)];
-    ids.forEach(id => id && loadImage(id));
+    const ids = personaImgIds(p);
+    ids.forEach(id => loadImage(id));
     return warmFull(ids);
-  }, [p.id, p.avatar, p.gallery, loadImage, warmFull]);
+  }, [p, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -7016,8 +7019,8 @@ function PersonaPage({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     label: "image " + (i + 1)
-  }), imgCache[g.imgId] ? /*#__PURE__*/React.createElement("img", {
-    src: imgCache[g.imgId],
+  }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
+    src: picOf(fullCache, imgCache, g.imgId),
     className: blurred[g.imgId] ? "blur-img" : undefined,
     alt: g.caption || "gallery image " + (i + 1)
   }) : /*#__PURE__*/React.createElement("div", {
@@ -11507,7 +11510,6 @@ function RolecraftVault() {
      phone reloaded every picture. The open character's pictures are pinned so
      they stay until you leave. */
   const FULL_CACHE_MAX = ON_PHONE ? 4 : 48;
-  const FULL_PIN_MAX = ON_PHONE ? 12 : 80;
   const FULL_INFLIGHT = ON_PHONE ? 2 : 3;
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
@@ -11529,7 +11531,6 @@ function RolecraftVault() {
         while (fullOrder.current.length > FULL_CACHE_MAX) {
           const u = fullOrder.current.findIndex(id => !fullPinned.current.has(id));
           if (u >= 0) evict.push(fullOrder.current.splice(u, 1)[0]);
-          else if (fullOrder.current.length > FULL_PIN_MAX) evict.push(fullOrder.current.shift());
           else break;
         }
         evict.forEach(id => fullLoading.current.delete(id));
@@ -11561,12 +11562,36 @@ function RolecraftVault() {
         list.push(id);
       }
     });
-    fullPinned.current = new Set(list.slice(0, FULL_PIN_MAX));
-    list.forEach((id, i) => requestFull(id, i < 3));
+    fullPinned.current = new Set(list);
+    list.forEach((id, i) => requestFull(id, i < 4));
     return () => {
       list.forEach(id => fullPinned.current.delete(id));
     };
   }, [requestFull]);
+  /* The screen you are on keeps its full pictures. Opening a character used
+     to pin only the first dozen, so a larger gallery reloaded as you swiped.
+     The Characters tab and the dashboard now warm every picture they show. */
+  useEffect(() => {
+    if (!ready) return;
+    if (viewCharId || viewPersonaId) return;
+    const ids = [];
+    if (view === "characters") {
+      chars.forEach(c => charImgIds(c).forEach(id => ids.push(id)));
+    } else if (view === "personas") {
+      personas.forEach(p => personaImgIds(p).forEach(id => ids.push(id)));
+    } else if (view === "dashboard") {
+      chars.forEach(c => {
+        if (c.profileImg) ids.push(c.profileImg);
+        (c.gallery || []).forEach(g => g && g.imgId && ids.push(g.imgId));
+      });
+      personas.forEach(p => {
+        if (p.avatar) ids.push(p.avatar);
+        (p.gallery || []).forEach(g => g && g.imgId && ids.push(g.imgId));
+      });
+    }
+    if (!ids.length) return;
+    return warmFull(ids);
+  }, [ready, view, viewCharId, viewPersonaId, chars, personas, warmFull]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
@@ -12923,8 +12948,8 @@ function RolecraftVault() {
         blurred: blurred,
         onToggleBlur: toggleBlur,
         label: spotlight.name
-      }), imgCache[spotlight.profileImg] && /*#__PURE__*/React.createElement("img", {
-        src: imgCache[spotlight.profileImg],
+      }), picOf(fullCache, imgCache, spotlight.profileImg) && /*#__PURE__*/React.createElement("img", {
+        src: picOf(fullCache, imgCache, spotlight.profileImg),
         alt: spotlight.name,
         className: blurred[spotlight.profileImg] ? "blur-img" : undefined,
         style: {
@@ -13089,8 +13114,8 @@ function RolecraftVault() {
             alignItems: "center",
             justifyContent: "center"
           }
-        }, tid && imgCache[tid] ? /*#__PURE__*/React.createElement("img", {
-          src: imgCache[tid],
+        }, tid && picOf(fullCache, imgCache, tid) ? /*#__PURE__*/React.createElement("img", {
+          src: picOf(fullCache, imgCache, tid),
           alt: "",
           className: blurred[tid] ? "blur-img" : undefined,
           style: {
@@ -13170,8 +13195,8 @@ function RolecraftVault() {
         blurred: blurred,
         onToggleBlur: toggleBlur,
         label: w.label
-      }), imgCache[w.imgId] ? /*#__PURE__*/React.createElement("img", {
-        src: imgCache[w.imgId],
+      }), picOf(fullCache, imgCache, w.imgId) ? /*#__PURE__*/React.createElement("img", {
+        src: picOf(fullCache, imgCache, w.imgId),
         alt: w.label,
         className: blurred[w.imgId] ? "blur-img" : undefined
       }) : /*#__PURE__*/React.createElement("div", {
@@ -13516,7 +13541,7 @@ function RolecraftVault() {
     }, "empty or assign"))), names.map(b => {
       const cs = buckets[b];
       const customCover = bucketMeta[b] && bucketMeta[b].cover;
-      const coverId = customCover && imgCache[customCover] ? customCover : (cs.find(c => c.profileImg && imgCache[c.profileImg]) || {}).profileImg;
+      const coverId = customCover && picOf(fullCache, imgCache, customCover) ? customCover : (cs.find(c => picOf(fullCache, imgCache, c.profileImg)) || {}).profileImg;
       const active = bucketFilter === b;
       return /*#__PURE__*/React.createElement("button", {
         key: b,
@@ -13593,7 +13618,7 @@ function RolecraftVault() {
         d: icons.down,
         size: 14
       })), coverId ? /*#__PURE__*/React.createElement("img", {
-        src: imgCache[coverId],
+        src: picOf(fullCache, imgCache, coverId),
         alt: "",
         style: {
           width: "100%",
@@ -13832,8 +13857,8 @@ function RolecraftVault() {
   }, selected[c.id] && /*#__PURE__*/React.createElement(Ic, {
     d: icons.check,
     size: 14
-  })), (c.profileImg && loadImage(c.profileImg), c.profileImg && imgCache[c.profileImg]) ? /*#__PURE__*/React.createElement("img", {
-    src: imgCache[c.profileImg],
+  })), (c.profileImg && loadImage(c.profileImg), picOf(fullCache, imgCache, c.profileImg)) ? /*#__PURE__*/React.createElement("img", {
+    src: picOf(fullCache, imgCache, c.profileImg),
     alt: c.name,
     className: blurred[c.profileImg] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
@@ -14307,8 +14332,8 @@ function RolecraftVault() {
         if (n[p.id]) delete n[p.id];else n[p.id] = true;
         return n;
       }) : setViewPersonaId(p.id))
-    }, (p.avatar && loadImage(p.avatar), p.avatar && imgCache[p.avatar]) ? /*#__PURE__*/React.createElement("img", {
-      src: imgCache[p.avatar],
+    }, (p.avatar && loadImage(p.avatar), picOf(fullCache, imgCache, p.avatar)) ? /*#__PURE__*/React.createElement("img", {
+      src: picOf(fullCache, imgCache, p.avatar),
       alt: p.name,
       className: blurred[p.avatar] ? "blur-img" : undefined
     }) : /*#__PURE__*/React.createElement("div", {
