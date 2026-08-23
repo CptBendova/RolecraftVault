@@ -260,8 +260,13 @@
         var n = Math.min(BIN_CHUNK, size - off);
         return fsCall("readFile", { path: path, directory: FS_DIR, offset: off, length: n }).then(function (r) {
           var piece = b64decode(r.data || "");
-          buf.set(piece, off);
-          off += piece.length;
+          if (!piece.length) {
+            if (off < size) throw new Error("empty read at " + off);
+            return buf;
+          }
+          var take = Math.min(piece.length, size - off);
+          buf.set(piece.subarray(0, take), off);
+          off += take;
           return more();
         });
       }

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.185";
+const APP_VERSION = "1.186";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.185";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.185 — current",
+  heading: "1.186 — current",
+  notes: ["On a phone, leaving the app — Home, Recents, or switching to another app — locks the vault again, so the PIN is required when you come back. The preview in the app switcher is blank, so nothing from the library is visible there. A copy that is already running is left to finish.","Restoring a lore entry or prompt from the bin no longer lands it on the persona list. Deleting a picture takes it off the screen straight away. Captions count as an update. Opening a character keeps your place in the list. The vault no longer holds every original in memory at once — the character you opened stays ready to swipe, and the rest load quietly in the background."]
+}, {
+  heading: "1.185",
   notes: ["A character with dozens of pictures was still showing the small previews when you opened it. After you unlock, every original now loads in the background one at a time so the window stays smooth; opening that character jumps its pictures to the front of the line, so a gallery of sixty is already full size when you swipe."]
 }, {
   heading: "1.184",
@@ -2909,7 +2912,7 @@ function Lightbox({
     size: 14
   }), blurred && blurred[item.imgId] ? "Unblur" : "Blur")), onSetProfile && /*#__PURE__*/React.createElement("button", {
     className: "ss-btn",
-    onClick: () => onSetProfile(item.imgId)
+    onClick: () => onSetProfile(item.imgId, item.variantId)
   }, "Set as profile"), onRemove && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-danger",
     label: "Remove",
@@ -4071,9 +4074,10 @@ function SlideshowMode({
   const [playing, setPlaying] = useState(true);
   const [hidden, setHidden] = useState(false);
   const hideTimer = useRef(null);
-  const item = items[order[pos % n]];
+  const item = n ? items[order[pos % n]] : null;
   const src = item ? fullCache[item.imgId] || imgCache[item.imgId] : null;
   const advance = useCallback(d => {
+    if (!n) return;
     setPrevImg(item ? {
       imgId: item.imgId,
       k: Date.now()
@@ -4097,6 +4101,7 @@ function SlideshowMode({
 
   /* preload full-quality current + next two */
   useEffect(() => {
+    if (!n) return;
     for (let k = 0; k < Math.min(3, n); k++) requestFull(items[order[(pos + k) % n]].imgId);
   }, [pos, order, items, n, requestFull]);
 
@@ -4126,6 +4131,7 @@ function SlideshowMode({
     if (!playing) setHidden(false);
   }, [playing]);
   const toggleShuffle = () => {
+    if (!n) return;
     const currentIdx = order[pos % n];
     if (!shuffled) {
       const rest = items.map((_, i) => i).filter(i => i !== currentIdx);
@@ -4171,7 +4177,7 @@ function SlideshowMode({
     className: blurred && blurred[prevImg.imgId] ? "blur-img" : undefined
   })), /*#__PURE__*/React.createElement("div", {
     className: "ss-slide ss-in kb" + pos % 4,
-    key: "s" + pos + order[pos % n]
+    key: "s" + pos + (n ? order[pos % n] : "x")
   }, src ? /*#__PURE__*/React.createElement("img", {
     src: src,
     alt: item.caption || "slide",
@@ -4201,7 +4207,7 @@ function SlideshowMode({
       color: "rgba(231,235,247,.75)",
       textShadow: "0 1px 8px rgba(0,0,0,.8)"
     }
-  }, pos % n + 1, " / ", n), /*#__PURE__*/React.createElement("button", {
+  }, n ? pos % n + 1 : 0, " / ", n), /*#__PURE__*/React.createElement("button", {
     className: "ss-btn",
     "aria-label": "Close slideshow",
     onClick: onClose
@@ -4926,7 +4932,11 @@ function ImageGridView({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     onClose: () => setLb(null),
-    onNav: d => setLb(p => (p + d + lbItems.length) % lbItems.length),
+    onNav: d => setLb(p => {
+      const len = lbItems.length;
+      if (len <= 0) return null;
+      return (p + d + len) % len;
+    }),
     onRemove: onDeleteSelected ? i => {
       const removedId = lbItems[i] && lbItems[i].imgId;
       if (removedId) onDeleteSelected([removedId]);
@@ -4937,7 +4947,8 @@ function ImageGridView({
       });
     } : undefined,
     onSetProfile: onSetProfile ? imgId => {
-      onSetProfile(imgId);
+      const it = lbItems[lb];
+      onSetProfile(imgId, it && it.variantId);
       toast && toast("Profile image updated");
     } : undefined
   }));
@@ -5661,11 +5672,12 @@ function CharacterPage({
     }));
     return out;
   })();
+  const warmKey = charImgIds(c).join("\n");
   useEffect(() => {
-    const ids = charImgIds(c);
+    const ids = warmKey ? warmKey.split("\n") : [];
     ids.forEach(id => loadImage(id));
     return warmFull(ids);
-  }, [c, loadImage, warmFull]);
+  }, [warmKey, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -6454,12 +6466,16 @@ function CharacterPage({
     onToggleBlur: onToggleBlur,
     autoPlay: lb.autoPlay,
     onClose: () => setLb(null),
-    onNav: d => setLb(p => ({
-      ...p,
-      index: (p.index + d + visGallery.length) % visGallery.length
-    })),
+    onNav: d => setLb(p => {
+      const len = visGallery.length;
+      if (!p || len <= 0) return null;
+      return {
+        ...p,
+        index: (p.index + d + len) % len
+      };
+    }),
     onSetProfile: imgId => {
-      onSetProfile(imgId);
+      onSetProfile(imgId, activeVar);
       toast("Profile image updated");
     },
     onCaption: (i, text) => {
@@ -6583,11 +6599,12 @@ function PersonaPage({
     }));
     return out;
   })();
+  const warmKey = personaImgIds(p).join("\n");
   useEffect(() => {
-    const ids = personaImgIds(p);
+    const ids = warmKey ? warmKey.split("\n") : [];
     ids.forEach(id => loadImage(id));
     return warmFull(ids);
-  }, [p, loadImage, warmFull]);
+  }, [warmKey, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -7088,7 +7105,11 @@ function PersonaPage({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     onClose: () => setLb(null),
-    onNav: d => setLb(prev => (prev + d + gallery.length) % gallery.length),
+    onNav: d => setLb(prev => {
+      const len = gallery.length;
+      if (len <= 0) return null;
+      return (prev + d + len) % len;
+    }),
     onSetProfile: imgId => {
       onSetAvatar(imgId);
       toast("Portrait updated");
@@ -8641,7 +8662,11 @@ function CharacterEditor({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     onClose: () => setLightbox(null),
-    onNav: d => setLightbox(i => (i + d + (c.gallery || []).length) % (c.gallery || []).length),
+    onNav: d => setLightbox(i => {
+      const len = (c.gallery || []).length;
+      if (len <= 0) return null;
+      return (i + d + len) % len;
+    }),
     onSetProfile: imgId => {
       set("profileImg", imgId);
       toast("Portrait updated");
@@ -9905,7 +9930,7 @@ function SettingsModal({
         fontSize: 12,
         color: "var(--dim)"
       }
-    }, (t.type === "character" ? "Character" : "Persona") + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
+    }, (t.type === "character" ? "Character" : t.type === "persona" ? "Persona" : t.type === "lore" ? "Lore" : t.type === "prompt" ? "Prompt" : t.type) + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
       className: "btn btn-ghost",
       style: {
         padding: "5px 10px",
@@ -11021,6 +11046,30 @@ function RolecraftVault() {
     sDel("img:" + id);
     sDel("th:" + id);
     sDel("sz:" + id);
+    imgLoading.current.delete(id);
+    fullLoading.current.delete(id);
+    delete imgBuf.current[id];
+    delete fullMem.current[id];
+    delete fullBuf.current[id];
+    fullPinned.current.delete(id);
+    fullShow.current.delete(id);
+    imgQueue.current = imgQueue.current.filter(x => x !== id);
+    fullUrgent.current = fullUrgent.current.filter(x => x !== id);
+    fullIdle.current = fullIdle.current.filter(x => x !== id);
+    fullOrder.current = fullOrder.current.filter(x => x !== id);
+    fullShowOrder.current = fullShowOrder.current.filter(x => x !== id);
+    setImgCache(p => {
+      if (!p[id]) return p;
+      const n = { ...p };
+      delete n[id];
+      return n;
+    });
+    setFullCache(p => {
+      if (!p[id]) return p;
+      const n = { ...p };
+      delete n[id];
+      return n;
+    });
   }, [forgetBlur]);
 
   /* --- one-time: lift known character sections into first-class fields --- */
@@ -11413,6 +11462,17 @@ function RolecraftVault() {
       clearTimeout(fullFlush.current);
       fullFlush.current = null;
     }
+    if (imgFlush.current) {
+      clearTimeout(imgFlush.current);
+      imgFlush.current = null;
+    }
+    if (fullPumpTimer.current) {
+      clearTimeout(fullPumpTimer.current);
+      fullPumpTimer.current = null;
+    }
+    fullGen.current++;
+    fullShow.current.clear();
+    fullShowOrder.current = [];
     setBlurred({});
     setEditingChar(null);
     setEditingRecord(null);
@@ -11435,6 +11495,61 @@ function RolecraftVault() {
       locked: true
     }));
   };
+  const lockVaultRef = useRef(lockVault);
+  lockVaultRef.current = lockVault;
+  const authRef = useRef(authState);
+  authRef.current = authState;
+  /* Home, Recents, or switching apps on a phone must lock. FLAG_SECURE hides
+     the preview; this asks for the PIN again. A file picker also pauses the
+     activity, so those clicks get a short pass. A copy in flight keeps the
+     keys so it can finish with the screen off. */
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.Capacitor) return;
+    let deferUntil = 0;
+    let t = 0;
+    const defer = () => {
+      deferUntil = Date.now() + 2500;
+    };
+    const hide = () => {
+      const a = authRef.current;
+      if (!a || a.locked || !a.checked) return;
+      if (!a.passwordSet && !a.pinSet) return;
+      if (Date.now() < deferUntil) return;
+      const run = () => {
+        if (lockVaultRef.current) lockVaultRef.current();
+      };
+      if (window.transfer && typeof window.transfer.status === "function") {
+        window.transfer.status().then(s => {
+          if (s && s.active) return;
+          run();
+        }).catch(run);
+        return;
+      }
+      run();
+    };
+    window.__rcvOnBackground = hide;
+    window.__rcvDeferLock = defer;
+    const onVis = () => {
+      if (!document.hidden) return;
+      clearTimeout(t);
+      t = setTimeout(hide, 200);
+    };
+    const onFile = e => {
+      const el = e.target;
+      if (el && el.closest && el.closest('input[type="file"]')) defer();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    document.addEventListener("click", onFile, true);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("click", onFile, true);
+      try {
+        delete window.__rcvOnBackground;
+        delete window.__rcvDeferLock;
+      } catch (e) {}
+    };
+  }, []);
   /* Every thumbnail used to arrive as its own state update, each one copying
      the whole cache and re-rendering the app. That is quadratic: at 4,000
      pictures the copying alone measured 1,224ms against 28ms batched, before
@@ -11532,6 +11647,7 @@ function RolecraftVault() {
      character (or the current swipe) actually needs. One file at a time when
      idle; the open record jumps the queue. */
   const FULL_CACHE_MAX = ON_PHONE ? 8 : 48;
+  const FULL_MEM_MAX = ON_PHONE ? 24 : 64;
   const fullMem = useRef({});
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
@@ -11539,9 +11655,13 @@ function RolecraftVault() {
   const fullIdle = useRef([]);
   const fullBusy = useRef(0);
   const fullPinned = useRef(new Set());
+  const fullShow = useRef(new Set());
+  const fullShowOrder = useRef([]);
   const fullBuf = useRef({});
   const fullEvict = useRef([]);
   const fullFlush = useRef(null);
+  const fullPumpTimer = useRef(null);
+  const fullGen = useRef(0);
   const flushFull = useCallback(() => {
     fullFlush.current = null;
     if (quietRef.current) return;
@@ -11549,16 +11669,40 @@ function RolecraftVault() {
     fullBuf.current = {};
     const evict = fullEvict.current;
     fullEvict.current = [];
-    const batch = {};
-    Object.keys(raw).forEach(id => {
-      if (fullPinned.current.has(id)) batch[id] = raw[id];
-    });
-    if (!Object.keys(batch).length && !evict.length) return;
+    if (!Object.keys(raw).length && !evict.length) return;
     setFullCache(p => {
-      const next = { ...p, ...batch };
+      const next = { ...p, ...raw };
       evict.forEach(id => delete next[id]);
       return next;
     });
+  }, []);
+  const markShow = useCallback(imgId => {
+    if (!imgId) return;
+    fullShow.current.add(imgId);
+    fullShowOrder.current = fullShowOrder.current.filter(x => x !== imgId).concat(imgId);
+    while (fullShowOrder.current.length > FULL_CACHE_MAX) {
+      const eid = fullShowOrder.current.shift();
+      fullShow.current.delete(eid);
+      if (eid !== imgId) fullEvict.current.push(eid);
+    }
+  }, []);
+  const trimFullMem = useCallback(() => {
+    const pinned = fullPinned.current;
+    let extra = 0;
+    fullOrder.current.forEach(id => {
+      if (!pinned.has(id)) extra++;
+    });
+    if (extra <= FULL_MEM_MAX) return;
+    const keep = [];
+    let drop = extra - FULL_MEM_MAX;
+    fullOrder.current.forEach(id => {
+      if (!pinned.has(id) && drop > 0) {
+        delete fullMem.current[id];
+        fullEvict.current.push(id);
+        drop--;
+      } else keep.push(id);
+    });
+    fullOrder.current = keep;
   }, []);
   const pumpFull = useCallback(() => {
     if (quietRef.current) return;
@@ -11568,38 +11712,42 @@ function RolecraftVault() {
       if (!imgId) continue;
       if (fullMem.current[imgId]) {
         fullLoading.current.delete(imgId);
+        if (fullShow.current.has(imgId)) {
+          fullBuf.current[imgId] = fullMem.current[imgId];
+          if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 50);
+        }
         continue;
       }
       fullBusy.current++;
-      const wanted = fullPinned.current.has(imgId);
+      const gen = fullGen.current;
+      const show = fullShow.current.has(imgId);
       sGet("img:" + imgId).then(v => {
+        if (gen !== fullGen.current) return;
         fullLoading.current.delete(imgId);
         if (!v) return;
         fullMem.current[imgId] = v;
         fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
-        while (fullOrder.current.length > FULL_CACHE_MAX) {
-          const u = fullOrder.current.findIndex(id => !fullPinned.current.has(id));
-          if (u < 0) break;
-          const eid = fullOrder.current.splice(u, 1)[0];
-          fullEvict.current.push(eid);
-        }
-        if (fullPinned.current.has(imgId) || wanted) fullBuf.current[imgId] = v;
+        trimFullMem();
+        if (fullShow.current.has(imgId) || show) fullBuf.current[imgId] = v;
         if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 50);
       }).catch(() => {
+        if (gen !== fullGen.current) return;
         fullLoading.current.delete(imgId);
       }).finally(() => {
+        if (gen !== fullGen.current) return;
         fullBusy.current--;
-        setTimeout(pumpFull, wanted ? 0 : 30);
+        if (fullPumpTimer.current) return;
+        fullPumpTimer.current = setTimeout(() => {
+          fullPumpTimer.current = null;
+          pumpFull();
+        }, show ? 0 : 30);
       });
     }
-  }, [flushFull]);
-  const requestFull = useCallback((imgId, urgent) => {
+  }, [flushFull, trimFullMem]);
+  const queueFull = useCallback((imgId, urgent) => {
     if (!imgId) return;
     if (fullMem.current[imgId]) {
-      if (fullPinned.current.has(imgId)) {
-        fullBuf.current[imgId] = fullMem.current[imgId];
-        if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 0);
-      }
+      fullLoading.current.delete(imgId);
       return;
     }
     if (fullLoading.current.has(imgId)) {
@@ -11616,7 +11764,17 @@ function RolecraftVault() {
     fullLoading.current.add(imgId);
     if (urgent) fullUrgent.current.unshift(imgId);else fullIdle.current.push(imgId);
     pumpFull();
-  }, [pumpFull, flushFull]);
+  }, [pumpFull]);
+  const requestFull = useCallback((imgId, urgent) => {
+    if (!imgId) return;
+    markShow(imgId);
+    if (fullMem.current[imgId]) {
+      fullBuf.current[imgId] = fullMem.current[imgId];
+      if (!fullFlush.current) fullFlush.current = setTimeout(flushFull, 0);
+      return;
+    }
+    queueFull(imgId, urgent !== false);
+  }, [queueFull, flushFull, markShow]);
   const warmFull = useCallback(ids => {
     const list = [];
     const seen = new Set();
@@ -11627,18 +11785,14 @@ function RolecraftVault() {
       }
     });
     list.forEach(id => fullPinned.current.add(id));
-    const ready = {};
-    list.forEach(id => {
-      if (fullMem.current[id]) ready[id] = fullMem.current[id];
-      else requestFull(id, true);
+    list.forEach((id, i) => {
+      if (i < FULL_CACHE_MAX) requestFull(id, true);
+      else queueFull(id, true);
     });
-    if (Object.keys(ready).length) {
-      setFullCache(p => Object.assign({}, p, ready));
-    }
     return () => {
       list.forEach(id => fullPinned.current.delete(id));
     };
-  }, [requestFull]);
+  }, [requestFull, queueFull]);
   useEffect(() => {
     quietRef.current = !!(showSettings || showGuide);
     if (quietRef.current) return;
@@ -11662,8 +11816,8 @@ function RolecraftVault() {
     [bucketMeta, loreMeta, promptMeta].forEach(meta => {
       Object.values(meta || {}).forEach(m => add(m && m.cover));
     });
-    ids.forEach(id => requestFull(id, false));
-  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, requestFull]);
+    ids.forEach(id => queueFull(id, false));
+  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, queueFull]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
@@ -11681,6 +11835,9 @@ function RolecraftVault() {
     try {
       await sSet("sz:" + imgId, String(dataUrlSize(dataUrl)));
     } catch (e) {}
+    fullMem.current[imgId] = dataUrl;
+    fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
+    markShow(imgId);
     setImgCache(p => ({
       ...p,
       [imgId]: thumb || dataUrl
@@ -11689,7 +11846,7 @@ function RolecraftVault() {
       ...p,
       [imgId]: dataUrl
     }));
-  }, []);
+  }, [markShow]);
   /* Read failures and save failures need different words: one means check the
      file, the other means the vault could not keep it. Saying "couldn't read
      those images" when the disk is full sends you looking in the wrong place. */
@@ -11721,10 +11878,19 @@ function RolecraftVault() {
   };
 
   /* --- character CRUD --- */
+  const charsRef = useRef(chars);
+  charsRef.current = chars;
   const persistChar = async c => {
-    const next = chars.some(x => x.id === c.id) ? chars.map(x => x.id === c.id ? c : x) : [...chars, c];
+    const list = charsRef.current;
+    const next = list.some(x => x.id === c.id) ? list.map(x => x.id === c.id ? c : x) : [...list, c];
+    charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
+  };
+  const patchChar = async (id, fn) => {
+    const cur = charsRef.current.find(x => x.id === id);
+    if (!cur) return;
+    return persistChar(fn(cur));
   };
   const saveChar = async c => {
     await persistChar(c);
@@ -11762,21 +11928,36 @@ function RolecraftVault() {
   };
   const restoreFromTrash = async entry => {
     const rest = trash.filter(t => t.tid !== entry.tid);
+    const rec0 = entry.record || {};
+    const bump = list => list.some(x => x.id === rec0.id) ? { ...rec0, id: uid() } : rec0;
     if (entry.type === "character") {
-      // a fresh id, in case something else has taken the old one since
-      const rec = chars.some(x => x.id === entry.record.id) ? { ...entry.record, id: uid() } : entry.record;
+      const rec = bump(chars);
       const next = [...chars, rec];
+      charsRef.current = next;
       setChars(next);
       await sSet("chars:all", JSON.stringify(next));
-    } else {
-      const rec = personas.some(x => x.id === entry.record.id) ? { ...entry.record, id: uid() } : entry.record;
+    } else if (entry.type === "persona") {
+      const rec = bump(personas);
       const next = [...personas, rec];
       setPersonas(next);
       await sSet("personas:all", JSON.stringify(next));
+    } else if (entry.type === "lore") {
+      const rec = bump(lore);
+      const next = [...lore, rec];
+      setLore(next);
+      await sSet("lore:all", JSON.stringify(next));
+    } else if (entry.type === "prompt") {
+      const rec = bump(prompts);
+      const next = [...prompts, rec];
+      setPrompts(next);
+      await sSet("prompts:all", JSON.stringify(next));
+    } else {
+      toast("Couldn't restore that record");
+      return;
     }
     setTrash(rest);
     await sSet("trash:all", JSON.stringify(rest));
-    toast((entry.record.name || "Record") + " restored");
+    toast((entry.record.name || entry.record.title || "Record") + " restored");
   };
   const emptyFromTrash = async entry => {
     await purgeTrashEntry(entry);
@@ -11843,8 +12024,12 @@ function RolecraftVault() {
     setPrompts(next);
     await sSet("prompts:all", JSON.stringify(next));
   };
+  const personasRef = useRef(personas);
+  personasRef.current = personas;
   const persistPersona = async p => {
-    const next = personas.map(x => x.id === p.id ? p : x);
+    const list = personasRef.current;
+    const next = list.some(x => x.id === p.id) ? list.map(x => x.id === p.id ? p : x) : [...list, p];
+    personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
   };
@@ -13385,12 +13570,19 @@ function RolecraftVault() {
       blurred: blurred,
       onToggleBlur: toggleBlur,
       onClose: () => setWallLb(null),
-      onNav: d => setWallLb(p => ({
-        ...p,
-        index: (p.index + d + p.items.length) % p.items.length
-      }))
+      onNav: d => setWallLb(p => {
+        if (!p || !p.items || !p.items.length) return null;
+        return {
+          ...p,
+          index: (p.index + d + p.items.length) % p.items.length
+        };
+      })
     }));
-  })(), view === "characters" && !sheetOpen && !overlayOpen && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })(), view === "characters" && !overlayOpen && /*#__PURE__*/React.createElement("div", {
+    style: sheetOpen ? {
+      display: "none"
+    } : undefined
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -13988,10 +14180,14 @@ function RolecraftVault() {
       textOverflow: "ellipsis",
       maxWidth: 170
     }
-  }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !sheetOpen && !overlayOpen && (() => {
+  }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !overlayOpen && (() => {
     const needle = personaQ.trim().toLowerCase();
     const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement("div", {
+      style: sheetOpen ? {
+        display: "none"
+      } : undefined
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -14862,7 +15058,8 @@ function RolecraftVault() {
         gallery: (vp.gallery || []).map((g, j) => j === idx ? {
           ...g,
           caption: text
-        } : g)
+        } : g),
+        updatedAt: Date.now()
       }),
       onReorderImages: g => {
         persistPersona({
@@ -15676,94 +15873,107 @@ function RolecraftVault() {
     onExportCharSnap: (scope, hide) => askExport((scope === "all" ? "every variant in CharSnap format" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version in CharSnap format") + (hide ? ", with its guts hidden" : ""), () => exportCharSnap(vc, scope, hide), unknownTagWarning(vc)),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
-        return persistChar({
-          ...vc,
+        return patchChar(vc.id, cur => ({
+          ...cur,
           sectionOrder: keys
-        });
+        }));
       },
-      onSetProfile: (imgId, variantId) => variantId ? persistChar({
-        ...vc,
-        variants: (vc.variants || []).map(v => v.id === variantId ? { ...v, profileImg: imgId } : v),
+      onSetProfile: (imgId, variantId) => variantId ? patchChar(vc.id, cur => ({
+        ...cur,
+        variants: (cur.variants || []).map(v => v.id === variantId ? { ...v, profileImg: imgId } : v),
         updatedAt: Date.now()
-      }).then(() => toast("Portrait set for \u201c" + (((vc.variants || []).find(v => v.id === variantId) || {}).name || "variant") + "\u201d")) : persistChar({
-        ...vc,
+      })).then(() => toast("Portrait set for \u201c" + (((vc.variants || []).find(v => v.id === variantId) || {}).name || "variant") + "\u201d")) : patchChar(vc.id, cur => ({
+        ...cur,
         profileImg: imgId,
         updatedAt: Date.now()
-      }),
-      onCaption: (idx, text) => persistChar({
-        ...vc,
-        gallery: (vc.gallery || []).map((g, j) => j === idx ? {
+      })),
+      onCaption: (idx, text) => patchChar(vc.id, cur => ({
+        ...cur,
+        gallery: (cur.gallery || []).map((g, j) => j === idx ? {
           ...g,
           caption: text
-        } : g)
-      }),
+        } : g),
+        updatedAt: Date.now()
+      })),
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
         idSet.forEach(id => {
           dropImage(id);
         });
         forgetBlur(idSet);
-        const patch = {
-          ...vc,
-          gallery: (vc.gallery || []).filter(g => !idSet.has(g.imgId)),
-          imgMeta: withoutImgMeta(vc.imgMeta, idSet),
-          // a variant's portrait can be deleted from the grid too
-          variants: (vc.variants || []).map(v => idSet.has(v.profileImg) ? { ...v, profileImg: null } : v),
-          updatedAt: Date.now()
-        };
-        if (idSet.has(vc.profileImg)) patch.profileImg = null;
-        if (idSet.has(vc.banner)) patch.banner = null;
-        await persistChar(patch);
+        await patchChar(vc.id, cur => {
+          const patch = {
+            ...cur,
+            gallery: (cur.gallery || []).filter(g => !idSet.has(g.imgId)),
+            imgMeta: withoutImgMeta(cur.imgMeta, idSet),
+            variants: (cur.variants || []).map(v => idSet.has(v.profileImg) ? { ...v, profileImg: null } : v),
+            updatedAt: Date.now()
+          };
+          if (idSet.has(cur.profileImg)) patch.profileImg = null;
+          if (idSet.has(cur.banner)) patch.banner = null;
+          return patch;
+        });
         toast(imgIds.length + (imgIds.length === 1 ? " image deleted" : " images deleted"));
       },
       onCreateAlbum: async name => {
         const n = (name || "").trim();
         if (!n) return;
-        const known = (vc.albums || []).slice();
-        const exists = known.indexOf(n) >= 0 || (vc.gallery || []).some(g => (g.album || "").trim() === n);
-        if (exists) {
+        let added = false;
+        await patchChar(vc.id, cur => {
+          const known = (cur.albums || []).slice();
+          const exists = known.indexOf(n) >= 0 || (cur.gallery || []).some(g => (g.album || "").trim() === n);
+          if (exists) return cur;
+          known.push(n);
+          added = true;
+          return { ...cur, albums: known, updatedAt: Date.now() };
+        });
+        if (!added) {
           toast("That album already exists");
           return;
         }
-        known.push(n);
-        await persistChar({ ...vc, albums: known, updatedAt: Date.now() });
         toast("Album \u201c" + n + "\u201d created \u2014 tick images and add them any time");
       },
       onSetVariant: async (imgIds, variantId) => {
         const idSet = new Set(imgIds);
-        const gallery = (vc.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, variantId: variantId } : g);
-        const galleryIds = new Set((vc.gallery || []).map(g => g.imgId));
-        const imgMeta = { ...(vc.imgMeta || {}) };
-        imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
-          imgMeta[id] = { ...(imgMeta[id] || {}), variantId: variantId };
+        await patchChar(vc.id, cur => {
+          const gallery = (cur.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, variantId: variantId } : g);
+          const galleryIds = new Set((cur.gallery || []).map(g => g.imgId));
+          const imgMeta = { ...(cur.imgMeta || {}) };
+          imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
+            imgMeta[id] = { ...(imgMeta[id] || {}), variantId: variantId };
+          });
+          return { ...cur, gallery, imgMeta, updatedAt: Date.now() };
         });
         const touched = imgIds.length;
-        await persistChar({ ...vc, gallery, imgMeta, updatedAt: Date.now() });
         const vName = variantId === DEFAULT_VID ? "Default" : variantId ? ((vc.variants || []).find(v => v.id === variantId) || {}).name || "that variant" : "";
         toast(variantId ? touched + (touched === 1 ? " image assigned to " : " images assigned to ") + "\u201c" + vName + "\u201d"
           : touched + (touched === 1 ? " image is now shared across variants" : " images are now shared across variants"));
       },
       onDeleteAlbum: async name => {
-        const gallery = (vc.gallery || []).map(g => (g.album || "") === name ? { ...g, album: "" } : g);
-        const imgMeta = { ...(vc.imgMeta || {}) };
-        Object.keys(imgMeta).forEach(id => {
-          if (imgMeta[id] && imgMeta[id].album === name) imgMeta[id] = { ...imgMeta[id], album: "" };
+        await patchChar(vc.id, cur => {
+          const gallery = (cur.gallery || []).map(g => (g.album || "") === name ? { ...g, album: "" } : g);
+          const imgMeta = { ...(cur.imgMeta || {}) };
+          Object.keys(imgMeta).forEach(id => {
+            if (imgMeta[id] && imgMeta[id].album === name) imgMeta[id] = { ...imgMeta[id], album: "" };
+          });
+          return { ...cur, gallery, imgMeta, albums: (cur.albums || []).filter(a => a !== name), updatedAt: Date.now() };
         });
-        await persistChar({ ...vc, gallery, imgMeta, albums: (vc.albums || []).filter(a => a !== name), updatedAt: Date.now() });
         toast("Album “" + name + "” removed — its pictures are still here");
       },
       onSetAlbum: async (imgIds, albumName) => {
         const idSet = new Set(imgIds);
-        const gallery = (vc.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, album: albumName } : g);
-        const galleryIds = new Set((vc.gallery || []).map(g => g.imgId));
-        const imgMeta = { ...(vc.imgMeta || {}) };
-        imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
-          imgMeta[id] = { ...(imgMeta[id] || {}), album: albumName };
+        await patchChar(vc.id, cur => {
+          const gallery = (cur.gallery || []).map(g => idSet.has(g.imgId) ? { ...g, album: albumName } : g);
+          const galleryIds = new Set((cur.gallery || []).map(g => g.imgId));
+          const imgMeta = { ...(cur.imgMeta || {}) };
+          imgIds.filter(id => !galleryIds.has(id)).forEach(id => {
+            imgMeta[id] = { ...(imgMeta[id] || {}), album: albumName };
+          });
+          const known = (cur.albums || []).slice();
+          if (albumName && known.indexOf(albumName) < 0) known.push(albumName);
+          return { ...cur, gallery, imgMeta, albums: known, updatedAt: Date.now() };
         });
         const touched = imgIds.length;
-        const known = (vc.albums || []).slice();
-        if (albumName && known.indexOf(albumName) < 0) known.push(albumName);
-        await persistChar({ ...vc, gallery, imgMeta, albums: known, updatedAt: Date.now() });
         if (!touched) {
           return;
         }
@@ -15771,11 +15981,11 @@ function RolecraftVault() {
           : touched + (touched === 1 ? " image removed from its album" : " images removed from their albums"));
       },
       onReorderImages: g => {
-        persistChar({
-          ...vc,
+        patchChar(vc.id, cur => ({
+          ...cur,
           gallery: g,
           updatedAt: Date.now()
-        });
+        }));
         toast("Gallery order updated");
       }
     });

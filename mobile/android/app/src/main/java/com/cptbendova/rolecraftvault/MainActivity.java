@@ -1,8 +1,10 @@
 package com.cptbendova.rolecraftvault;
 
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
@@ -19,6 +21,10 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            setRecentsScreenshotEnabled(false);
+        }
         int navy = Color.parseColor("#0A0E1C");
         window.setStatusBarColor(navy);
         window.setNavigationBarColor(navy);
@@ -40,5 +46,26 @@ public class MainActivity extends BridgeActivity {
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         webView.setBackgroundColor(navy);
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        pingBackground();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        pingBackground();
+    }
+
+    private void pingBackground() {
+        if (this.bridge == null) return;
+        WebView webView = this.bridge.getWebView();
+        if (webView == null) return;
+        webView.evaluateJavascript(
+            "(function(){try{if(typeof window.__rcvOnBackground==='function')window.__rcvOnBackground();}catch(e){}})();",
+            null);
     }
 }
