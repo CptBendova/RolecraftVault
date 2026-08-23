@@ -2,12 +2,14 @@
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
-$root = "C:\Rolecraft\rolecraft-vault"
-$brand = Join-Path $root "build\_brand"
+# Derived from this script's own location, so a clone works anywhere.
+$brandDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = Split-Path -Parent (Split-Path -Parent $brandDir)
+$brand = $brandDir
 $crest = Join-Path $brand "crest-1024.png"
-$setupSrc = "C:\Users\justi\.grok\sessions\C%3A%5CUsers%5Cjusti\01a02d21-029f-7631-9e1e-91a1b88608fa\images\3.jpg"
-$welcomeSrc = "C:\Users\justi\.grok\sessions\C%3A%5CUsers%5Cjusti\01a02d21-029f-7631-9e1e-91a1b88608fa\images\5.jpg"
-$headerSrc = "C:\Users\justi\.grok\sessions\C%3A%5CUsers%5Cjusti\01a02d21-029f-7631-9e1e-91a1b88608fa\images\4.jpg"
+$setupSrc = Join-Path $brand "src\setup-source.jpg"
+$welcomeSrc = Join-Path $brand "src\welcome-source.jpg"
+$headerSrc = Join-Path $brand "src\header-source.jpg"
 
 function Load-Img($p) { [System.Drawing.Image]::FromFile($p) }
 function New-Bmp($w,$h) {

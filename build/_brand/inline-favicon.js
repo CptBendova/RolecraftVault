@@ -1,0 +1,11 @@
+const fs = require("fs");
+const path = require("path");
+const root = path.join(__dirname, "..", "..");
+const b = fs.readFileSync(path.join(__dirname, "ico-app", "48.png")).toString("base64");
+const uri = "data:image/png;base64," + b;
+const htmlPath = path.join(root, "web", "index.html");
+let html = fs.readFileSync(htmlPath, "utf8");
+const next = html.replace(/<link rel="icon"[^>]*>/, '<link rel="icon" type="image/png" href="' + uri + '">');
+if (next === html) throw new Error("icon tag not replaced");
+fs.writeFileSync(htmlPath, next);
+console.log("inlined favicon", uri.length);

@@ -2,7 +2,8 @@
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
-$root = "C:\Rolecraft\rolecraft-vault"
+# Derived from this script's own location, so a clone works anywhere.
+$root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $crestPath = Join-Path $root "app\vendor\crest-1024.png"
 $navy = [System.Drawing.Color]::FromArgb(10, 14, 28)
 
