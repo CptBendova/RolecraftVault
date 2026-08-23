@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.186";
+const APP_VERSION = "1.187";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.186";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.186 — current",
+  heading: "1.187 — current",
+  notes: ["Two limits that keep a phone from running out of memory had stopped doing their job. Neither showed up as a message: the app simply became heavier the longer you used it, and on a large vault it could close on its own.","The first is the small preview of each picture. The phone is meant to keep the last sixty-four and let the rest go, but since 1.182 it kept every one it had ever read, so scrolling a big library slowly filled the phone's memory and never gave any of it back. It lets them go again.","The second is the rule that keeps full-size originals off a phone. A picture is only drawn from its original when it has no smaller preview, and then only if it is small. That test relied on a note of how much each picture weighs, and a picture that had never been measured was let through instead of held back, which is the opposite of what was meant. Those are the pictures most likely to be old and large. Each one is now measured the first time it comes up, kept only if it is genuinely small, and skipped without being read at all from then on."]
+}, {
+  heading: "1.186",
   notes: ["On a phone, leaving the app — Home, Recents, or switching to another app — locks the vault again, so the PIN is required when you come back. The preview in the app switcher is blank, so nothing from the library is visible there. A copy that is already running is left to finish.","Restoring a lore entry or prompt from the bin no longer lands it on the persona list. Deleting a picture takes it off the screen straight away. Captions count as an update. Opening a character keeps your place in the list. The vault no longer holds every original in memory at once — the character you opened stays ready to swipe, and the rest load quietly in the background."]
 }, {
   heading: "1.185",
@@ -11564,7 +11567,10 @@ function RolecraftVault() {
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
-  const IMG_CACHE_MAX = 0;
+  /* A picture with no thumbnail may still be drawn on a card from its
+     original, but only on a phone if it is small. */
+  const PHONE_CARD_MAX = 1000000;
+  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11610,19 +11616,26 @@ function RolecraftVault() {
              thumbnail and the original is small enough for a card. Loading
              every gallery original is what closed the app. */
           let allowFull = !ON_PHONE;
+          let sizeKnown = true;
           if (ON_PHONE) {
             try {
               const n = Number(await sGet("sz:" + imgId));
-              allowFull = !n || n < 1000000;
+              sizeKnown = Number.isFinite(n) && n > 0;
+              allowFull = sizeKnown ? n < PHONE_CARD_MAX : true;
             } catch (e) {
               allowFull = false;
+              sizeKnown = false;
             }
           }
           if (allowFull) {
             const full = await sGet("img:" + imgId);
             if (full) {
-              queueImg(imgId, full);
-              return;
+              const size = dataUrlSize(full);
+              if (ON_PHONE && !sizeKnown) sSet("sz:" + imgId, String(size)).catch(() => {});
+              if (!ON_PHONE || size < PHONE_CARD_MAX) {
+                queueImg(imgId, full);
+                return;
+              }
             }
           }
           imgLoading.current.delete(imgId);
