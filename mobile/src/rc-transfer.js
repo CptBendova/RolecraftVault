@@ -196,7 +196,7 @@
   /* CapacitorHttp loads a whole response into JS as base64. Around 130 MB the
      phone stops. Slices stay at 2 MB, so a 12 MB picture is six calls that
      are joined here, never one giant native payload. */
-  const SLICE_BYTES = 2 * 1024 * 1024;
+  const SLICE_BYTES = 3 * 1024 * 1024;
   async function downloadSliced(target, path, totalBytes, timeoutMs, onBytes) {
     if (!totalBytes || totalBytes <= SLICE_BYTES) {
       const blob = await ask(target, path, "GET", null, timeoutMs);
@@ -230,24 +230,47 @@
      returns { value } and rejects outright when a key is missing rather than
      answering null. Both shapes are handled here so a record that vanishes
      mid-scan is skipped instead of taking the whole sync down. */
+  /* Fingerprints already written when a record was saved. A second copy must
+     not decrypt every picture just to see it is already here — that is what
+     made "checking records" crawl, and it is why a retry after a failed copy
+     felt as slow as the first. Keys with no fingerprint are treated as
+     missing and will be fetched; they get a fingerprint when they land. */
+  let cachedLocal = null;
   async function localManifest(report) {
-    const keys = (await window.storage.list()).keys;
-    const m = {};
-    const hasher = window.storage.hash
-      ? k => window.storage.hash(k)
-      : async k => {
-          const got = await window.storage.get(k);
-          const v = got && got.value;
-          if (v === null || v === undefined) return null;
-          return sha16(String(v));
-        };
-    for (let i = 0; i < keys.length; i++) {
-      try {
-        const h = await hasher(keys[i]);
-        if (h) m[keys[i]] = h;
-      } catch (e) {}
-      if (report) report(i + 1, keys.length);
+    if (cachedLocal && Date.now() - cachedLocal.at < 120000) {
+      if (report) report(1, 1);
+      return cachedLocal.manifest;
     }
+    const m = {};
+    if (window.storage.scan) {
+      if (report) report(0, 1);
+      const scan = await window.storage.scan();
+      const keys = scan.keys || [];
+      const hashes = scan.hashes || {};
+      for (let i = 0; i < keys.length; i++) {
+        const h = hashes[keys[i]];
+        if (typeof h === "string" && h.length === 16) m[keys[i]] = h;
+      }
+      if (report) report(keys.length || 1, keys.length || 1);
+    } else {
+      const keys = (await window.storage.list()).keys;
+      const hasher = window.storage.hash
+        ? k => window.storage.hash(k)
+        : async k => {
+            const got = await window.storage.get(k);
+            const v = got && got.value;
+            if (v === null || v === undefined) return null;
+            return sha16(String(v));
+          };
+      for (let i = 0; i < keys.length; i++) {
+        try {
+          const h = await hasher(keys[i]);
+          if (h) m[keys[i]] = h;
+        } catch (e) {}
+        if (report) report(i + 1, keys.length);
+      }
+    }
+    cachedLocal = { at: Date.now(), manifest: m };
     return m;
   }
 
@@ -324,7 +347,7 @@
       }
     }
 
-    let bytes = 0, records = [], saved = 0;
+    let bytes = 0, records = [], saved = 0, saveFailed = 0;
     const wait = ms => new Promise(r => setTimeout(r, ms));
     const saveError = e => {
       const m = String((e && e.message) || e);
@@ -347,18 +370,22 @@
         await C.nativePromise("Filesystem", "mkdir", { path: "vault", directory: "DATA", recursive: true });
       } catch (e) {}
     }
+    const persistOne = async (k, v) => {
+      try {
+        await window.storage.set(k, v);
+        saved++;
+      } catch (e) {
+        const msg = saveError(e);
+        if (/ran out of room|blocked the app from saving/.test(msg)) throw new Error(msg);
+        saveFailed++;
+      }
+      phase("saving", saved + saveFailed, needed.length);
+      if ((saved + saveFailed) % 8 === 0) await wait(0);
+    };
     const saveRecords = async recs => {
       for (let i = 0; i < recs.length; i++) {
-        try {
-          await window.storage.set(recs[i].k, recs[i].v);
-        } catch (e) {
-          recs[i].v = null;
-          throw new Error(saveError(e));
-        }
+        await persistOne(recs[i].k, recs[i].v);
         recs[i].v = null;
-        saved++;
-        phase("saving", saved, needed.length);
-        if (i % 8 === 7) await wait(0);
       }
     };
     try {
@@ -412,16 +439,7 @@
             bytes += piece.length;
             bytesDone += want || piece.length;
             phase("unpacking", i + 1, batchSizes.length);
-            await decryptAndSave(piece, target.secret, async (k, v) => {
-              try {
-                await window.storage.set(k, v);
-              } catch (e) {
-                throw new Error(saveError(e));
-              }
-              saved++;
-              phase("saving", saved, needed.length);
-              if (saved % 8 === 0) await wait(0);
-            });
+            await decryptAndSave(piece, target.secret, persistOne);
             piece = null;
           }
         } else {
@@ -456,9 +474,16 @@
       await window.storage.delete(removable[i]);
       phase("removing", i + 1, removable.length);
     }
+    cachedLocal = null;
     phase("done", 1, 1);
-    return Object.assign({ ok: true, added, updated, removed: removable.length, unchanged, bytes }, who);
+    return Object.assign({
+      ok: true,
+      partial: saveFailed > 0,
+      failed: saveFailed,
+      added, updated, removed: removable.length, unchanged, bytes
+    }, who);
     } catch (e) {
+      cachedLocal = null;
       return Object.assign({ ok: false, error: e && e.message ? e.message : String(e) }, who);
     }
   }

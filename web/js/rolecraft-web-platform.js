@@ -54,6 +54,32 @@
       });
     });
   }
+  /* One cursor over the store: data keys plus every remembered fingerprint.
+     A phone copy used to open a new transaction for each picture just to read
+     a 16-char hash, which is why "checking records" crawled on a large vault. */
+  function idbScan() {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var t = d.transaction(STORE, "readonly").objectStore(STORE);
+        var keys = [];
+        var hashes = {};
+        var req = t.openCursor();
+        req.onsuccess = function (e) {
+          var c = e.target.result;
+          if (!c) { res({ keys: keys, hashes: hashes }); return; }
+          var k = c.key;
+          if (typeof k === "string") {
+            if (k.indexOf("v:") === 0) keys.push(k.slice(2));
+            else if (k.indexOf("h:") === 0 && typeof c.value === "string" && c.value.length === 16) {
+              hashes[k.slice(2)] = c.value;
+            }
+          }
+          c.continue();
+        };
+        req.onerror = function () { rej(req.error); };
+      });
+    });
+  }
 
   /* Pictures and other large records on Android live as encrypted files in
      the app's private vault folder (Directory.DATA/vault/), not as strings
@@ -66,7 +92,7 @@
   var BIN_MARK = "bin:";
   var FS_DIR = "DATA";
   var FS_CHUNK = 512 * 1024;
-  var BIN_CHUNK = 384 * 1024;
+  var BIN_CHUNK = 512 * 1024;
   var FS_LARGE = 16 * 1024;
   var VAULT_DIR = "vault/";
   var WRAP_KEY_ID = "__wrap__";
@@ -267,11 +293,17 @@
   var SEC_KEY = "__security__";       // security record (never enters the v: namespace)
   var masterRaw = null;               // Uint8Array(32) while unlocked
   var masterKey = null;               // CryptoKey while unlocked
+  var securityCache = undefined;
 
   function loadSecurity() {
-    return idbGet(SEC_KEY).then(function (s) { return s ? JSON.parse(s) : null; });
+    if (securityCache !== undefined) return Promise.resolve(securityCache);
+    return idbGet(SEC_KEY).then(function (s) {
+      securityCache = s ? JSON.parse(s) : null;
+      return securityCache;
+    });
   }
   function saveSecurity(s) {
+    securityCache = s || null;
     return s ? idbSet(SEC_KEY, JSON.stringify(s)) : idbDel(SEC_KEY);
   }
   function deriveFor(pw, salt) {
@@ -323,24 +355,28 @@
      in IDB as pwd:/raw: the way the browser edition always has. */
   function putPlain(key, plain, aesKey) {
     var text = String(plain);
+    var hashP = sha16plain(text);
     function remember() {
-      return sha16plain(text).then(function (h) { return idbSet("h:" + key, h); });
+      return hashP.then(function (h) { return idbSet("h:" + key, h); });
     }
-    return idbGet("v:" + key).then(dropPayloadFile).then(function () {
-      if (nativeFs() && text.length > FS_LARGE) {
-        var k = sealKey(aesKey);
-        if (!k) return Promise.reject(new Error("locked"));
-        return encryptBytes(te.encode(text), k).then(function (bin) {
-          var path = vaultPath(key);
-          return writeBin(path, bin).then(function () {
-            return idbSet("v:" + key, BIN_MARK + path);
+    return idbGet("v:" + key).then(function (stored) {
+      var cleared = stored ? dropPayloadFile(stored) : Promise.resolve();
+      return cleared.then(function () {
+        if (nativeFs() && text.length > FS_LARGE) {
+          var k = sealKey(aesKey);
+          if (!k) return Promise.reject(new Error("locked"));
+          return encryptBytes(te.encode(text), k).then(function (bin) {
+            var path = vaultPath(key);
+            return writeBin(path, bin).then(function () {
+              return idbSet("v:" + key, BIN_MARK + path);
+            });
           });
-        });
-      }
-      var payloadP = aesKey
-        ? aesEncrypt(text, aesKey).then(function (b) { return "pwd:" + b; })
-        : Promise.resolve("raw:" + text);
-      return payloadP.then(function (payload) { return idbSet("v:" + key, payload); });
+        }
+        var payloadP = aesKey
+          ? aesEncrypt(text, aesKey).then(function (b) { return "pwd:" + b; })
+          : Promise.resolve("raw:" + text);
+        return payloadP.then(function (payload) { return idbSet("v:" + key, payload); });
+      });
     }).then(remember);
   }
   function hashUtf8File(path) {
@@ -454,6 +490,11 @@
       return dataKeys().then(function (keys) {
         return { keys: keys.filter(function (k) { return !prefix || k.indexOf(prefix) === 0; }), prefix: prefix };
       });
+    },
+    /* All data keys and their fingerprints in one pass. A copy uses this to
+       skip records already here without reading pictures. */
+    scan: function () {
+      return idbScan();
     },
   };
 

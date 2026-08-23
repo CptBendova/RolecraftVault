@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.175";
+const APP_VERSION = "1.176";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.175";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.175 — current",
+  heading: "1.176 — current",
+  notes: ["Copying a large vault between devices is much quicker to check, and a copy that hits a bad record no longer stops the rest. Checking what is already on the phone used to read every picture just to compare fingerprints; it now reads the fingerprints it already stored when those pictures were saved, so a retry after a failed copy only fetches what is still missing. If one picture cannot be written, the rest of the copy still runs, and the next try picks up the gaps. Both devices need this version."]
+}, {
+  heading: "1.175",
   notes: ["The lock screen crest is a new loop of the still shield, with gold dust and light moving around it. Imagine puts a Grok mark in the corner of that film; cutting the mark off a wide frame used to slide the shield to the side. The square on the lock screen is taken from the middle of the wide frame, around the shield, so the mark is gone and the keyhole stays in the centre."]
 }, {
   heading: "1.174",
@@ -10106,7 +10109,7 @@ function SettingsModal({
       setXferProg(null);
       setXferPlan(null);
       if (r && r.ok) {
-        setXferCode("");
+        if (!r.partial) setXferCode("");
         if (r.upToDate) {
           setXferMsg({ ok: true, text: "Already up to date \u2014 nothing needed copying (" + r.unchanged + " records checked)." });
         } else {
@@ -10115,7 +10118,10 @@ function SettingsModal({
           if (r.updated) bits.push(r.updated + " updated");
           if (r.removed) bits.push(r.removed + " removed");
           const mb = r.bytes ? " (" + (r.bytes > 1048576 ? (r.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.bytes / 1024)) + " KB") + " transferred)" : "";
-          setXferMsg({ ok: true, text: (bits.join(", ") || "No changes") + mb + " onto " + (r.thisDevice || "this device") + ", " + r.unchanged + " already matched. Relaunch to see them." });
+          const partial = r.partial && r.failed
+            ? " " + r.failed + " could not be saved this time. Copy again \u2014 what already arrived is kept."
+            : " Relaunch to see them.";
+          setXferMsg({ ok: !r.partial, text: (bits.join(", ") || "No changes") + mb + " onto " + (r.thisDevice || "this device") + ", " + r.unchanged + " already matched." + partial });
         }
       } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
     }
