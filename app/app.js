@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.181";
+const APP_VERSION = "1.182";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.181";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.181 — current",
+  heading: "1.182 — current",
+  notes: ["Pictures on a phone stay visible while you scroll the library. Only a handful of previews were being kept, so cards further down went blank. After unlock the phone now reads every picture preview in the background; originals stay on disk until you open a character or persona, and then that record’s full pictures are loaded so swiping is already ready. Windows no longer decodes every gallery in the vault the moment it opens, which is what made it feel slow."]
+}, {
+  heading: "1.181",
   notes: ["If a PIN is set, the lock screen is a number pad. A PIN is digits only, but the field used to open the full keyboard, which on a phone covered the screen and offered letters you cannot use. Tap the digits, or use a hardware number row. You can still switch to the master password."]
 }, {
   heading: "1.180",
@@ -2751,7 +2754,12 @@ function Lightbox({
 }) {
   const [playing, setPlaying] = useState(!!autoPlay);
   useEffect(() => {
-    if (requestFull && items[index]) requestFull(items[index].imgId);
+    if (!requestFull || !items.length) return;
+    const n = items.length;
+    requestFull(items[index].imgId, true);
+    if (n > 1) requestFull(items[(index + 1) % n].imgId, true);
+    if (n > 2) requestFull(items[(index + 2) % n].imgId);
+    if (n > 1) requestFull(items[(index - 1 + n) % n].imgId);
   }, [index, items, requestFull]);
   useEffect(() => {
     if (!playing || items.length < 2) return;
@@ -4312,9 +4320,6 @@ function ImageGridView({
     setConfirmDel(false);
   }, [sel]);
   useEffect(() => {
-    items.forEach(it => it.imgId && requestFull && requestFull(it.imgId));
-  }, []);
-  useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null) onClose();
     };
@@ -5576,6 +5581,7 @@ function CharacterPage({
   fullCache,
   loadImage,
   requestFull,
+  warmFull,
   blurred,
   onToggleBlur,
   escOff,
@@ -5638,10 +5644,13 @@ function CharacterPage({
     return out;
   })();
   useEffect(() => {
-    [c.profileImg, ...(c.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(loadImage);
-    (c.variants || []).forEach(v => v.profileImg && loadImage(v.profileImg));
-    requestFull(c.profileImg);
-  }, [c]);
+    const ids = [c.profileImg, c.banner, ...(c.gallery || []).map(g => g.imgId)];
+    (c.variants || []).forEach(v => {
+      if (v.profileImg) ids.push(v.profileImg);
+    });
+    ids.forEach(id => id && loadImage(id));
+    return warmFull(ids);
+  }, [c.id, c.profileImg, c.banner, c.gallery, c.variants, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -6466,6 +6475,7 @@ function PersonaPage({
   fullCache,
   loadImage,
   requestFull,
+  warmFull,
   blurred,
   onToggleBlur,
   escOff,
@@ -6559,9 +6569,10 @@ function PersonaPage({
     return out;
   })();
   useEffect(() => {
-    [p.avatar, ...gallery.map(g => g.imgId)].filter(Boolean).forEach(loadImage);
-    requestFull(p.avatar);
-  }, [p]);
+    const ids = [p.avatar, ...(p.gallery || []).map(g => g.imgId)];
+    ids.forEach(id => id && loadImage(id));
+    return warmFull(ids);
+  }, [p.id, p.avatar, p.gallery, loadImage, warmFull]);
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && lb === null && !ss && !grid && !escOff) onClose();
@@ -10883,39 +10894,31 @@ function RolecraftVault() {
     })();
   }, [authState.checked, authState.locked]);
 
-  /* --- preload thumbnails for everything (dashboard wall is randomized) ---
-     On a phone the vault lives on disk and only the pictures on screen should
-     be in memory. Pulling every gallery, lore and prompt image into the cache
-     is what closed the app on a library of a few gigabytes. Portraits for the
-     cards still load; the rest wait until that screen is opened. The dashboard
-     wall asks for the tiles it is actually showing. */
+  /* Previews (thumbs) for the library. On a phone every picture preview is
+     queued after unlock so cards, the dashboard wall and galleries are not
+     blank. Originals stay on disk until a record is opened. On Windows only
+     portraits and covers load up front — pulling every gallery at once is
+     what made the desktop app hitch. */
   useEffect(() => {
     if (!ready) return;
     const onPhone = typeof window !== "undefined" && !!window.Capacitor;
     chars.forEach(c => {
       if (c.profileImg) loadImage(c.profileImg);
-      if (!onPhone) (c.gallery || []).forEach(g => loadImage(g.imgId));
+      if (onPhone) charImgIds(c).forEach(id => loadImage(id));
     });
     personas.forEach(p => {
       if (p.avatar) loadImage(p.avatar);
-      if (!onPhone) (p.gallery || []).forEach(g => loadImage(g.imgId));
+      if (onPhone) personaImgIds(p).forEach(id => loadImage(id));
     });
     Object.values(bucketMeta).forEach(m => {
       if (m && m.cover) loadImage(m.cover);
     });
-    if (onPhone) return;
-    [...chars.map(c => ({
-      u: c.updatedAt,
-      img: c.profileImg
-    })), ...personas.map(p => ({
-      u: p.updatedAt,
-      img: p.avatar
-    }))].filter(r => r.u && r.img).sort((a, b) => b.u - a.u).slice(0, 8).forEach(r => loadImage(r.img));
-    lore.forEach(e => (e.images || []).forEach(im => loadImage(im.imgId)));
+    if (!onPhone) return;
+    lore.forEach(e => (e.images || []).forEach(im => im && im.imgId && loadImage(im.imgId)));
     Object.values(loreMeta).forEach(m => {
       if (m && m.cover) loadImage(m.cover);
     });
-    prompts.forEach(p => (p.images || []).forEach(im => loadImage(im.imgId)));
+    prompts.forEach(p => (p.images || []).forEach(im => im && im.imgId && loadImage(im.imgId)));
     Object.values(promptMeta).forEach(m => {
       if (m && m.cover) loadImage(m.cover);
     });
@@ -11380,8 +11383,13 @@ function RolecraftVault() {
        them would ever load again after unlocking. */
     imgLoading.current.clear();
     imgBuf.current = {};
+    imgQueue.current = [];
+    imgBusy.current = 0;
     fullLoading.current.clear();
     fullOrder.current = [];
+    fullQueue.current = [];
+    fullBusy.current = 0;
+    fullPinned.current.clear();
     setBlurred({});
     setEditingChar(null);
     setEditingRecord(null);
@@ -11418,7 +11426,7 @@ function RolecraftVault() {
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
-  const IMG_CACHE_MAX = ON_PHONE ? 64 : 0;
+  const IMG_CACHE_MAX = 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11446,7 +11454,7 @@ function RolecraftVault() {
   }, []);
   const imgQueue = useRef([]);
   const imgBusy = useRef(0);
-  const IMG_INFLIGHT = ON_PHONE ? 3 : 16;
+  const IMG_INFLIGHT = ON_PHONE ? 3 : 4;
   const pumpImg = useCallback(() => {
     while (imgBusy.current < IMG_INFLIGHT && imgQueue.current.length) {
       const imgId = imgQueue.current.shift();
@@ -11494,32 +11502,71 @@ function RolecraftVault() {
     pumpImg();
   }, [pumpImg]);
   const [fullCache, setFullCache] = useState({});
-  /* Full-size pictures were kept for as long as the app was open, so browsing a
-     gallery of twenty 5MB images held all of them at once and never let go.
-     Only the most recent handful are kept now; anything dropped falls back to
-     its thumbnail and is fetched again when it is actually looked at. */
-  const FULL_CACHE_MAX = typeof window !== "undefined" && window.Capacitor ? 4 : 24;
+  /* Full originals are queued a few at a time. Firing every file at once is
+     what made Windows hitch, and dropping all but four is why a swipe on the
+     phone reloaded every picture. The open character's pictures are pinned so
+     they stay until you leave. */
+  const FULL_CACHE_MAX = ON_PHONE ? 4 : 48;
+  const FULL_PIN_MAX = ON_PHONE ? 12 : 80;
+  const FULL_INFLIGHT = ON_PHONE ? 2 : 3;
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
-  const requestFull = useCallback(imgId => {
+  const fullQueue = useRef([]);
+  const fullBusy = useRef(0);
+  const fullPinned = useRef(new Set());
+  const pumpFull = useCallback(() => {
+    while (fullBusy.current < FULL_INFLIGHT && fullQueue.current.length) {
+      const imgId = fullQueue.current.shift();
+      if (!imgId) continue;
+      fullBusy.current++;
+      sGet("img:" + imgId).then(v => {
+        if (!v) {
+          fullLoading.current.delete(imgId);
+          return;
+        }
+        fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
+        const evict = [];
+        while (fullOrder.current.length > FULL_CACHE_MAX) {
+          const u = fullOrder.current.findIndex(id => !fullPinned.current.has(id));
+          if (u >= 0) evict.push(fullOrder.current.splice(u, 1)[0]);
+          else if (fullOrder.current.length > FULL_PIN_MAX) evict.push(fullOrder.current.shift());
+          else break;
+        }
+        evict.forEach(id => fullLoading.current.delete(id));
+        setFullCache(p => {
+          const next = { ...p, [imgId]: v };
+          evict.forEach(id => delete next[id]);
+          return next;
+        });
+      }).catch(() => {
+        fullLoading.current.delete(imgId);
+      }).finally(() => {
+        fullBusy.current--;
+        pumpFull();
+      });
+    }
+  }, []);
+  const requestFull = useCallback((imgId, urgent) => {
     if (!imgId || fullLoading.current.has(imgId)) return;
     fullLoading.current.add(imgId);
-    sGet("img:" + imgId).then(v => {
-      if (!v) {
-        fullLoading.current.delete(imgId);
-        return;
+    if (urgent) fullQueue.current.unshift(imgId);else fullQueue.current.push(imgId);
+    pumpFull();
+  }, [pumpFull]);
+  const warmFull = useCallback(ids => {
+    const list = [];
+    const seen = new Set();
+    (ids || []).forEach(id => {
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(id);
       }
-      fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
-      const evict = [];
-      while (fullOrder.current.length > FULL_CACHE_MAX) evict.push(fullOrder.current.shift());
-      evict.forEach(id => fullLoading.current.delete(id));
-      setFullCache(p => {
-        const next = { ...p, [imgId]: v };
-        evict.forEach(id => delete next[id]);
-        return next;
-      });
-    }).catch(() => fullLoading.current.delete(imgId)); // as above
-  }, []);
+    });
+    fullPinned.current = new Set(list.slice(0, FULL_PIN_MAX));
+    list.forEach((id, i) => requestFull(id, i < 3));
+    return () => {
+      list.forEach(id => fullPinned.current.delete(id));
+    };
+  }, [requestFull]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
@@ -13785,7 +13832,7 @@ function RolecraftVault() {
   }, selected[c.id] && /*#__PURE__*/React.createElement(Ic, {
     d: icons.check,
     size: 14
-  })), c.profileImg && imgCache[c.profileImg] ? /*#__PURE__*/React.createElement("img", {
+  })), (c.profileImg && loadImage(c.profileImg), c.profileImg && imgCache[c.profileImg]) ? /*#__PURE__*/React.createElement("img", {
     src: imgCache[c.profileImg],
     alt: c.name,
     className: blurred[c.profileImg] ? "blur-img" : undefined
@@ -14260,7 +14307,7 @@ function RolecraftVault() {
         if (n[p.id]) delete n[p.id];else n[p.id] = true;
         return n;
       }) : setViewPersonaId(p.id))
-    }, p.avatar && imgCache[p.avatar] ? /*#__PURE__*/React.createElement("img", {
+    }, (p.avatar && loadImage(p.avatar), p.avatar && imgCache[p.avatar]) ? /*#__PURE__*/React.createElement("img", {
       src: imgCache[p.avatar],
       alt: p.name,
       className: blurred[p.avatar] ? "blur-img" : undefined
@@ -14685,6 +14732,7 @@ function RolecraftVault() {
       fullCache: fullCache,
       loadImage: loadImage,
       requestFull: requestFull,
+      warmFull: warmFull,
       blurred: blurred,
       onToggleBlur: toggleBlur,
       toast: toast,
@@ -15496,6 +15544,7 @@ function RolecraftVault() {
       fullCache: fullCache,
       loadImage: loadImage,
       requestFull: requestFull,
+      warmFull: warmFull,
       blurred: blurred,
       onToggleBlur: toggleBlur,
       toast: toast,
