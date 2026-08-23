@@ -17,10 +17,13 @@ app/                the Electron app (this is the product)
   preload.js        the only bridge between main and the interface
   index.html        entry page + CSP
   app.js            THE ENTIRE INTERFACE (~640 KB, compiled React) — see below
+  icon.ico          the app's crest, 10 sizes; BrowserWindow and the shortcuts
+  icon.png          the same at 256, for anything that will not take an .ico
   vendor/           React UMD builds + self-hosted fonts
 web/                embeddable web edition (same interface, browser storage)
 mobile/             Android app: the web edition in a WebView (see mobile/README.md)
-build/installer.nsi NSIS script for the Windows installer
+build/            installer.nsi (NSIS Modern UI) + setup-icon.ico, welcome.bmp,
+                  header.bmp — the installer's own artwork
 scripts/            set-version, sign-update, build-web, build-installer, check-integrity
 keys/               signing key — NEVER commit (see keys/README.txt)
 dist/               build output (gitignored)
@@ -159,17 +162,23 @@ root**. They are not interchangeable.
 
 ## Versioning
 
-The displayed version is a flat number — **1.156** — not semver. It lived in five
+The displayed version is a flat number — **1.159** — not semver. It lived in five
 places that had drifted to three different values, so it now has one owner:
 
 ```bash
-npm run set-version 1.156    # rewrites all four display sites at once
+npm run set-version 1.159    # rewrites all five display sites at once
 ```
 
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
-`app/package.json`, and `!define VERSION` in `build/installer.nsi`. Never edit
+`app/package.json`, `!define VERSION` in `build/installer.nsi`, and both
+`versionName` and `versionCode` in `mobile/android/app/build.gradle`. Never edit
 those by hand. `npm run sign` refuses to sign when the version does not match
 `FACTORY_BUILD`.
+
+The Android `versionCode` has to be a plain increasing integer, so it is derived
+by flattening the display version: 1.159 becomes 1159. It was added late — the
+Android project sat at `versionName "1.0"` / `versionCode 1` for every release up
+to and including 1.158, which is exactly the drift this script exists to stop.
 
 The **root `package.json` keeps its own semver** (`1.9.3`) and is intentionally
 left alone: npm requires valid semver there, and `1.156` is not. Nothing
@@ -223,6 +232,43 @@ put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
   oversized lead tile and becomes an even grid.
 - `.scrollbody` is reused by small scrollers inside panels, which is why the column
   rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
+
+## Icons and installer branding (1.159)
+
+One mark across all three editions: a brass crest with a keyhole on the app's
+dark blue. Letter-based designs were tried first and rejected — an initial says
+nothing the name beside it is not already saying.
+
+Everything is generated from one SVG rather than drawn per platform, so there is
+no second copy to keep in step. The rasters were produced by rendering that SVG
+to a canvas in the browser and reading the PNG bytes back; the `.ico` files are
+assembled in Node, since an ICO is just a directory followed by the PNGs.
+
+- **Windows app.** `app/icon.ico`. The packaged exe is a renamed `electron.exe`,
+  so it wore Electron's icon and called itself Electron in file properties until
+  1.159. `scripts/build-installer.js` now stamps the icon and the version strings
+  with `rcedit` on **every** build, because `dist/` is gitignored and gets
+  rebuilt from scratch elsewhere. Doing it once by hand would not survive.
+- **Windows installer.** `build/setup-icon.ico` is the same crest with a download
+  badge, so setup is telling apart from the app in a Downloads folder. The wizard
+  is Modern UI 2 with `welcome.bmp` (164x314) and `header.bmp` (150x57). NSIS
+  wants BMP for those, 24-bit and bottom-up.
+- **Android.** The adaptive icon is the two vectors in `drawable/` and
+  `drawable-v24/`; the `mipmap-*` PNGs are only for launchers older than API 26,
+  where the shape has to be baked in. The crest spans x 26..82, y 20..88 of the
+  108dp viewport, inside the ~72dp a launcher mask may leave, so no mask clips it.
+- **Web.** A 48px PNG inlined as a data URI in `web/index.html`, rather than a
+  file, because the bundle gets dropped into other people's pages.
+- The finish page launches the app through `explorer.exe`, not directly. The
+  installer runs elevated, and a direct `Exec` would hand that elevation to the
+  app; the vault is per user, so it could quietly create a second empty one under
+  the administrator's account.
+
+To preview wizard changes without installing anything, compile a throwaway copy
+of `installer.nsi` with `RequestExecutionLevel user` and an empty install
+section, run it, and screenshot with PowerShell `CopyFromScreen`. Call
+`SetProcessDPIAware()` first or the window rectangle comes back in the wrong
+coordinate space and the capture is cropped.
 
 ## Testing notes
 

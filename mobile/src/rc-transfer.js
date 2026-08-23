@@ -20,8 +20,33 @@
    is involved and the two sides cannot drift on algorithm choice. */
 (function () {
   "use strict";
+  /* Whatever happens below, window.transfer ends up defined. A panel that
+     explains why it cannot work is worth more than a panel that is not there. */
+  const fail = why => {
+    window.transfer = {
+      canShare: false,
+      status: () => Promise.resolve({ active: false, device: "This device" }),
+      start: () => Promise.resolve({ ok: false, error: why }),
+      stop: () => Promise.resolve({ ok: true }),
+      preview: () => Promise.resolve({ ok: false, error: why }),
+      receive: () => Promise.resolve({ ok: false, error: why }),
+      onProgress: () => () => {}
+    };
+  };
+  try {
 
-  const { CapacitorHttp } = window.Capacitor.Plugins;
+  /* Resolved when a request is actually made, not while this file is being read.
+     The native bridge injects window.Capacitor itself, and reaching into
+     .Plugins before it exists throws, which would abort this whole script and
+     leave window.transfer undefined. The interface only shows a transfer panel
+     when window.transfer exists, so the failure looked like the feature simply
+     not being there, with nothing on screen to explain it. */
+  function nativeHttp() {
+    const C = window.Capacitor;
+    const http = C && C.Plugins && C.Plugins.CapacitorHttp;
+    if (!http) throw new Error("The native network bridge did not load, so this device cannot reach the other one.");
+    return http;
+  }
 
   /* ---------- the pairing code ---------- */
   /* Same alphabet as makeCode on the desktop, and the same forgiving reading of
@@ -120,7 +145,7 @@
   };
 
   async function ask(base, path, method, bodyBytes, timeoutMs) {
-    const res = await CapacitorHttp.request({
+    const res = await nativeHttp().request({
       url: "http://" + base.ip + ":" + base.port + path,
       method: method,
       responseType: "arraybuffer",
@@ -276,4 +301,7 @@
       };
     }
   };
+  } catch (e) {
+    fail("The transfer could not start up on this device: " + (e && e.message ? e.message : e));
+  }
 })();

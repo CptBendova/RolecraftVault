@@ -41,6 +41,21 @@ const edits = [
     find: /^!define VERSION "[^"]*"$/m,
     to: `!define VERSION "${version}"`,
   },
+  {
+    file: "mobile/android/app/build.gradle",
+    find: /versionName "[^"]*"/,
+    to: `versionName "${version}"`,
+  },
+  {
+    /* Android refuses to install over a build with a higher versionCode, and it
+       has to be a plain increasing integer, so the display version is flattened:
+       1.159 becomes 1159. That keeps climbing as long as the version does, and
+       it is derived here rather than typed, because it drifted to "1.0" and sat
+       there for every release up to 1.158. */
+    file: "mobile/android/app/build.gradle",
+    find: /versionCode \d+/,
+    to: `versionCode ${Number(version.replace(".", ""))}`,
+  },
 ];
 
 let failed = false;

@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.158";
+const FACTORY_BUILD = "1.159";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1134,6 +1134,9 @@ function createWindow() {
     x: saved ? saved.x : undefined, y: saved ? saved.y : undefined,
     minWidth: 720, minHeight: 500, show: false,
     backgroundColor: "#0a0e1c", title: "Rolecraft Vault", autoHideMenuBar: true,
+    // Without this the window, the taskbar and alt-tab all show Electron's
+    // default icon, because the packaged exe is a renamed electron.exe.
+    icon: path.join(__dirname, "icon.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
   if (saved && saved.maximized) win.maximize();

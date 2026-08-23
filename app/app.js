@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.158";
+const APP_VERSION = "1.159";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.158";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.158 — current",
+  heading: "1.159 — current",
+  notes: ["The app has an icon of its own at last. It was built on a shell called Electron and had been wearing that shell's plain icon ever since, so on the taskbar, in the Start menu and in alt-tab it looked like a generic app rather than this one, and Windows called it Electron in its file details. It is a brass crest with a keyhole now, and it calls itself Rolecraft Vault everywhere Windows shows a name.","The Android app has the same crest. It is drawn as a proper adaptive icon, which means your launcher can mask it to whatever shape it likes, a circle, a rounded square or a squircle, and the crest sits well inside that shape rather than having its edges clipped.","The setup program looks like part of the app now. It was the plain grey wizard that comes as standard: no artwork, someone else's name along the bottom, and a Properties dialog with nothing in it. It opens on a page with the crest and a line about what the app is, it wears the crest with a small download badge so you can tell it apart from the app itself in a Downloads folder, and it offers to open Rolecraft Vault when it has finished.","Starting a transfer on the Android app could fail before it began, and the transfer panel would simply not be there to explain why. The part that reaches the other device was being set up at the moment the app loaded, which is slightly before Android has finished providing it, and when that failed it took the whole panel with it. It is set up when a transfer is actually made now, and if it still cannot start, the panel appears and says so rather than disappearing."]
+}, {
+  heading: "1.158",
   notes: ["Pictures can be reordered without dragging them. Dragging is the only way a gallery could be rearranged, and dragging does not work on a touch screen at all, so on a tablet or a phone the order of your pictures was simply fixed. Open the grid and every picture now has an arrow on each side that moves it one place. Dragging still works exactly as it did.","Sections and the dashboard were already fine, because both have had move up and move down buttons beside the grip for a while. The gallery had the grip without the buttons. It matches now.","The arrows sit along the bottom of a picture, clear of the buttons for opening, blurring and selecting it, and they work with a finger, a mouse or the keyboard."]
 }, {
   heading: "1.157",
