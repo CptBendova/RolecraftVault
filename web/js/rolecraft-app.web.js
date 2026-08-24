@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.204";
+const APP_VERSION = "1.205";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.204";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.204 — current",
+  heading: "1.205 — current",
+  notes: ["Settings has a small Contributors fold at the bottom. shirohibiki is credited there for a lot of help with how the app looks and with the bugs that kept turning up."]
+}, {
+  heading: "1.204",
   notes: ["On a tablet, an S Pen now does what a finger does. The grid was only listening for a thumb, so the pen could tap a picture but could not drag it, and a drag often scrolled the page instead. The pen now picks a picture up as soon as it moves, a tap still opens it, and hovering shows the buttons on the tile."]
 }, {
   heading: "1.203",
@@ -9978,6 +9981,7 @@ function SettingsModal({
   // version history is collapsed by default — it is reference material, not
   // something to scroll past every time Settings is opened
   const [histOpen, setHistOpen] = useState(false);
+  const [contribOpen, setContribOpen] = useState(false);
   // the bin is collapsed too — with 30 days of deletions it would otherwise
   // push everything below it off the screen
   const [trashOpen, setTrashOpen] = useState(false);
@@ -10944,11 +10948,54 @@ function SettingsModal({
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setContribOpen(o => !o),
+    "aria-expanded": contribOpen,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
+      font: "inherit",
+      color: "var(--text)",
+      textAlign: "left"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      color: "var(--mut)",
+      transform: contribOpen ? "rotate(90deg)" : "none",
+      transition: "transform .12s"
+    }
+  }, "\u25b8"), /*#__PURE__*/React.createElement("span", null, "Contributors")), contribOpen && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 13.5,
+      color: "var(--mut)",
+      lineHeight: 1.55
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      color: "var(--text)",
+      marginBottom: 4
+    }
+  }, "shirohibiki"), "A lot of help with how the app looks, and with the bugs that kept turning up.")), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 12,
       color: "var(--dim)",
-      lineHeight: 1.6
+      lineHeight: 1.6,
+      marginTop: 14
     }
-  }, "Rolecraft Vault v" + APP_VERSION + " · Everything stays on this device. Nothing is uploaded anywhere.")));
+  }, "Rolecraft Vault v" + APP_VERSION + " \u00b7 Everything stays on this device. Nothing is uploaded anywhere.")));
 }
 
 /* ---------- main app ---------- */
