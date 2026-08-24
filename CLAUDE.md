@@ -84,6 +84,10 @@ Editing it by script is normal here. Two things bite repeatedly:
    stamp), marks the package, and the app refuses a patch that needs the installer,
    naming it. `--shell` / `--no-shell` override the detection. Say which artifact is
    needed in the release notes regardless.
+   **`app/vendor/` needs the installer too, and nothing enforces that.** A `.rcvup`
+   carries `app.js` alone, so a changed font, crest or React build reaches nobody.
+   The detection covers the three files above and cannot see artwork, which is
+   exactly how a broken crest once shipped. Check it yourself.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
 6. **Never reference a file from `app.js` by a bare relative path.** A patch is
@@ -239,6 +243,63 @@ is gitignored and therefore missing on a fresh clone. To rebuild it: copy
 `Rolecraft Vault.exe`, delete `resources/default_app.asar`, and copy `app/` into
 `resources/app/`. It also needs NSIS (`winget install NSIS.NSIS`); winget does not
 put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
+
+## Setting up a new machine (done 24 August 2026)
+
+The repository carries its own history and its keys, but none of the toolchain.
+On a fresh Windows box, in this order:
+
+| Tool | How | Note |
+|---|---|---|
+| Node 22+ | `winget install OpenJS.NodeJS.LTS` | last verified on 24.19.0 |
+| JDK 21 | `winget install Microsoft.OpenJDK.21` | sets `JAVA_HOME` machine-wide by itself. Java 25 does not work with this Gradle |
+| NSIS | `winget install NSIS.NSIS` | lands in Program Files (x86), the first path `build-installer.js` checks |
+| Android SDK | command line tools, below | Android Studio is not needed and never was |
+
+Then `npm install`, `npm run check`, and `cd mobile && npm install`.
+
+Nothing about the code needed touching. Four environmental things cost the time:
+
+- **winget does not update an already-open terminal.** `npm` reads as "not
+  recognized" in the window you ran the installer from while working perfectly in
+  a new one. Same for `JAVA_HOME` and `ANDROID_HOME`, and same for any tool
+  spawned from a shell that started before the install.
+- **npm 11 blocks postinstall scripts**, including the one that fetches the
+  Electron binary. It warns rather than failing, so the install looks fine and
+  `npm start` then dies on a missing exe. `npm approve-scripts electron`, or run
+  `node node_modules/electron/install.js` directly.
+- **The Android SDK installs headless.** Unzip `commandlinetools-win-*_latest.zip`
+  from `dl.google.com` into `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest`, set
+  `ANDROID_HOME` and `ANDROID_SDK_ROOT`, then `sdkmanager platform-tools
+  "platforms;android-36" "build-tools;36.0.0"`. Licenses must be accepted first,
+  and `sdkmanager --licenses` does not read a PowerShell pipe: redirect a file of
+  `y` lines into it through `cmd /c` instead. AGP pulls `build-tools;35.0.0` in on
+  its own during the first build, which is expected.
+- **Extract that zip somewhere shallow.** It contains a guava jar named
+  `listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar`, which crosses
+  MAX_PATH from a deep temp directory. `Expand-Archive` then leaves a half
+  unpacked tree that still looks like a folder, and `sdkmanager.bat` is simply
+  absent from it.
+
+The move itself proved two things worth recording. `npm run build:web`
+regenerated `web/js/rolecraft-app.web.js` byte for byte against the committed
+copy, so a release built here matches one built there. And the relative
+`storeFile` path in `mobile/android/keystore.properties` works: a release APK
+built on the new machine reports the same certificate SHA-256 as the keystore.
+Confirm that with `apksigner verify --print-certs`, never with `keytool`.
+
+**Do not run the development build against the real vault.** If the source tree's
+`FACTORY_BUILD` differs from the installed app's version, starting it treats any
+`.rcvup` you have installed as stale and deletes it, silently returning the
+installed app to whatever the last installer gave it. Use a throwaway vault:
+
+```bash
+npx electron app --user-data-dir=./tmp-vault
+```
+
+The library itself lives in `%APPDATA%\Rolecraft Vault\` and is not in the
+project. Move it between machines with the device transfer in Settings, or an
+exported backup.
 
 ## Layout notes
 
