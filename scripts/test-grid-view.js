@@ -9,8 +9,9 @@
 
    Checked in a real browser, both ways round: with a fine pointer the tick and
    the open button compute to opacity 0 until the tile is hovered and a selected
-   tick stays at 1; with a coarse pointer all of them are 1 and the arrows are
-   built. This asserts the parts of that which can be read from the file. */
+   tick stays at 1; with a coarse pointer all of them are 1. The arrows are gone
+   from both, since touch can drag now too. This asserts the parts of that which
+   can be read from the file. */
 const fs = require("fs");
 const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8");
 
@@ -65,8 +66,19 @@ if (m) {
 
 console.log("\ndragging with a thumb:\n");
 check("tiles can be found from a point", /"data-imgid": it\.imgId/.test(SRC));
-check("a picture is picked up by holding, not by moving", /holdTimer\.current = setTimeout/.test(SRC));
-check("the hold is abandoned once the finger travels", /from\.moved = true;\s*\n\s*cancelHold\(\)/.test(SRC));
+/* One finger on a picture always means move it, so there is nothing to guess
+   and nothing to wait for. Scrolling is two fingers, the background, or
+   carrying a picture to the edge. Every earlier attempt guessed, and every
+   guess needed time or direction to make — which is what felt like hesitation. */
+check("a picture is picked up the instant the finger moves",
+  /if \(Math\.abs\(e\.clientX - from\.x\) > 4 \|\| Math\.abs\(e\.clientY - from\.y\) > 4\) liftIt/.test(SRC));
+check("nothing waits on a timer any more", !/holdTimer\.current = setTimeout/.test(SRC));
+check("the tile answers the moment it is touched",
+  /setPressId\(it\.imgId\)/.test(SRC) && /thumb-press/.test(SRC));
+check("a second finger stands the drag down", /A second finger while one is already down/.test(SRC));
+check("one finger is refused a scroll, two are not", /if \(e\.touches && e\.touches\.length > 1\) return;/.test(SRC));
+check("the refusal is armed from first touch, not from the lift",
+  /el\.addEventListener\("touchmove", refuse, \{ passive: false \}\)/.test(SRC));
 check("only touch takes this path", /if \(e\.pointerType !== "touch"/.test(SRC));
 check("the page is held still while carrying",
   /document\.addEventListener\("touchmove", stop, \{ passive: false \}\)/.test(SRC));
@@ -80,16 +92,22 @@ check("the carried tile is marked", /thumbDrag && dragId === it\.imgId \? " thum
 /* Driven for real in a touch-emulated browser against a seeded six picture
    gallery, which is the only way to prove the gesture rather than its parts:
 
-     carried g2 onto g3   ->  g1,g2,g3,g4,g5,g6  became  g1,g3,g2,g4,g5,g6
-     a flick past a tile  ->  nothing picked up, order untouched
-     a quick tap          ->  still opens the picture
+     one finger, first move  ->  lifts at once; g2 onto g3 turned
+                                 g1,g2,g3,g4,g5,g6 into g1,g3,g2,g4,g5,g6
+     touch, before moving    ->  the tile answers, and lets go on release
+     a second finger         ->  the picture is put back, order untouched
+     a tap                   ->  still opens the picture
 
    To repeat it: serve web/, open it with a mobile viewport, seed a character
    through window.storage, then dispatch PointerEvents with pointerType "touch"
-   — pointerdown, wait past 320ms, pointermove, pointerup. Note that a
-   character's portrait appears in the grid but is not movable, and that at 375
-   points wide the grid is a single column, so a drop target more than one tile
-   away is off screen and elementFromPoint returns nothing. */
+   — pointerdown, pointermove, pointerup, with no waiting anywhere.
+
+   Two things cost time before they were understood. A character's portrait
+   appears in the grid but is not movable, so a test that grabs the first tile
+   grabs the one picture that cannot move. And at 375 points the grid is a
+   single column, so a drop target more than one tile away is off screen, where
+   elementFromPoint returns nothing and the drop silently does nothing: scroll
+   the two tiles into view first. */
 
 console.log(bad ? "\n" + bad + " FAILED" : "\nThe grid draws previews, and its controls, cursor and dragging suit the pointer.");
 process.exit(bad ? 1 : 0);

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.197";
+const APP_VERSION = "1.198";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,8 +26,8 @@ const APP_VERSION = "1.197";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.197 — current",
-  notes: ["You can rearrange pictures with your thumb on a phone or tablet. Hold a picture in the grid until it lifts, slide it onto the one you want it to change places with, and let go. Carry it to the top or bottom of the screen and the grid scrolls along with you, so a long gallery can be rearranged without putting the picture down halfway.","Dragging had always relied on something that does not exist on a touch screen, which is the only reason the arrows on each picture were ever added. Now that a thumb can move a picture directly, the arrows are gone. Every picture had two of them sitting on it permanently, which on a small tile is a good part of the picture covered.","Holding first is deliberate. A finger moving across a grid nearly always means scrolling, so a picture is only picked up once your thumb has rested on it. Move before that and the page scrolls exactly as it always did, and a quick tap still opens the picture.","On a computer nothing changes: dragging a picture with the mouse works as it always has, and the arrows had already gone from there in 1.194."]
+  heading: "1.198 — current",
+  notes: ["Moving a picture with your thumb is immediate. Touch one and it answers straight away, and it goes wherever your finger goes from the first moment it moves. There is no holding and no pause to wait through.","One finger on a picture always means move it, which is what makes it instant: there is no longer any question to settle. Before this the app had to work out whether a finger meant “move this” or “scroll past this”, and every way of working that out needs either a moment of waiting or a particular direction of travel. That hesitation was the problem.","Scroll a gallery with two fingers, or by dragging anywhere that is not a picture. If you put a second finger down while moving a picture, the picture goes back where it was and the gallery scrolls instead, so nothing is moved by accident.","You will rarely need to scroll while rearranging anyway: carry a picture to the top or bottom of the screen and the gallery moves along with you.","A quick tap still opens a picture, and nothing about this changes anything on a computer, where the mouse has always dragged them."]
 }, {
   heading: "1.195",
   notes: ["Pictures in the grid show an open hand when you point at them, and the hand closes while you are moving one. It was a magnifying glass before, which promised zooming and said nothing about the fact that pictures can be dragged into the order you want at all.","Where a picture cannot be dragged the magnifying glass is still right, and still there: on a touch screen, and in the smaller picture lists on lore entries and prompts, where clicking really is all it does."]
@@ -1820,6 +1820,10 @@ const CSS = `
      and that letting go will put it somewhere. */
   .rcv .tile.thumb-held { transform: scale(1.06); opacity: .9; z-index: 5;
     box-shadow: 0 10px 26px rgba(0,0,0,.5); }
+  /* Touched, before anything has been decided. Small on purpose: it has to
+     read as the tile answering, without looking like it has been picked up
+     when the gesture may still turn out to be a scroll. */
+  .rcv .tile.thumb-press { transform: scale(.97); transition: transform .06s ease-out; }
   .rcv .dragging { opacity: .45; }
   .rcv .sec-head { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
   .rcv .wtile { position: relative; border-radius: 13px; overflow: hidden; border: 1px solid var(--line);
@@ -4438,9 +4442,18 @@ function ImageGridView({
   const [overId, setOverId] = useState(null);
   /* Picking a picture up with a thumb. holdTimer is the pause that separates
      "I am moving this" from "I am scrolling past it". */
+  const gridRef = useRef(null);
   const holdTimer = useRef(null);
   const touchFrom = useRef(null);
   const [thumbDrag, setThumbDrag] = useState(false);
+  /* which tile is being touched, before anything has been decided about it */
+  const [pressId, setPressId] = useState(null);
+  const liftIt = useCallback(id => {
+    setDragId(id);
+    setThumbDrag(true);
+    setPressId(null);
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+  }, []);
   const cancelHold = useCallback(() => {
     if (holdTimer.current) {
       clearTimeout(holdTimer.current);
@@ -4455,11 +4468,28 @@ function ImageGridView({
     const tile = el && el.closest ? el.closest("[data-imgid]") : null;
     return tile ? tile.getAttribute("data-imgid") : null;
   }, []);
-  /* While a picture is held, the page must not scroll under it. A passive
-     listener cannot refuse a scroll, so this one is added deliberately as
-     non-passive, and only for as long as the drag lasts. Near the top or
-     bottom edge the page is nudged along, or a long grid could only ever be
-     rearranged within one screenful. */
+  /* One finger on a picture is a move, so the browser must not also scroll.
+     touch-action cannot express "one finger no, two fingers yes", so the
+     refusal is made here, and only while exactly one finger is down having
+     started on a tile. Anything else — two fingers, a finger that started on
+     the background — is left alone and scrolls as normal.
+
+     This is attached from the first touch rather than once dragging has begun,
+     because by the time a drag is recognised the browser has already decided
+     it was scrolling and will not be talked out of it. */
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const refuse = e => {
+      if (!touchFrom.current) return;
+      if (e.touches && e.touches.length > 1) return;   // two fingers: let it scroll
+      if (e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchmove", refuse, { passive: false });
+    return () => el.removeEventListener("touchmove", refuse);
+  }, []);
+  /* While a picture is being carried, the grid follows it near the edges, or a
+     long gallery could only be rearranged within one screenful. */
   useEffect(() => {
     if (!thumbDrag) return;
     const stop = e => { if (e.cancelable) e.preventDefault(); };
@@ -4860,6 +4890,7 @@ function ImageGridView({
       padding: "22px 26px 80px"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    ref: gridRef,
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
@@ -4875,7 +4906,7 @@ function ImageGridView({
     }
   }, album === "" ? "Every image is filed into an album." : "\u201c" + album + "\u201d is empty \u2014 switch to All, tick some images, then add them to this album."), shownItems.map((it, i) => /*#__PURE__*/React.createElement("div", {
     key: it.imgId,
-    className: "tile" + (overId === it.imgId && dragId && dragId !== it.imgId ? " drag-over" : "") + (dragId === it.imgId ? " dragging" : "") + (thumbDrag && dragId === it.imgId ? " thumb-held" : ""),
+    className: "tile" + (overId === it.imgId && dragId && dragId !== it.imgId ? " drag-over" : "") + (dragId === it.imgId ? " dragging" : "") + (thumbDrag && dragId === it.imgId ? " thumb-held" : "") + (pressId === it.imgId && !thumbDrag ? " thumb-press" : ""),
     role: "button",
     tabIndex: 0,
     "aria-pressed": !!sel[it.imgId],
@@ -4884,28 +4915,31 @@ function ImageGridView({
     draggable: !!(onMoveImage && it.movable),
     onPointerDown: e => {
       if (e.pointerType !== "touch" || !onMoveImage || !it.movable) return;
+      /* A second finger while one is already down is a scroll, not a move.
+         Put the picture back and stay out of the way. */
+      if (touchFrom.current) {
+        cancelHold();
+        touchFrom.current = null;
+        setPressId(null);
+        setThumbDrag(false);
+        setDragId(null);
+        setOverId(null);
+        return;
+      }
       touchFrom.current = { x: e.clientX, y: e.clientY, id: it.imgId, moved: false };
       cancelHold();
-      /* long enough not to fire while a finger is on its way past, short
-         enough not to feel like waiting */
-      holdTimer.current = setTimeout(() => {
-        holdTimer.current = null;
-        if (!touchFrom.current || touchFrom.current.moved) return;
-        setDragId(it.imgId);
-        setThumbDrag(true);
-        try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
-      }, 320);
+      /* answer straight away, before anything is decided. Most of what felt
+         like a delay was the tile not reacting at all. */
+      setPressId(it.imgId);
     },
     onPointerMove: e => {
       if (e.pointerType !== "touch") return;
       const from = touchFrom.current;
       if (!from) return;
       if (!thumbDrag) {
-        /* still deciding: enough movement means this was a scroll */
-        if (Math.abs(e.clientX - from.x) > 12 || Math.abs(e.clientY - from.y) > 12) {
-          from.moved = true;
-          cancelHold();
-        }
+        /* The moment the finger moves at all, the picture goes with it. The
+           few pixels are only so that the shake of a tap is not a drag. */
+        if (Math.abs(e.clientX - from.x) > 4 || Math.abs(e.clientY - from.y) > 4) liftIt(it.imgId);
         return;
       }
       const over = tileUnder(e.clientX, e.clientY);
@@ -4914,6 +4948,7 @@ function ImageGridView({
     onPointerUp: e => {
       if (e.pointerType !== "touch") return;
       cancelHold();
+      setPressId(null);
       const from = touchFrom.current;
       touchFrom.current = null;
       if (!thumbDrag) return;
@@ -4925,6 +4960,7 @@ function ImageGridView({
     },
     onPointerCancel: () => {
       cancelHold();
+      setPressId(null);
       touchFrom.current = null;
       setThumbDrag(false);
       setDragId(null);
