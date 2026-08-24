@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.201";
+const APP_VERSION = "1.202";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.201";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.201 — current",
+  heading: "1.202 — current",
+  notes: ["Pictures in the grid keep their own shape. A 2:3 portrait stays a portrait and a 16:9 stays wide, instead of being cropped into a square. The same is true of the gallery beside a character on Windows.","Zooming with the mouse wheel, and Small, Medium and Large at the top of the grid, work on Windows as well as on a phone."]
+}, {
+  heading: "1.201",
   notes: ["On a phone, the previous and next buttons no longer sit over a picture you have opened. Swipe to move between them, the same way you already move pictures in the grid. The picture strip down the side of a character is gone there too: Grid is where the pictures live.","Open a picture from the grid and you can zoom in: pinch with two fingers, or double-tap. The mouse wheel does the same on a computer. Swiping still goes to the next picture, unless you are zoomed in, in which case it moves the picture.","The grid itself has a size option: Small, Medium or Large, at the top of the grid, so the tiles can be as big or as many as you want."]
 }, {
   heading: "1.200",
@@ -1895,13 +1898,18 @@ const CSS = `
   .rcv .cpage-grid { display: grid; grid-template-columns: minmax(0, 1100px) minmax(300px, 1fr); gap: 24px; align-items: start; justify-content: center; }
   .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1100px) 200px; }
   .rcv .cpage-grid.nogal .cpage-aside { grid-template-columns: 1fr; }
-  .rcv .cpage-aside { position: sticky; top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
-  .rcv .cpage-aside .tile { aspect-ratio: 1; }
-  .rcv .cpage-aside .tile.full { grid-column: 1 / -1; aspect-ratio: 4/4.6; }
+  .rcv .cpage-aside { position: sticky; top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; align-items: start; }
+  .rcv .cpage-aside .tile { aspect-ratio: 2 / 3; }
+  .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 2 / 3; }
+  .rcv .cpage-aside .tile img { width: 100%; height: 100%; object-fit: contain; }
+  .rcv .imggrid { align-items: start; }
+  .rcv .imggrid .tile { aspect-ratio: 2 / 3; }
+  .rcv .imggrid .tile img { width: 100%; height: 100%; object-fit: contain; }
+  .rcv .imggrid .tile:hover img, .rcv .cpage-aside .tile:hover img { transform: none; }
   @media (max-width: 1120px) {
     .rcv .cpage-grid { grid-template-columns: 1fr; }
     .rcv .cpage-aside { position: static; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-    .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 1; }
+    .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 2 / 3; }
   }
   /* Once the gallery has real room, two columns is the wrong shape: the lead
      tile spans both of them, so the wider the screen the bigger that one picture
@@ -1911,7 +1919,7 @@ const CSS = `
      and every picture is the same size. */
   @media (min-width: 1700px) {
     .rcv .cpage-aside { grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); }
-    .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 1; }
+    .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 2 / 3; }
   }
   .rcv .modal-back { position: fixed; inset: 0; background: var(--overlay); backdrop-filter: blur(4px);
     display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
@@ -2444,7 +2452,8 @@ const GUIDE = [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
         "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
-        "In the grid, Small, Medium and Large change how big the tiles are.",
+        "In the grid, Small, Medium and Large change how big the tiles are. The mouse wheel zooms a picture you have opened, on a computer as well as a phone.",
+        "Tiles keep the picture's own shape, 2:3 or 16:9 or whatever it is, rather than cropping it to a square.",
         "Open a picture from the grid to see it full screen. Pinch or double-tap to zoom in. Swipe to the next one. On a phone there are no arrows at the sides, because the swipe is the way.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
@@ -3673,6 +3682,17 @@ function picOf(fullCache, imgCache, id) {
    Only what the grid draws changes. */
 function tileOf(fullCache, imgCache, id) {
   return id ? imgCache && imgCache[id] || fullCache && fullCache[id] : null;
+}
+/* Grid tiles used to be squares with the picture cropped to fill them, so a
+   16:9 or a 2:3 looked the same. Once the image has loaded we set the tile to
+   that ratio and show the whole picture. */
+const aspectCache = {};
+function fitTileAspect(el, id) {
+  if (!el || !el.naturalWidth) return;
+  const r = el.naturalWidth / el.naturalHeight;
+  if (id) aspectCache[id] = r;
+  const tile = el.closest && el.closest(".tile");
+  if (tile) tile.style.aspectRatio = String(r);
 }
 /* Whether the pointer can drag. A mouse can, so the grid lets you drag a
    picture where you want it. Touch cannot, which is the only reason the arrows
@@ -5113,6 +5133,7 @@ function ImageGridView({
     }
   }, /*#__PURE__*/React.createElement("div", {
     ref: gridRef,
+    className: "imggrid",
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fill, minmax(" + (GRID_TILE[tileSize] || 210) + "px, 1fr))",
@@ -5218,7 +5239,7 @@ function ImageGridView({
       setOverId(null);
     },
     style: {
-      aspectRatio: "1",
+      aspectRatio: aspectCache[it.imgId] ? String(aspectCache[it.imgId]) : undefined,
       /* A tile you can pick up says so: the open hand, closing while it is
          held. A magnifying glass promised zooming and hid the fact that these
          can be rearranged at all. Where the picture cannot be dragged — a
@@ -5341,7 +5362,9 @@ function ImageGridView({
   }, variantNameOf(it.variantId)), tileOf(fullCache, imgCache, it.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: tileOf(fullCache, imgCache, it.imgId),
     alt: it.label || "image",
-    className: blurred[it.imgId] ? "blur-img" : undefined
+    className: blurred[it.imgId] ? "blur-img" : undefined,
+    ref: el => { if (el) fitTileAspect(el, it.imgId); },
+    onLoad: e => fitTileAspect(e.currentTarget, it.imgId)
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
       height: "100%"
@@ -6865,7 +6888,9 @@ function CharacterPage({
   }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: picOf(fullCache, imgCache, g.imgId),
     className: blurred[g.imgId] ? "blur-img" : undefined,
-    alt: g.caption || "gallery image " + (i + 1)
+    alt: g.caption || "gallery image " + (i + 1),
+    ref: el => { if (el) fitTileAspect(el, g.imgId); },
+    onLoad: e => fitTileAspect(e.currentTarget, g.imgId)
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
       height: "100%"
@@ -7507,7 +7532,9 @@ function PersonaPage({
   }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: picOf(fullCache, imgCache, g.imgId),
     className: blurred[g.imgId] ? "blur-img" : undefined,
-    alt: g.caption || "gallery image " + (i + 1)
+    alt: g.caption || "gallery image " + (i + 1),
+    ref: el => { if (el) fitTileAspect(el, g.imgId); },
+    onLoad: e => fitTileAspect(e.currentTarget, g.imgId)
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
       height: "100%"

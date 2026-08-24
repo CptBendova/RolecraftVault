@@ -33,6 +33,8 @@ check("the viewer still asks for the original",
 check("the viewer can zoom", /pinch\.current/.test(SRC) && /lastTap\.current/.test(SRC));
 check("phone hides the side arrows", /\.rcv\.phone \.lb-side/.test(SRC));
 check("grid tile size is an option", /rcv-gridsize/.test(SRC) && /GRID_TILE\[tileSize\]/.test(SRC));
+check("grid tiles keep the picture's aspect ratio", /function fitTileAspect/.test(SRC) && /className: "imggrid"/.test(SRC));
+check("grid pictures are not cropped to a square", /\.rcv \.imggrid \.tile img[\s\S]{0,80}object-fit: contain/.test(SRC));
 
 console.log("\nwhat the grid shows:\n");
 check("drag is still wired", /onDrop: e => \{[\s\S]{0,200}onMoveImage\(dragId, it\.imgId\)/.test(SRC));
