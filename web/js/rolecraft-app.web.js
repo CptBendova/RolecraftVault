@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.207";
+const APP_VERSION = "1.208";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.207";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.207 — current",
+  heading: "1.208 — current",
+  notes: ["Carrying a picture to the top or bottom of the grid now scrolls the grid. It was scrolling the library behind it instead, which you cannot see, so a long gallery could only be rearranged within one screenful. On a phone or tablet, where carrying a picture is the only way to reorder, that was the whole feature.", "Ticking pictures and then switching album or version no longer keeps them ticked. The count and the buttons read every picture, not just the ones on screen, so Delete selected could remove pictures you were not looking at, and it says itself that it cannot be undone.", "Filtering to a version that has no pictures of its own now says so, instead of showing an empty page with no explanation."]
+}, {
+  heading: "1.207",
   notes: ["A character whose only picture belongs to one of its versions now shows its gallery. If nothing was pinned to the character itself, the pictures were there and the grid would list them, but the gallery beside the character, the Grid button and the button that downloads them were all hidden, so there was no way in.", "The button that downloads a character's pictures now appears when the only pictures are a banner or a version portrait. It was looking for a gallery image or a main portrait and nothing else, while the download itself had always included everything."]
 }, {
   heading: "1.206",
@@ -4661,7 +4664,13 @@ function ImageGridView({
   const [confirmAlbumDel, setConfirmAlbumDel] = useState(false);
   useEffect(() => {
     setConfirmAlbumDel(false); // an armed delete must not follow you to another album
-  }, [album]);
+    /* and neither may a selection. "Select all" only ever ticks what is shown,
+       while the count and every action below read the unfiltered list, so a
+       selection made in one album stayed live after switching to another — and
+       "Delete selected" then acted on pictures that were not on the screen and
+       says itself that it cannot be undone. */
+    setSel({});
+  }, [album, vFilter]);
   const [confirmDel, setConfirmDel] = useState(false);
   const [lb, setLb] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -4671,6 +4680,7 @@ function ImageGridView({
   /* Picking a picture up with a thumb. holdTimer is the pause that separates
      "I am moving this" from "I am scrolling past it". */
   const gridRef = useRef(null);
+  const scrollRef = useRef(null); // the fixed, full-screen scroller this view is
   const holdTimer = useRef(null);
   const touchFrom = useRef(null);
   const [thumbDrag, setThumbDrag] = useState(false);
@@ -4747,7 +4757,13 @@ function ImageGridView({
     let edge = 0;
     const step = () => {
       if (edge) {
-        const sc = document.querySelector(".rcv > .scrollbody") || document.scrollingElement;
+        /* The grid's own scroller. It is fixed and full screen, and it renders
+           inside the character page, which is another fixed .scrollbody.sheet —
+           so ".rcv > .scrollbody" never reached it. That matched the library
+           instead and scrolled a page sitting behind two full-screen overlays,
+           which is to say nothing moved and a long gallery could only be
+           rearranged within one screenful. */
+        const sc = scrollRef.current || document.querySelector(".rcv > .scrollbody") || document.scrollingElement;
         if (sc) sc.scrollTop += edge;
       }
       raf = requestAnimationFrame(step);
@@ -4825,6 +4841,7 @@ function ImageGridView({
     variantId: it.variantId
   }));
   return /*#__PURE__*/React.createElement("div", {
+    ref: scrollRef,
     style: {
       position: "fixed",
       inset: 0,
@@ -5164,7 +5181,7 @@ function ImageGridView({
       gridTemplateColumns: "repeat(auto-fill, minmax(" + (GRID_TILE[tileSize] || 210) + "px, 1fr))",
       gap: 14
     }
-  }, album !== null && shownItems.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, (album !== null || vFilter !== null) && shownItems.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1",
       padding: "34px 20px",
@@ -5172,7 +5189,12 @@ function ImageGridView({
       color: "var(--dim)",
       fontSize: 13.5
     }
-  }, album === "" ? "Every image is filed into an album." : "\u201c" + album + "\u201d is empty \u2014 switch to All, tick some images, then add them to this album."), shownItems.map((it, i) => /*#__PURE__*/React.createElement("div", {
+  }, album === null
+    /* the variant filter, not an album: album is null here, so the album
+       wording below would have read "null" is empty */
+    ? (vFilter === "" ? "No pictures are shared by every version." : "\u201c" + (variantNameOf(vFilter) || "That version") + "\u201d has no pictures of its own.")
+    : album === "" ? "Every image is filed into an album."
+    : "\u201c" + album + "\u201d is empty \u2014 switch to All, tick some images, then add them to this album."), shownItems.map((it, i) => /*#__PURE__*/React.createElement("div", {
     key: it.imgId,
     className: "tile" + (overId === it.imgId && dragId && dragId !== it.imgId ? " drag-over" : "") + (dragId === it.imgId ? " dragging" : "") + (thumbDrag && dragId === it.imgId ? " thumb-held" : "") + (pressId === it.imgId && !thumbDrag ? " thumb-press" : ""),
     role: "button",

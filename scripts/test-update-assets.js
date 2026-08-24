@@ -67,10 +67,11 @@ app.on("ready", () => {
     console.log("  crest via a plain relative path-> " + (r.viaPlainRelative ? "LOADS (the <base> covers it)" : "FAILS"));
     const good = r.viaAssetBase && (!hasBase || r.viaPlainRelative);
     console.log("\n" + (good ? "Both fixes hold." : "SOMETHING IS STILL WRONG"));
-    // exit code, not just a printed verdict: a runner has to be able to see this fail
-    process.exitCode = good ? 0 : 1;
-    app.quit();
+    /* app.exit, not process.exitCode then app.quit: quit() tears the process
+       down its own way and the code set on process is discarded, so the runner
+       saw 0 no matter what this printed. */
+    app.exit(good ? 0 : 1);
   });
   win.loadFile(eff);
-  setTimeout(() => { console.log("timed out"); process.exitCode = 1; app.quit(); }, 12000);
+  setTimeout(() => { console.log("timed out"); app.exit(1); }, 12000);
 });

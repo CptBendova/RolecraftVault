@@ -54,12 +54,24 @@ jobs.push({
 
 /* Every test-*.js, discovered rather than listed, so a new one is picked up
    without anyone having to remember to add it here. */
+const exe = electronExe();
+/* A check that drives a real BrowserWindow has to be launched by Electron, not
+   by node — under node `require("electron")` hands back a path string and the
+   check dies on `app.whenReady`. Decided by reading the file rather than by a
+   list of names, so a new browser-driven check does not have to be registered. */
+const needsElectron = f => /require\(["']electron["']\)/.test(fs.readFileSync(p("scripts", f), "utf8"));
+
 for (const f of fs.readdirSync(p("scripts")).filter(f => /^test-.*\.js$/.test(f)).sort()) {
-  if (f === "test-update-assets.js") continue; // needs Electron, handled below
-  jobs.push({ name: f.replace(/\.js$/, ""), cmd: process.execPath, args: [p("scripts", f)] });
+  if (f === "test-update-assets.js") continue; // run twice, below
+  const el = needsElectron(f);
+  jobs.push({
+    name: f.replace(/\.js$/, ""),
+    cmd: el ? exe : process.execPath,
+    args: [p("scripts", f)],
+    skip: el && !exe ? "Electron is not installed (npm approve-scripts electron)" : null,
+  });
 }
 
-const exe = electronExe();
 for (const mode of [null, "1"]) {
   jobs.push({
     name: "test-update-assets" + (mode ? " (NO_BASE=1)" : ""),
