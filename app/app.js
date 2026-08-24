@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.198";
+const APP_VERSION = "1.199";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.198";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.198 — current",
+  heading: "1.199 — current",
+  notes: ["The guide has caught up. It had nothing to say about full screen, about the Quality and Performance setting, or about rearranging pictures, all of which arrived in the last few versions.","New section: Fitting your screen. Full screen and the ways back out of it, what Quality and Performance actually change, and where the reading size, card size and contrast settings live.","New section: On a phone or tablet. What the Android app is, installing one over the last without losing anything, moving pictures with a finger, and the two things that genuinely work differently there: the phone can receive a copy of your vault but never send one, and its vault is private to the app and never copied to Google Drive.","Pictures now says that grid view is where the order is changed, and how: drag with a mouse, one finger on a phone."]
+}, {
+  heading: "1.198",
   notes: ["Moving a picture with your thumb is immediate. Touch one and it answers straight away, and it goes wherever your finger goes from the first moment it moves. There is no holding and no pause to wait through.","One finger on a picture always means move it, which is what makes it instant: there is no longer any question to settle. Before this the app had to work out whether a finger meant “move this” or “scroll past this”, and every way of working that out needs either a moment of waiting or a particular direction of travel. That hesitation was the problem.","Scroll a gallery with two fingers, or by dragging anywhere that is not a picture. If you put a second finger down while moving a picture, the picture goes back where it was and the gallery scrolls instead, so nothing is moved by accident.","You will rarely need to scroll while rearranging anyway: carry a picture to the top or bottom of the screen and the gallery moves along with you.","A quick tap still opens a picture, and nothing about this changes anything on a computer, where the mouse has always dragged them."]
 }, {
   heading: "1.195",
@@ -2424,6 +2427,7 @@ const GUIDE = [
       [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
+        "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
         "Download all images saves the originals, at full quality, as a zip: a folder per character, one for personas, and folders for bucket covers, lorebook covers and the pictures inside lore entries and prompts. Large libraries are written to disk as they go, so there is no practical size limit."
@@ -2556,6 +2560,24 @@ const GUIDE = [
     ]
   },
   {
+    "id": "screen",
+    "title": "Fitting your screen",
+    "summary": "Full screen, how much the app draws, and the size of everything.",
+    "body": [
+      "Everything here lives in Settings, and none of it touches your vault. It decides how the app looks and how hard it works, nothing more.",
+      "Full screen is on the Windows app. Settings has Screen, with Window and Full screen, and F11 switches between them from anywhere in the app. There is no title bar in full screen, so the way back out is in the same place: open Settings and choose Window. Escape does it too, and so does F11 again. The web edition and the Android app are already whatever size the browser or the device gives them, so the setting is not shown there.",
+      "Graphics has two settings, Quality and Performance.",
+      [
+        "Quality is everything on: the light that drifts behind your library, the dust, the gleam that crosses the crest, and pictures read ahead so a gallery is ready before you reach it.",
+        "Performance is for a machine that finds the app heavy. Nothing moves, the frosted blur behind dialogs is dropped, and the app keeps fewer pictures in memory and stops fetching them in advance.",
+        "Performance is not a plainer version. The colours, the spacing and the size of everything are identical, and no picture is ever shown at lower quality. There is simply less going on.",
+        "Opening a character still shows its pictures at full size in either setting."
+      ],
+      "The app chooses one for you the first time it runs, going by what your device reports about its memory and its processor. Change it whenever you like. It is remembered, and it applies from the lock screen onwards rather than only once you are inside.",
+      "Reading text size, Card size and Text contrast sit in the same panel. Card size decides how large characters and personas look in the library, so a smaller card fits more of them on screen at once."
+    ]
+  },
+  {
     "id": "transfer",
     "title": "Moving to another device",
     "summary": "Copying your vault across your own network.",
@@ -2579,6 +2601,27 @@ const GUIDE = [
       "Both devices need this version for that. If the other one is older it cannot be asked, so mirroring stops and says so rather than going ahead without it. Merging is unaffected and works with any version, because it only ever adds and updates.",
       "The first press only compares the two vaults. It writes nothing and reports how many records would be added, overwritten and removed, naming both devices. If anything at all would be removed the confirm button turns red and says which device it is about to mirror onto. Press it again to go ahead, or close the panel and nothing has changed.",
       "A transfer is for making two machines hold the same library. There is no way to share only part of a vault: the device that shares offers all of it, and the other one takes whatever it is missing. To move a single character, persona, lorebook or prompt instead, export that one record to a file and import it on the other machine. That adds the one thing and touches nothing else."
+    ]
+  },
+  {
+    "id": "mobile",
+    "title": "On a phone or tablet",
+    "summary": "The Android app, and the handful of things that work differently there.",
+    "body": [
+      "The Android app is the same library, on a device you can carry. It is a separate download from the releases page, a file ending in .apk, and it needs Android 8 or newer.",
+      "Install a new one straight over the old one. Do not uninstall first: uninstalling takes that device's vault with it, because the vault lives inside the app.",
+      "A phone or tablet can receive a copy of your vault, but it cannot send one, so the computer is always the one that shares. Start on the Windows app, press Share this vault, and scan the QR with the phone. The rest works exactly as described in Moving to another device.",
+      "Moving pictures around uses your finger rather than a mouse:",
+      [
+        "One finger on a picture moves it. Touch it and it answers, and it goes with your finger from the moment you move.",
+        "Two fingers scroll the gallery, and so does dragging anywhere that is not a picture.",
+        "Carry a picture to the top or the bottom of the screen and the gallery scrolls along with you, so a long gallery can be rearranged without letting go.",
+        "Putting a second finger down while you are moving a picture sets it back where it was and scrolls instead, so nothing is moved by accident.",
+        "A quick tap opens a picture, as it always has."
+      ],
+      "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
+      "A tablet is given more to work with than a phone, because it shows more pictures at once. There is nothing to set: the app looks at the screen and the memory the device reports and decides for itself.",
+      "Android has no equivalent of the Windows account keychain, so the quick unlock PIN is only as strong as the digits you choose. On a device other people pick up, prefer the master password."
     ]
   },
   {
