@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.193";
+const APP_VERSION = "1.194";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.193";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.193 — current",
+  heading: "1.194 — current",
+  notes: ["The picture grid is quiet again. Every tile had four buttons sitting on top of it at all times — select, open, blur, and an arrow on each side — which is most of a small picture covered up. The buttons now wait until you point at a tile, the way they used to, and the tick on a picture you have selected stays put so you can still see what is chosen at a glance.","The arrows are gone on a computer. They were added for phones and tablets, where a picture cannot be dragged at all, and were being shown to everybody. With a mouse you can simply drag a picture where you want it, which always worked. On a touch screen the arrows are still there, because there they are the only way.","The grid is faster too, and this was the real weight. Each tile was being drawn from the full-size original and shrunk to fit, so opening a gallery of sixty pictures meant unpacking sixty full-size images to show them a couple of hundred points wide. It now draws the smaller copy, which is already finer than a tile that size can show, so there is nothing to see in the difference except the speed.","Opening a picture is unaffected. The full-size original is still read and kept ready in the background, so it appears the moment you open it, exactly as before."]
+}, {
+  heading: "1.193",
   notes: ["New setting: Graphics, with Quality and Performance. Quality is the app as it has been. Performance is the same app drawn more cheaply, for a computer that is finding it heavy.","In Performance nothing moves. The light that drifts behind your library, the dust, the gleam that travels across the crest and the short film of the metal are not drawn at all, rather than drawn and held still, so they cost nothing. The frosted blur behind dialogs is dropped too: it is one of the most expensive things on screen, because the whole window underneath has to be redrawn through it.","It also stops the app doing work you have not asked for. Normally it reads a few pictures ahead so a gallery is ready before you reach it; in Performance it waits until you open something, and holds fewer pictures in memory once it has. Opening a character still shows it at full size. Nothing loads at lower quality; there is simply less of it kept ready.","The app guesses once, the first time it runs, from what your computer reports about its memory and processor, and picks the mode that suits it. Anything it cannot find out is treated as capable. If you have asked your system for less motion, it starts in Performance. Change it whenever you like; it is remembered, and it applies from the lock screen onwards.","Nothing about your vault changes either way, and neither does what anything looks like standing still. The colours, the spacing and the size of everything are identical in both."]
 }, {
   heading: "1.192",
@@ -1795,6 +1798,15 @@ const CSS = `
   /* Moving a picture without dragging it, which is the only way on a touch
      screen. Along the bottom because every other corner of a tile is taken. */
   .rcv .movebtn { top: auto; bottom: 8px; opacity: 1; }
+  /* The tile controls step back until the tile is pointed at. Where there is no
+     pointer to hover with they stay visible, because otherwise they could never
+     be reached. A selected tile keeps its tick whatever the pointer, so the
+     grid can be read at a glance. */
+  .rcv .gridsel { opacity: 0; transition: opacity .15s; }
+  .rcv .tile:hover .gridsel, .rcv .tile:focus-within .gridsel, .rcv .gridsel.on { opacity: 1; }
+  @media (hover: none), (pointer: coarse) {
+    .rcv .gridsel, .rcv .tile .blurbtn { opacity: 1; }
+  }
   .rcv .draghandle { cursor: grab; color: var(--dim); padding: 4px 6px; border-radius: 7px; display: inline-flex; }
   .rcv .draghandle:hover { color: var(--text); background: var(--nav-hov); }
   .rcv .draghandle:active { cursor: grabbing; }
@@ -3451,6 +3463,25 @@ function personaImgIds(p) {
 function picOf(fullCache, imgCache, id) {
   return id ? fullCache && fullCache[id] || imgCache && imgCache[id] : null;
 }
+/* The same two caches, preferred the other way round, for anywhere a picture is
+   drawn small. A grid tile is a couple of hundred points wide and the stored
+   preview is a thousand across, so the preview is already finer than the tile
+   can show. Drawing the original there means decoding a full-size picture for
+   every tile and scaling it down: the same image on screen, at many times the
+   cost, sixty times over in a large gallery.
+
+   The original is still read and held ready, so opening one is still instant.
+   Only what the grid draws changes. */
+function tileOf(fullCache, imgCache, id) {
+  return id ? imgCache && imgCache[id] || fullCache && fullCache[id] : null;
+}
+/* Whether the pointer can drag. A mouse can, so the grid lets you drag a
+   picture where you want it. Touch cannot, which is the only reason the arrows
+   exist (1.158); putting them on every tile for a mouse adds two permanent
+   buttons per picture for a gesture that already works. */
+const CAN_DRAG = typeof window !== "undefined" && window.matchMedia
+  ? window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  : true;
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
   (c.sections || []).forEach(s => parts.push(s.title, s.content));
@@ -4824,6 +4855,9 @@ function ImageGridView({
     onClick: () => setLb(i),
     onKeyDown: e => e.key === "Enter" && setLb(i)
   }, /*#__PURE__*/React.createElement("span", {
+    /* the tick stays put once something is selected, so a part-selected grid
+       can be read without sweeping the pointer over it */
+    className: "gridsel" + (sel[it.imgId] ? " on" : ""),
     role: "checkbox",
     "aria-checked": !!sel[it.imgId],
     "aria-label": "Select " + (it.label || "image"),
@@ -4859,12 +4893,13 @@ function ImageGridView({
     d: icons.check,
     size: 14
   })), /*#__PURE__*/React.createElement("span", {
-    className: "blurbtn on",
+    /* not forced on: the stylesheet shows it on hover, and shows it always
+       where there is no hover to rely on */
+    className: "blurbtn",
     role: "button",
     tabIndex: 0,
     "aria-label": "Open " + (it.label || "image"),
     style: {
-      opacity: 1,
       right: 44
     },
     onClick: e => {
@@ -4885,7 +4920,7 @@ function ImageGridView({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     label: it.label
-  }), onMoveImage && it.movable && shownItems.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, i > 0 && /*#__PURE__*/React.createElement("span", {
+  }), onMoveImage && it.movable && !CAN_DRAG && shownItems.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, i > 0 && /*#__PURE__*/React.createElement("span", {
     className: "blurbtn on movebtn",
     role: "button",
     tabIndex: 0,
@@ -4970,8 +5005,8 @@ function ImageGridView({
       textOverflow: "ellipsis",
       pointerEvents: "none"
     }
-  }, variantNameOf(it.variantId)), picOf(fullCache, imgCache, it.imgId) ? /*#__PURE__*/React.createElement("img", {
-    src: picOf(fullCache, imgCache, it.imgId),
+  }, variantNameOf(it.variantId)), tileOf(fullCache, imgCache, it.imgId) ? /*#__PURE__*/React.createElement("img", {
+    src: tileOf(fullCache, imgCache, it.imgId),
     alt: it.label || "image",
     className: blurred[it.imgId] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
