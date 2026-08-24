@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.194";
+const APP_VERSION = "1.195";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.194";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.194 — current",
+  heading: "1.195 — current",
+  notes: ["Pictures in the grid show an open hand when you point at them, and the hand closes while you are moving one. It was a magnifying glass before, which promised zooming and said nothing about the fact that pictures can be dragged into the order you want at all.","Where a picture cannot be dragged the magnifying glass is still right, and still there: on a touch screen, and in the smaller picture lists on lore entries and prompts, where clicking really is all it does."]
+}, {
+  heading: "1.194",
   notes: ["The picture grid is quiet again. Every tile had four buttons sitting on top of it at all times — select, open, blur, and an arrow on each side — which is most of a small picture covered up. The buttons now wait until you point at a tile, the way they used to, and the tick on a picture you have selected stays put so you can still see what is chosen at a glance.","The arrows are gone on a computer. They were added for phones and tablets, where a picture cannot be dragged at all, and were being shown to everybody. With a mouse you can simply drag a picture where you want it, which always worked. On a touch screen the arrows are still there, because there they are the only way.","The grid is faster too, and this was the real weight. Each tile was being drawn from the full-size original and shrunk to fit, so opening a gallery of sixty pictures meant unpacking sixty full-size images to show them a couple of hundred points wide. It now draws the smaller copy, which is already finer than a tile that size can show, so there is nothing to see in the difference except the speed.","Opening a picture is unaffected. The full-size original is still read and kept ready in the background, so it appears the moment you open it, exactly as before."]
 }, {
   heading: "1.193",
@@ -4848,7 +4851,14 @@ function ImageGridView({
     },
     style: {
       aspectRatio: "1",
-      cursor: "zoom-in",
+      /* A tile you can pick up says so: the open hand, closing while it is
+         held. A magnifying glass promised zooming and hid the fact that these
+         can be rearranged at all. Where the picture cannot be dragged — a
+         touch screen, or a grid that does not reorder — clicking really is all
+         it does, so the magnifier is still right there. */
+      cursor: onMoveImage && it.movable && CAN_DRAG
+        ? (dragId === it.imgId ? "grabbing" : "grab")
+        : "zoom-in",
       borderColor: sel[it.imgId] ? "var(--brass)" : undefined,
       boxShadow: sel[it.imgId] ? "0 0 0 2px var(--brass-line)" : undefined
     },

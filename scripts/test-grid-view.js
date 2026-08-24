@@ -42,5 +42,23 @@ check("controls hide until hovered", /\.rcv \.gridsel \{ opacity: 0;/.test(SRC))
 check("a selected tick stays put", /\.rcv \.gridsel\.on \{ opacity: 1; \}|\.rcv \.gridsel\.on/.test(SRC));
 check("touch keeps them visible", /@media \(hover: none\), \(pointer: coarse\)[\s\S]{0,120}opacity: 1;/.test(SRC));
 
-console.log(bad ? "\n" + bad + " FAILED" : "\nThe grid draws previews, and its controls suit the pointer.");
+console.log("\nwhat the cursor promises:\n");
+/* Lifted and then run, rather than pattern-matched. A cursor that says "zoom"
+   over something you are meant to pick up is how the reordering stayed hidden. */
+const m = SRC.match(/cursor: onMoveImage && it\.movable && CAN_DRAG\s*\n\s*\? \(dragId === it\.imgId \? "grabbing" : "grab"\)\s*\n\s*: "zoom-in"/);
+check("the tile cursor is worked out, not fixed", !!m);
+if (m) {
+  const expr = m[0].replace(/^cursor:\s*/, "");
+  const cursor = (onMoveImage, movable, canDrag, dragging) =>
+    new Function("onMoveImage", "it", "CAN_DRAG", "dragId", "return (" + expr + ");")
+      (onMoveImage, { movable: movable, imgId: "x" }, canDrag, dragging ? "x" : null);
+  const noop = () => {};
+  check("a mouse over a picture it can move sees a hand", cursor(noop, true, true, false) === "grab");
+  check("holding it closes the hand", cursor(noop, true, true, true) === "grabbing");
+  check("touch keeps the magnifier, having no drag", cursor(noop, true, false, false) === "zoom-in");
+  check("a picture that cannot move keeps the magnifier", cursor(noop, false, true, false) === "zoom-in");
+  check("a grid that does not reorder keeps the magnifier", cursor(null, true, true, false) === "zoom-in");
+}
+
+console.log(bad ? "\n" + bad + " FAILED" : "\nThe grid draws previews, and its controls and cursor suit the pointer.");
 process.exit(bad ? 1 : 0);
