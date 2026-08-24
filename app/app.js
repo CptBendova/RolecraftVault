@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.206";
+const APP_VERSION = "1.207";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.206";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.206 — current",
+  heading: "1.207 — current",
+  notes: ["A character whose only picture belongs to one of its versions now shows its gallery. If nothing was pinned to the character itself, the pictures were there and the grid would list them, but the gallery beside the character, the Grid button and the button that downloads them were all hidden, so there was no way in.", "The button that downloads a character's pictures now appears when the only pictures are a banner or a version portrait. It was looking for a gallery image or a main portrait and nothing else, while the download itself had always included everything."]
+}, {
+  heading: "1.206",
   notes: ["Dragging pictures to reorder them works again on a computer with a touchscreen. Having a touchscreen at all was enough to switch dragging off, mouse included, so the gallery on those machines could not be rearranged by any means. Found by shirohibiki.", "Installing now puts the shortcut on your desktop, where you can see it. It was being written into a folder nothing displays, so it looked as though no shortcut had been made."]
 }, {
   heading: "1.205",
@@ -6328,7 +6331,11 @@ function CharacterPage({
     setOverIdx(null);
     onReorder(keys);
   };
-  const hasAside = (c.gallery || []).length > 0 || !!c.profileImg || !!c.banner;
+  /* Every picture the character owns, which is charImgIds and not a list built
+     here. Built by hand this missed variant portraits, so a character whose only
+     artwork hung off a variant showed no gallery, no Grid and no way to download
+     it — while the grid itself was already listing those portraits happily. */
+  const hasAside = charImgIds(c).length > 0;
   useEffect(() => {
     if (c.banner) {
       loadImage(c.banner);
@@ -6656,7 +6663,7 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.expand,
     size: 13
-  }), " Grid")), ((c.gallery || []).length > 0 || c.profileImg) && /*#__PURE__*/React.createElement("button", {
+  }), " Grid")), hasAside && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onDownloadImages
   }, /*#__PURE__*/React.createElement("span", {
@@ -11218,7 +11225,9 @@ function RolecraftVault() {
       next = next.map(p => {
         const it = byId.get(p.id);
         if (!it) return p;
-        [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
+        // personaImgIds, not a list built here: the character path beside this
+        // one already uses charImgIds, and rule 2 exists because these drift
+        personaImgIds(p).forEach(id => {
           dropImage(id);
         });
         return {
@@ -13228,7 +13237,7 @@ function RolecraftVault() {
   };
   const exportPersonaJson = async p => {
     const { images, thumbs } = await collectImagesFor([], [p]);
-    const ids = [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean);
+    const ids = personaImgIds(p);
     downloadJSON({
       app: "rolecraft-vault",
       type: "persona",
@@ -15816,7 +15825,7 @@ function RolecraftVault() {
         record: vp
       }),
       onOpenLorebook: w => setViewLoreBook(w),
-      onStats: () => openRecordStats(vp.name || "Untitled", textOfPersona(vp), [vp.avatar, ...(vp.gallery || []).map(g => g.imgId)], personaBudget(vp), "A persona goes in with every message, so all of it is permanent"),
+      onStats: () => openRecordStats(vp.name || "Untitled", textOfPersona(vp), personaImgIds(vp), personaBudget(vp), "A persona goes in with every message, so all of it is permanent"),
       onReorder: keys => {
         if (keys === null) toast("Section layout reset");
         return persistPersona({
@@ -15947,7 +15956,7 @@ function RolecraftVault() {
       const seen = new Set();
       const out = [];
       personas.forEach(p => {
-        [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean).forEach(id => {
+        personaImgIds(p).forEach(id => {
           if (seen.has(id)) return;
           seen.add(id);
           out.push({
