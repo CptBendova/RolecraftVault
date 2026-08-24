@@ -53,7 +53,9 @@ function makeShortcut(lnk, target, icon) {
 function writeUninstaller(dest, version) {
   const exe = path.join(dest, APP_EXE);
   const ico = path.join(dest, "resources", "app", "icon.ico");
-  const desktop = path.join(process.env.PUBLIC || path.join(process.env.USERPROFILE, "Desktop"), APP_NAME + ".lnk");
+  // PUBLIC is C:\Users\Public, not the desktop inside it. Joining the .lnk
+  // straight onto it wrote the shortcut where nothing shows it.
+  const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", APP_NAME + ".lnk");
   const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", APP_NAME);
   const ps1 = path.join(dest, "Uninstall-RolecraftVault.ps1");
   const script = [
@@ -180,7 +182,9 @@ ipcMain.handle("setup-install", async (_e, dir) => {
     });
     const exe = path.join(dest, APP_EXE);
     const ico = path.join(dest, "resources", "app", "icon.ico");
-    const desktop = path.join(process.env.PUBLIC || path.join(process.env.USERPROFILE, "Desktop"), APP_NAME + ".lnk");
+    // PUBLIC is C:\Users\Public, not the desktop inside it. Joining the .lnk
+    // straight onto it wrote the shortcut where nothing shows it.
+    const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", APP_NAME + ".lnk");
     const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", APP_NAME);
     fs.mkdirSync(startDir, { recursive: true });
     makeShortcut(desktop, exe, fs.existsSync(ico) ? ico : exe);
