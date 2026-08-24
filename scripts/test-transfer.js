@@ -15,7 +15,7 @@ const fs = require("fs");
 const http = require("http");
 const assert = require("assert");
 
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/mobile/src/rc-transfer.js", "utf8");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "mobile", "src", "rc-transfer.js"), "utf8");
 
 function lift(name) {
   let start = SRC.indexOf("async function " + name);

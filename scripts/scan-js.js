@@ -166,6 +166,11 @@ function scan(src, file) {
 }
 
 const files = process.argv.slice(2);
+if (!files.length) {
+  // scanning nothing used to report "0 finding(s)" and exit 0, which reads as a pass
+  console.error("usage: node scripts/scan-js.js <file.js> [more.js ...]");
+  process.exit(2);
+}
 let total = 0;
 for (const f of files) {
   const src = fs.readFileSync(f, "utf8");
@@ -176,3 +181,5 @@ for (const f of files) {
   total += out.length;
 }
 console.log("\n" + total + " finding(s) total");
+// exit code, not just a printed count: one of these killed every phone copy in 1.173
+process.exit(total ? 1 : 0);

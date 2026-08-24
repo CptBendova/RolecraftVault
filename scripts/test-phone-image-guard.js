@@ -3,7 +3,7 @@
    the file changes the test is exercising the change. */
 const fs = require("fs");
 
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8").split("\n");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8").split("\n");
 /* find the block by its first and last lines rather than by number */
 const start = SRC.findIndex(l => l.trim() === "let allowFull = !ON_PHONE;");
 if (start < 0) throw new Error("could not find the guard");

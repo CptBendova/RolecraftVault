@@ -8,6 +8,7 @@
     "start": "electron app",
     "setup": "electron installer",
     "check": "node scripts/check-integrity.js",
+    "test": "node scripts/run-tests.js",
     "build:web": "node scripts/build-web.js",
     "build:installer": "node scripts/build-installer.js",
     "set-version": "node scripts/set-version.js",

@@ -2,7 +2,8 @@
    FULL_MEM_MAX could be kept. This runs the effect body lifted out of app.js
    against a synthetic library and checks what it actually asks for. */
 const fs = require("fs");
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8").split("\n");
+const path = require("path");
+const SRC = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8").split("\n");
 
 const start = SRC.findIndex(l => l.includes("After unlock, pull some originals"));
 if (start < 0) throw new Error("could not find the warm effect");

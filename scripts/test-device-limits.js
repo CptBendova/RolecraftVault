@@ -2,7 +2,7 @@
    profiles, so the numbers are checked rather than reasoned about. The const
    lines are lifted from the file by name. */
 const fs = require("fs");
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8").split("\n");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8").split("\n");
 
 function liftConst(name) {
   const i = SRC.findIndex(l => l.trim().startsWith("const " + name + " ="));

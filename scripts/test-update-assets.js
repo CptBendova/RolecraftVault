@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const APP_DIR = "C:/Rolecraft/rolecraft-vault/app";
+const APP_DIR = path.join(__dirname, "..", "app");
 const MAIN = fs.readFileSync(path.join(APP_DIR, "main.js"), "utf8");
 
 /* lift the body of resolveEntryFile, minus the bits that need real app state */
@@ -67,8 +67,10 @@ app.on("ready", () => {
     console.log("  crest via a plain relative path-> " + (r.viaPlainRelative ? "LOADS (the <base> covers it)" : "FAILS"));
     const good = r.viaAssetBase && (!hasBase || r.viaPlainRelative);
     console.log("\n" + (good ? "Both fixes hold." : "SOMETHING IS STILL WRONG"));
+    // exit code, not just a printed verdict: a runner has to be able to see this fail
+    process.exitCode = good ? 0 : 1;
     app.quit();
   });
   win.loadFile(eff);
-  setTimeout(() => { console.log("timed out"); app.quit(); }, 12000);
+  setTimeout(() => { console.log("timed out"); process.exitCode = 1; app.quit(); }, 12000);
 });

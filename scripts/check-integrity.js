@@ -17,6 +17,9 @@ const parseTargets = [
   "installer/preload.js",
   "web/js/rolecraft-app.web.js",
   "web/js/rolecraft-web-platform.js",
+  // phone transfer code. It is allowed to reach the network, so it is not in
+  // offlineTargets, but it still has to parse — it ships to every Android copy.
+  "mobile/src/rc-transfer.js",
 ];
 
 const offlineTargets = [

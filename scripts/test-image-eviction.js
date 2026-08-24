@@ -3,7 +3,7 @@
    run the loops lifted verbatim out of app.js, with a step ceiling so a hang
    fails the test instead of hanging it. */
 const fs = require("fs");
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8").split("\n");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8").split("\n");
 
 function liftLoop(firstLine) {
   const i = SRC.findIndex(l => l.trim().startsWith(firstLine));

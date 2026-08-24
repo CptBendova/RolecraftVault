@@ -27,23 +27,27 @@ actually do. Same vault, same encryption, same interface.
 
 ## Building it
 
-You need **Android Studio** (which brings the JDK and the SDK). Nothing else:
-Gradle comes with the project as `gradlew`.
+**Android Studio is not needed.** You need a JDK and the SDK command line tools;
+Gradle comes with the project as `gradlew`. See "Setting up a new machine" in
+the root `CLAUDE.md` for the exact install, including why it has to be JDK 21
+and how to accept the SDK licences headlessly.
 
 ```bash
 cd mobile
 npm install
 npm run sync          # rebuilds www from ../web, then copies it into android/
-npm run open          # opens android/ in Android Studio
 ```
 
-Then Build > Build APK in Android Studio, or from the command line:
+Then, from the command line:
 
 ```bash
 cd mobile/android
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/
-./gradlew assembleRelease        # needs a signing key configured
+./gradlew assembleRelease        # needs keystore.properties; see keys/android-keystore.txt
 ```
+
+`npm run open` opens the project in Android Studio if you happen to have it, but
+nothing in the build depends on it.
 
 If `app/app.js` changed, regenerate the web bundle **in the repo root first**,
 because `npm run sync` copies whatever is in `web/`:

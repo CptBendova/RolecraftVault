@@ -13,7 +13,7 @@
    from both, since touch can drag now too. This asserts the parts of that which
    can be read from the file. */
 const fs = require("fs");
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8");
 
 let bad = 0;
 const check = (name, cond, detail) => {
@@ -88,8 +88,16 @@ check("the refusal is armed from first touch, not from the lift",
   /el\.addEventListener\("touchmove", refuse, \{ passive: false \}\)/.test(SRC));
 check("touch and stylus take the pointer-drag path",
   /function usesPointerDrag/.test(SRC) && /usesPointerDrag\(e\)/.test(SRC));
+/* This used to pin `draggable: !!(... && CAN_DRAG && !ON_CAP)`. CAN_DRAG asks
+   "(hover: hover) and (pointer: fine)", which a touchscreen laptop answers no to
+   even with a mouse attached — and usesPointerDrag refuses a mouse off
+   Capacitor, so that machine was left with no way to reorder at all. The stylus
+   is now kept off the native path by the pointer that is actually down, which is
+   what the check was really after. See test-grid-drag-paths.js for the coverage. */
 check("a tablet stylus is not left to HTML5 drag",
-  /draggable: !!\(onMoveImage && it\.movable && CAN_DRAG && !ON_CAP\)/.test(SRC));
+  /if \(touchFrom\.current \|\| thumbDrag\) \{ e\.preventDefault\(\); return; \}/.test(SRC));
+check("but a mouse still gets it, hover-capable screen or not",
+  /draggable: !!\(onMoveImage && it\.movable && !ON_CAP\)/.test(SRC));
 check("the page is held still while carrying",
   /document\.addEventListener\("touchmove", stop, \{ passive: false \}\)/.test(SRC));
 check("and released again afterwards",

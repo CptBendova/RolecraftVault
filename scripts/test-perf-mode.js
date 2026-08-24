@@ -10,7 +10,7 @@
    asserted to still exist. A gate quietly deleted is the way this breaks. */
 const fs = require("fs");
 
-const SRC = fs.readFileSync("C:/Rolecraft/rolecraft-vault/app/app.js", "utf8");
+const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8");
 let bad = 0;
 const check = (name, cond, detail) => {
   console.log((cond ? "  PASS  " : "  FAIL  ") + name + (detail ? "   " + detail : ""));

@@ -59,7 +59,21 @@ function shellChangedSinceLastRelease() {
   } catch { return null; }
   const touched = diff.split("\n").filter(l => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
   const real = touched.filter(l => !/^[+-]const FACTORY_BUILD = /.test(l));
-  return { tag, needsShell: real.length > 0, lines: real.length, sample: real.slice(0, 8) };
+  /* app/vendor/ needs the installer too. A .rcvup carries app.js alone, so a
+     changed font, crest or React build reaches nobody — which is exactly how a
+     broken crest once shipped. These are binaries, so compare names, not lines. */
+  let vendor = [];
+  try {
+    vendor = git(["diff", "--name-only", tag, "--", "app/vendor/"])
+      .split("\n").map(s => s.trim()).filter(Boolean);
+  } catch { /* leave empty; the line diff above still stands */ }
+  return {
+    tag,
+    needsShell: real.length > 0 || vendor.length > 0,
+    lines: real.length,
+    sample: real.slice(0, 8),
+    vendor,
+  };
 }
 
 const forced = flags.includes("--shell") ? true : flags.includes("--no-shell") ? false : null;
@@ -71,9 +85,13 @@ if (forced !== null) {
 } else if (detected) {
   needsShell = detected.needsShell;
   console.log("Shell change: " + (needsShell ? "YES" : "no") + " (against " + detected.tag + ")");
-  if (needsShell) {
+  if (detected.lines) {
     console.log("  " + detected.lines + " line(s) changed in main.js/preload.js/index.html beyond the version stamp:");
     detected.sample.forEach(l => console.log("    " + l.slice(0, 100)));
+  }
+  if (detected.vendor.length) {
+    console.log("  " + detected.vendor.length + " file(s) changed in app/vendor/ — a patch cannot carry these:");
+    detected.vendor.slice(0, 8).forEach(f => console.log("    " + f));
   }
 } else {
   needsShell = false;
