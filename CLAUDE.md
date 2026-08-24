@@ -45,8 +45,9 @@ Dozens of tested features and bug fixes live only in this file.
   clean JSX" in one pass. That will silently drop behaviour.
 - Edit it in place. If you want to modernise, do it in small steps and launch the
   app after each one.
-- After any edit: `npm run check` (syntax + integrity), then `npm start` and click
-  the affected screen.
+- After any edit: `npm test` (parse, no-network sweep, const scan, and every
+  check in `scripts/`), then `npm start` and click the affected screen.
+  `npm run check` is the fast subset if you only want parse + no-network.
 
 Editing it by script is normal here. Two things bite repeatedly:
 
@@ -84,10 +85,20 @@ Editing it by script is normal here. Two things bite repeatedly:
    stamp), marks the package, and the app refuses a patch that needs the installer,
    naming it. `--shell` / `--no-shell` override the detection. Say which artifact is
    needed in the release notes regardless.
-   **`app/vendor/` needs the installer too, and nothing enforces that.** A `.rcvup`
-   carries `app.js` alone, so a changed font, crest or React build reaches nobody.
-   The detection covers the three files above and cannot see artwork, which is
-   exactly how a broken crest once shipped. Check it yourself.
+   **"No shell change" does not mean one artifact will do.** The detection
+   answers a narrow question — is this patch safe to apply on the old shell —
+   and `installer/` is outside it entirely, because a fix there does not
+   invalidate the patch, it simply cannot be delivered by one. 1.206 is the
+   case to remember: the detection correctly said no shell change, while the
+   desktop-shortcut fix it shipped alongside existed only in `installer/main.js`
+   and reached nobody except through a fresh `Setup.exe`. Read what actually
+   changed, not just the verdict.
+   **`app/vendor/` needs the installer too.** A `.rcvup` carries `app.js` alone,
+   so a changed font, crest or React build reaches nobody — which is exactly how
+   a broken crest once shipped. Since the August 2026 QA pass the detection also
+   diffs `app/vendor/` against the last tag, by name rather than by line because
+   those are binaries, and names the files. `test-shell-detect.js` covers both
+   halves of the rule.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
 6. **Never reference a file from `app.js` by a bare relative path.** A patch is
@@ -225,17 +236,26 @@ patched by hand.
 
 ```bash
 npm run set-version 1.156           # keep every version site in step first
-npm run check                       # syntax + no-network sweep
+npm test                            # every check in scripts/, exits non-zero if any fail
 npm start                           # launch and actually click the thing
 npm run build:web                   # regenerate the web bundle from app/app.js
 npm run sign 1.156 "what changed"   # -> dist/Rolecraft-update-1.156.rcvup
-npm run build:installer             # always, so both artifacts exist
+npm run build:installer             # always, even when a patch would do
+cd mobile && npm run sync           # copies the web bundle just built into android/
+cd android && ./gradlew assembleRelease   # -> app/build/outputs/apk/release/
 ```
 
-Ship **both** artifacts every time, and say in the release notes which one is
-actually needed. Verify the published `.rcvup` afterwards by downloading it,
-base64-decoding `files["app.js"]` and comparing sha256 against the local build —
-a release once went out without the changes it claimed.
+A release carries **three** artifacts, and every published one has: the
+`.rcvup` patch, `Rolecraft-Vault-Setup-<v>.exe`, and
+`RolecraftVault-<v>.apk`. The Android build is not optional and not separate —
+`set-version` writes `versionName` and `versionCode` for exactly this reason, and
+`npm run sync` copies whatever is in `web/`, so `build:web` has to have run
+first or the APK ships the previous interface.
+
+Say in the release notes which Windows artifact is actually needed. Verify the
+published `.rcvup` afterwards by downloading it, base64-decoding
+`files["app.js"]` and comparing sha256 against the local build — a release once
+went out without the changes it claimed.
 
 `build:installer` needs a staged Electron build at `dist/Rolecraft Vault/`, which
 is gitignored and therefore missing on a fresh clone. To rebuild it: copy
@@ -243,6 +263,27 @@ is gitignored and therefore missing on a fresh clone. To rebuild it: copy
 `Rolecraft Vault.exe`, delete `resources/default_app.asar`, and copy `app/` into
 `resources/app/`. It also needs NSIS (`winget install NSIS.NSIS`); winget does not
 put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
+
+## Where it ships
+
+`github.com/CptBendova/RolecraftVault`, **public**, and GitHub Releases is the
+only distribution channel. Nothing is automatic: the app never checks for
+updates and never downloads anything. A user fetches the `.rcvup` from a release
+themselves and hands it to **Settings, App updates**, which is what lets rule 1
+hold — the interface has no network at all, and the shell only ever reads a file
+the user picked.
+
+**A tag is not a release.** `v1.202` is tagged and pushed but was never
+published; 1.203 superseded it minutes later. So the tags and the releases do
+not line up, and `git tag` is not evidence that a version reached anybody. Check
+the Releases page before assuming a version shipped. The user-facing `CHANGELOG`
+still carries a 1.202 entry that nobody ever received, near-duplicating 1.203's
+— harmless, but do not treat CHANGELOG entries as proof of a release either.
+
+**Commits can sit past the last tag at the same version number.** Nothing stops
+work landing on `master` after a release without a version bump, and
+`build:installer` will happily stamp the old number onto it. Before building,
+run `git diff v<latest>..HEAD` and bump first if anything shipping has changed.
 
 ## Setting up a new machine (done 24 August 2026)
 
@@ -256,7 +297,7 @@ On a fresh Windows box, in this order:
 | NSIS | `winget install NSIS.NSIS` | lands in Program Files (x86), the first path `build-installer.js` checks |
 | Android SDK | command line tools, below | Android Studio is not needed and never was |
 
-Then `npm install`, `npm run check`, and `cd mobile && npm install`.
+Then `npm install`, `npm test`, and `cd mobile && npm install`.
 
 Nothing about the code needed touching. Four environmental things cost the time:
 
@@ -415,11 +456,14 @@ coordinate space and the capture is cropped.
 
 ## Testing notes
 
-There is no `npm test`, but `scripts/` now holds runnable checks, each written
-because something shipped broken. Run them with `node scripts/<name>.js`:
+`npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits
+non-zero if any of them fail. It finds `scripts/test-*.js` by name, so a new
+check is picked up without being registered anywhere. Run one on its own with
+`node scripts/<name>.js`. Each was written because something shipped broken:
 
 | Script | What it catches |
 |---|---|
+| `test-shell-detect.js` | a release routed to the wrong artifact — a patch that needed the installer, or the reverse. Covers `app/vendor/` (rule 4) |
 | `scan-js.js` | assignment to a `const` binding — a runtime TypeError `node --check` cannot see. One of these killed every phone copy in 1.173. Takes file paths; scope-aware, and skips strings, templates, comments and regex |
 | `test-update-assets.js` | the crest failing to load under an active patch (rule 6). Needs Electron; `NO_BASE=1` simulates a shell older than 1.192 |
 | `test-warm-pass.js` | the background warm asking for more originals than it can keep |
@@ -459,5 +503,15 @@ Things a harness **cannot** check, which must be tried by hand:
   matches a browser tab on the GitHub page and the installed copy, and keys sent
   to the wrong window produce a confident, meaningless pass.
 
-Still worth doing: a single `npm test` that runs the scripts above, and moving
-them into `tests/`.
+**A check is only trusted because its exit code is read.** Both `scan-js.js` and
+`test-update-assets.js` once printed their verdict and exited 0 regardless, so
+either could have failed for a whole release without anyone seeing it. Anything
+new here must exit non-zero when it fails, and be watched doing so.
+
+The same applies to how a check finds the code it lifts. Seven of these had the
+old machine's absolute path (`C:/Rolecraft/rolecraft-vault/...`) baked in, and
+had been throwing ENOENT since the project moved drives — a full release cycle
+during which the whole suite proved nothing. They are `__dirname`-relative now.
+Never write an absolute path into a check.
+
+Still worth doing: moving them into `tests/`.

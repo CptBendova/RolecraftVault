@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.205";
+const APP_VERSION = "1.206";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.205";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.205 — current",
+  heading: "1.206 — current",
+  notes: ["Dragging pictures to reorder them works again on a computer with a touchscreen. Having a touchscreen at all was enough to switch dragging off, mouse included, so the gallery on those machines could not be rearranged by any means. Found by shirohibiki.", "Installing now puts the shortcut on your desktop, where you can see it. It was being written into a folder nothing displays, so it looked as though no shortcut had been made."]
+}, {
+  heading: "1.205",
   notes: ["Settings has a small Contributors fold at the bottom. shirohibiki is credited there for a lot of help with how the app looks and with the bugs that kept turning up."]
 }, {
   heading: "1.204",
@@ -5174,7 +5177,13 @@ function ImageGridView({
     "aria-pressed": !!sel[it.imgId],
     /* how a tile is found from a point on the screen */
     "data-imgid": it.imgId,
-    draggable: !!(onMoveImage && it.movable && CAN_DRAG && !ON_CAP),
+    /* Not gated on CAN_DRAG. That asks "(hover: hover) and (pointer: fine)",
+       which a touchscreen laptop or a 2-in-1 answers no to even with a mouse
+       plugged in — and usesPointerDrag refuses a mouse off Capacitor, so
+       gating here left that machine with no way to reorder at all. CAN_DRAG
+       chooses the cursor below and nothing else. ON_CAP still bars it: HTML5
+       drag genuinely does not work in the Android WebView. */
+    draggable: !!(onMoveImage && it.movable && !ON_CAP),
     onPointerDown: e => {
       if (!usesPointerDrag(e) || !onMoveImage || !it.movable) return;
       /* A second finger while one is already down is a scroll, not a move.
@@ -5234,6 +5243,12 @@ function ImageGridView({
     },
     onDragStart: e => {
       if (!onMoveImage || !it.movable) return;
+      /* A finger or a stylus has already taken this gesture through the pointer
+         path, which owns it; a native drag on top would carry the picture
+         twice. Decided by the pointer that is actually down rather than by a
+         media query — a mouse never sets touchFrom, so it is left alone even on
+         a touchscreen PC, which is what asking CAN_DRAG here got wrong. */
+      if (touchFrom.current || thumbDrag) { e.preventDefault(); return; }
       setDragId(it.imgId);
       try {
         e.dataTransfer.effectAllowed = "move";
