@@ -27,10 +27,10 @@ function run({ nChars, picsEach, nPersonas, cap }) {
   const charImgIds = c => [c.profileImg].concat((c.gallery || []).map(g => g.imgId)).filter(Boolean);
   const personaImgIds = p => [p.avatar].concat((p.gallery || []).map(g => g.imgId)).filter(Boolean);
   const fn = new Function(
-    "ready", "chars", "personas", "lore", "prompts", "bucketMeta", "loreMeta", "promptMeta",
+    "ready", "PERF", "chars", "personas", "lore", "prompts", "bucketMeta", "loreMeta", "promptMeta",
     "queueFull", "FULL_MEM_MAX", "charImgIds", "personaImgIds",
     body);
-  fn(true, chars, personas, [], [], {}, {}, {},
+  fn(true, false, chars, personas, [], [], {}, {}, {},
      (id) => queued.push(id), cap, charImgIds, personaImgIds);
   return queued;
 }

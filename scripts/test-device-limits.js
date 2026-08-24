@@ -40,8 +40,8 @@ for (const d of devices) {
   const win = { Capacitor: d.cap ? {} : undefined, screen: { width: d.w, height: d.h } };
   if (!d.cap) delete win.Capacitor;
   const nav = {}; if (d.gb !== undefined) nav.deviceMemory = d.gb;
-  const fn = new Function("window", "navigator", body + "return {ON_TABLET, IMG_CACHE_BYTES, IMG_INFLIGHT, FULL_CACHE_MAX, FULL_MEM_MAX};");
-  const r = fn(win, nav);
+  const fn = new Function("window", "navigator", "PERF", body + "return {ON_TABLET, IMG_CACHE_BYTES, IMG_INFLIGHT, FULL_CACHE_MAX, FULL_MEM_MAX};");
+  const r = fn(win, nav, false);
   const previews = r.IMG_CACHE_BYTES ? (r.IMG_CACHE_BYTES / MB) + " MB" : "unlimited";
   console.log("  " + d.name.padEnd(24) + " " + String(r.ON_TABLET).padEnd(8) + " " +
     previews.padEnd(10) + " " + String(r.IMG_INFLIGHT).padEnd(9) + " " +

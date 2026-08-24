@@ -71,7 +71,9 @@ check("tiles can be found from a point", /"data-imgid": it\.imgId/.test(SRC));
    carrying a picture to the edge. Every earlier attempt guessed, and every
    guess needed time or direction to make — which is what felt like hesitation. */
 check("a picture is picked up the instant the finger moves",
-  /if \(Math\.abs\(e\.clientX - from\.x\) > 4 \|\| Math\.abs\(e\.clientY - from\.y\) > 4\) liftIt/.test(SRC));
+  /if \(Math\.abs\(e\.clientX - from\.x\) > 4 \|\| Math\.abs\(e\.clientY - from\.y\) > 4\)/.test(SRC)
+  && /liftIt\(it\.imgId\)/.test(SRC)
+  && !/holdTimer\.current = setTimeout/.test(SRC));
 check("nothing waits on a timer any more", !/holdTimer\.current = setTimeout/.test(SRC));
 check("the tile answers the moment it is touched",
   /setPressId\(it\.imgId\)/.test(SRC) && /thumb-press/.test(SRC));

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.199";
+const APP_VERSION = "1.200";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,11 +26,20 @@ const APP_VERSION = "1.199";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.199 — current",
+  heading: "1.200 — current",
+  notes: ["A full pass over the Windows app and the Android app before this was published. Locking the vault now really lets go of pictures, so unlocking does not start already out of room and cards do not go blank. Deleting a picture frees its space as well, so the rest of the library stays visible. Switching Quality and Performance now actually changes how many pictures are kept ready, rather than only changing the look. On a phone, a tap still opens a picture: stopping the page from scrolling had also been stopping the tap. Setting a portrait from the grid uses the version you are looking at. The version history in Settings includes 1.196 and 1.197, which had been skipped."]
+}, {
+  heading: "1.199",
   notes: ["The guide has caught up. It had nothing to say about full screen, about the Quality and Performance setting, or about rearranging pictures, all of which arrived in the last few versions.","New section: Fitting your screen. Full screen and the ways back out of it, what Quality and Performance actually change, and where the reading size, card size and contrast settings live.","New section: On a phone or tablet. What the Android app is, installing one over the last without losing anything, moving pictures with a finger, and the two things that genuinely work differently there: the phone can receive a copy of your vault but never send one, and its vault is private to the app and never copied to Google Drive.","Pictures now says that grid view is where the order is changed, and how: drag with a mouse, one finger on a phone."]
 }, {
   heading: "1.198",
   notes: ["Moving a picture with your thumb is immediate. Touch one and it answers straight away, and it goes wherever your finger goes from the first moment it moves. There is no holding and no pause to wait through.","One finger on a picture always means move it, which is what makes it instant: there is no longer any question to settle. Before this the app had to work out whether a finger meant “move this” or “scroll past this”, and every way of working that out needs either a moment of waiting or a particular direction of travel. That hesitation was the problem.","Scroll a gallery with two fingers, or by dragging anywhere that is not a picture. If you put a second finger down while moving a picture, the picture goes back where it was and the gallery scrolls instead, so nothing is moved by accident.","You will rarely need to scroll while rearranging anyway: carry a picture to the top or bottom of the screen and the gallery moves along with you.","A quick tap still opens a picture, and nothing about this changes anything on a computer, where the mouse has always dragged them."]
+}, {
+  heading: "1.197",
+  notes: ["You can rearrange pictures with your thumb on a phone or tablet. Hold a picture in the grid until it lifts, slide it onto the one you want it to change places with, and let go. Carry it to the top or bottom of the screen and the grid scrolls along with you.","Now that a thumb can move a picture directly, the arrows on each picture are gone. On a computer nothing changes: dragging with the mouse works as it always has."]
+}, {
+  heading: "1.196",
+  notes: ["Pictures on a phone or tablet can be rearranged with a thumb. Hold a picture for a moment until it lifts, slide it onto the one you want it to swap with, and let go. The grid scrolls on its own if you carry a picture to the edge of the screen."]
 }, {
   heading: "1.195",
   notes: ["Pictures in the grid show an open hand when you point at them, and the hand closes while you are moving one. It was a magnifying glass before, which promised zooming and said nothing about the fact that pictures can be dragged into the order you want at all.","Where a picture cannot be dragged the magnifying glass is still right, and still there: on a touch screen, and in the smaller picture lists on lore entries and prompts, where clicking really is all it does."]
@@ -4526,6 +4535,12 @@ function ImageGridView({
     const refuse = e => {
       if (!touchFrom.current) return;
       if (e.touches && e.touches.length > 1) return;   // two fingers: let it scroll
+      const from = touchFrom.current;
+      const t = e.touches && e.touches[0];
+      if (t && !from.moved) {
+        if (Math.abs(t.clientX - from.x) <= 4 && Math.abs(t.clientY - from.y) <= 4) return;
+        from.moved = true;
+      }
       if (e.cancelable) e.preventDefault();
     };
     el.addEventListener("touchmove", refuse, { passive: false });
@@ -4611,7 +4626,8 @@ function ImageGridView({
   });
   const lbItems = shownItems.map(it => ({
     imgId: it.imgId,
-    caption: it.label || ""
+    caption: it.caption != null && it.caption !== "" ? it.caption : it.label || "",
+    variantId: it.variantId
   }));
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4982,7 +4998,10 @@ function ImageGridView({
       if (!thumbDrag) {
         /* The moment the finger moves at all, the picture goes with it. The
            few pixels are only so that the shake of a tap is not a drag. */
-        if (Math.abs(e.clientX - from.x) > 4 || Math.abs(e.clientY - from.y) > 4) liftIt(it.imgId);
+        if (Math.abs(e.clientX - from.x) > 4 || Math.abs(e.clientY - from.y) > 4) {
+          from.moved = true;
+          liftIt(it.imgId);
+        }
         return;
       }
       const over = tileUnder(e.clientX, e.clientY);
@@ -10897,7 +10916,7 @@ function RolecraftVault() {
       await writeImportedImages(it.images, it.thumbs);
       await applyImportedBlur(it.blurred);
     }
-    let next = chars;
+    let next = charsRef.current;
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.item]));
       next = next.map(c => {
@@ -10915,6 +10934,7 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshItems.map(it => it.char)];
+    charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
     const parts = [];
@@ -10929,7 +10949,7 @@ function RolecraftVault() {
       await writeImportedImages(it.images, it.thumbs);
       await applyImportedBlur(it.blurred);
     }
-    let next = personas;
+    let next = personasRef.current;
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.item]));
       next = next.map(p => {
@@ -10947,6 +10967,7 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshItems.map(it => it.persona)];
+    personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
     const parts = [];
@@ -11295,6 +11316,10 @@ function RolecraftVault() {
         setPersonas(personaList);
         setLore(loreList);
         setPrompts(promptList);
+        charsRef.current = charList;
+        personasRef.current = personaList;
+        loreRef.current = loreList;
+        promptsRef.current = promptList;
         setBucketMeta(bucketM);
         setLoreMeta(loreM);
         setPromptMeta(promptM);
@@ -11441,6 +11466,11 @@ function RolecraftVault() {
     fullIdle.current = fullIdle.current.filter(x => x !== id);
     fullOrder.current = fullOrder.current.filter(x => x !== id);
     fullShowOrder.current = fullShowOrder.current.filter(x => x !== id);
+    imgOrder.current = imgOrder.current.filter(x => x !== id);
+    if (imgBytes.current[id]) {
+      imgTotal.current -= imgBytes.current[id] || 0;
+      delete imgBytes.current[id];
+    }
     setImgCache(p => {
       if (!p[id]) return p;
       const n = { ...p };
@@ -11822,6 +11852,10 @@ function RolecraftVault() {
     setPersonas([]);
     setLore([]);
     setPrompts([]);
+    charsRef.current = [];
+    personasRef.current = [];
+    loreRef.current = [];
+    promptsRef.current = [];
     setTrash([]); // deleted records are still whole records — locking must drop them too
     setImgCache({});
     setFullCache({});
@@ -11856,6 +11890,10 @@ function RolecraftVault() {
     fullGen.current++;
     fullShow.current.clear();
     fullShowOrder.current = [];
+    imgOrder.current = [];
+    imgBytes.current = {};
+    imgTotal.current = 0;
+    setPBucketMeta({});
     setBlurred({});
     setEditingChar(null);
     setEditingRecord(null);
@@ -12007,7 +12045,7 @@ function RolecraftVault() {
         return next;
       });
     }, 16);
-  }, []);
+  }, [IMG_CACHE_BYTES]);
   const imgQueue = useRef([]);
   const imgBusy = useRef(0);
   const IMG_INFLIGHT = PERF ? 2 : ON_TABLET ? 4 : ON_PHONE ? 3 : 4;
@@ -12059,7 +12097,7 @@ function RolecraftVault() {
         }
       });
     }
-  }, [queueImg]);
+  }, [queueImg, IMG_INFLIGHT]);
   const loadImage = useCallback(async imgId => {
     if (!imgId || imgLoading.current.has(imgId)) return;
     imgLoading.current.add(imgId);
@@ -12120,7 +12158,7 @@ function RolecraftVault() {
       fullShow.current.delete(eid);
       if (eid !== imgId) fullEvict.current.push(eid);
     }
-  }, []);
+  }, [FULL_CACHE_MAX]);
   const trimFullMem = useCallback(() => {
     const pinned = fullPinned.current;
     let extra = 0;
@@ -12138,7 +12176,7 @@ function RolecraftVault() {
       } else keep.push(id);
     });
     fullOrder.current = keep;
-  }, []);
+  }, [FULL_MEM_MAX]);
   const pumpFull = useCallback(() => {
     if (quietRef.current) return;
     const inflight = fullUrgent.current.length ? 2 : 1;
@@ -12275,7 +12313,7 @@ function RolecraftVault() {
       queueFull(id, false);
       if (seen.size >= FULL_MEM_MAX) break;
     }
-  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, queueFull, FULL_MEM_MAX]);
+  }, [ready, chars, personas, lore, prompts, bucketMeta, loreMeta, promptMeta, queueFull, FULL_MEM_MAX, PERF]);
   /* Write first, show second. Filling the caches up front meant a picture that
      failed to save — a full disk, a browser storage limit — appeared on screen
      as though it had worked, and only revealed itself as missing after a
@@ -12389,24 +12427,27 @@ function RolecraftVault() {
     const rec0 = entry.record || {};
     const bump = list => list.some(x => x.id === rec0.id) ? { ...rec0, id: uid() } : rec0;
     if (entry.type === "character") {
-      const rec = bump(chars);
-      const next = [...chars, rec];
+      const rec = bump(charsRef.current);
+      const next = [...charsRef.current, rec];
       charsRef.current = next;
       setChars(next);
       await sSet("chars:all", JSON.stringify(next));
     } else if (entry.type === "persona") {
-      const rec = bump(personas);
-      const next = [...personas, rec];
+      const rec = bump(personasRef.current);
+      const next = [...personasRef.current, rec];
+      personasRef.current = next;
       setPersonas(next);
       await sSet("personas:all", JSON.stringify(next));
     } else if (entry.type === "lore") {
-      const rec = bump(lore);
-      const next = [...lore, rec];
+      const rec = bump(loreRef.current);
+      const next = [...loreRef.current, rec];
+      loreRef.current = next;
       setLore(next);
       await sSet("lore:all", JSON.stringify(next));
     } else if (entry.type === "prompt") {
-      const rec = bump(prompts);
-      const next = [...prompts, rec];
+      const rec = bump(promptsRef.current);
+      const next = [...promptsRef.current, rec];
+      promptsRef.current = next;
       setPrompts(next);
       await sSet("prompts:all", JSON.stringify(next));
     } else {
@@ -12439,7 +12480,8 @@ function RolecraftVault() {
     })();
   }, [ready, trash]);
   const deleteChar = async c => {
-    const next = chars.filter(x => x.id !== c.id);
+    const next = charsRef.current.filter(x => x.id !== c.id);
+    charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
     await sendToTrash("character", c);
@@ -12466,19 +12508,28 @@ function RolecraftVault() {
       key: "prompts:all"
     }
   };
+  const loreRef = useRef(lore);
+  loreRef.current = lore;
+  const promptsRef = useRef(prompts);
+  promptsRef.current = prompts;
   const saveRecord = async (type, r) => {
     const col = collections[type];
-    const next = col.list.some(x => x.id === r.id) ? col.list.map(x => x.id === r.id ? r : x) : [...col.list, r];
+    const ref = type === "persona" ? personasRef : type === "lore" ? loreRef : type === "prompt" ? promptsRef : null;
+    const list = ref ? ref.current : col.list;
+    const next = list.some(x => x.id === r.id) ? list.map(x => x.id === r.id ? r : x) : [...list, r];
+    if (ref) ref.current = next;
     col.set(next);
     await sSet(col.key, JSON.stringify(next));
     setEditingRecord(null);
     toast("Saved");
   };
   const persistLore = async next => {
+    loreRef.current = next;
     setLore(next);
     await sSet("lore:all", JSON.stringify(next));
   };
   const persistPrompts = async next => {
+    promptsRef.current = next;
     setPrompts(next);
     await sSet("prompts:all", JSON.stringify(next));
   };
@@ -12509,9 +12560,11 @@ function RolecraftVault() {
       }
       return { ...r, lorebooks: next, updatedAt: Date.now() };
     });
-    const nextChars = swap(chars);
-    const nextPersonas = swap(personas);
+    const nextChars = swap(charsRef.current);
+    const nextPersonas = swap(personasRef.current);
     if (!moved) return 0;
+    charsRef.current = nextChars;
+    personasRef.current = nextPersonas;
     setChars(nextChars);
     setPersonas(nextPersonas);
     await Promise.all([sSet("chars:all", JSON.stringify(nextChars)), sSet("personas:all", JSON.stringify(nextPersonas))]);
