@@ -30,6 +30,9 @@ check("picOf is untouched for everything else",
   /function picOf[\s\S]{0,120}fullCache && fullCache\[id\] \|\| imgCache && imgCache\[id\]/.test(SRC));
 check("the viewer still asks for the original",
   /requestFull\(items\[index\]\.imgId, true\)/.test(SRC));
+check("the viewer can zoom", /pinch\.current/.test(SRC) && /lastTap\.current/.test(SRC));
+check("phone hides the side arrows", /\.rcv\.phone \.lb-side/.test(SRC));
+check("grid tile size is an option", /rcv-gridsize/.test(SRC) && /GRID_TILE\[tileSize\]/.test(SRC));
 
 console.log("\nwhat the grid shows:\n");
 check("drag is still wired", /onDrop: e => \{[\s\S]{0,200}onMoveImage\(dragId, it\.imgId\)/.test(SRC));

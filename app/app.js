@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.200";
+const APP_VERSION = "1.201";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.200";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.200 — current",
+  heading: "1.201 — current",
+  notes: ["On a phone, the previous and next buttons no longer sit over a picture you have opened. Swipe to move between them, the same way you already move pictures in the grid. The picture strip down the side of a character is gone there too: Grid is where the pictures live.","Open a picture from the grid and you can zoom in: pinch with two fingers, or double-tap. The mouse wheel does the same on a computer. Swiping still goes to the next picture, unless you are zoomed in, in which case it moves the picture.","The grid itself has a size option: Small, Medium or Large, at the top of the grid, so the tiles can be as big or as many as you want."]
+}, {
+  heading: "1.200",
   notes: ["A full pass over the Windows app and the Android app before this was published. Locking the vault now really lets go of pictures, so unlocking does not start already out of room and cards do not go blank. Deleting a picture frees its space as well, so the rest of the library stays visible. Switching Quality and Performance now actually changes how many pictures are kept ready, rather than only changing the look. On a phone, a tap still opens a picture: stopping the page from scrolling had also been stopping the tap. Setting a portrait from the grid uses the version you are looking at. The version history in Settings includes 1.196 and 1.197, which had been skipped."]
 }, {
   heading: "1.199",
@@ -1960,7 +1963,11 @@ const CSS = `
     filter: blur(46px) brightness(.35) saturate(1.1); pointer-events: none; }
   .rcv .lb-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     touch-action: none; }
-  .rcv .lb-stage img { max-width: 100vw; max-height: 100vh; object-fit: contain; }
+  .rcv .lb-stage img { max-width: 100vw; max-height: 100vh; object-fit: contain; transform-origin: center center;
+    will-change: transform; }
+  /* On a phone the previous/next buttons sit over the picture. Swipe already
+     moves between them, so the buttons are only in the way. */
+  .rcv.phone .lb-side { display: none; }
   .rcv .lb-chrome { position: absolute; left: 0; right: 0; z-index: 3; display: flex; align-items: center;
     gap: 10px; flex-wrap: wrap; padding: 14px 16px; pointer-events: none; }
   .rcv .lb-chrome > * { pointer-events: auto; }
@@ -2437,6 +2444,8 @@ const GUIDE = [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
         "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
+        "In the grid, Small, Medium and Large change how big the tiles are.",
+        "Open a picture from the grid to see it full screen. Pinch or double-tap to zoom in. Swipe to the next one. On a phone there are no arrows at the sides, because the swipe is the way.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
         "Download all images saves the originals, at full quality, as a zip: a folder per character, one for personas, and folders for bucket covers, lorebook covers and the pictures inside lore entries and prompts. Large libraries are written to disk as they go, so there is no practical size limit."
@@ -2626,7 +2635,8 @@ const GUIDE = [
         "Two fingers scroll the gallery, and so does dragging anywhere that is not a picture.",
         "Carry a picture to the top or the bottom of the screen and the gallery scrolls along with you, so a long gallery can be rearranged without letting go.",
         "Putting a second finger down while you are moving a picture sets it back where it was and scrolls instead, so nothing is moved by accident.",
-        "A quick tap opens a picture, as it always has."
+        "A quick tap opens a picture, as it always has. Pinch or double-tap that picture to zoom in.",
+        "The character page does not keep a strip of pictures down the side. Open Grid to see them, and change how big they are with Small, Medium or Large at the top."
       ],
       "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
       "A tablet is given more to work with than a phone, because it shows more pictures at once. There is nothing to set: the app looks at the screen and the memory the device reports and decides for itself.",
@@ -2957,11 +2967,132 @@ function Lightbox({
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose, onNav]);
-  const swipe = useSwipeNav(d => {
-    if (items.length > 1) onNav(d);
-  });
   const hold = e => e.stopPropagation();
   const item = items[index];
+  const stageRef = useRef(null);
+  const imgRef = useRef(null);
+  const zoom = useRef({ s: 1, x: 0, y: 0 });
+  const pts = useRef(new Map());
+  const pinch = useRef(null);
+  const pan = useRef(null);
+  const swipeStart = useRef(null);
+  const lastTap = useRef(0);
+  const applyZoom = () => {
+    const el = imgRef.current;
+    if (!el) return;
+    const z = zoom.current;
+    el.style.transform = "translate(" + z.x + "px," + z.y + "px) scale(" + z.s + ")";
+  };
+  const resetZoom = () => {
+    zoom.current = { s: 1, x: 0, y: 0 };
+    applyZoom();
+  };
+  const clampZoom = () => {
+    const z = zoom.current;
+    if (z.s < 1) {
+      z.s = 1;
+      z.x = 0;
+      z.y = 0;
+      return;
+    }
+    if (z.s > 6) z.s = 6;
+    const el = imgRef.current;
+    if (!el) return;
+    const maxX = Math.max(0, (el.clientWidth * z.s - window.innerWidth) / 2);
+    const maxY = Math.max(0, (el.clientHeight * z.s - window.innerHeight) / 2);
+    z.x = Math.max(-maxX, Math.min(maxX, z.x));
+    z.y = Math.max(-maxY, Math.min(maxY, z.y));
+  };
+  useEffect(() => {
+    resetZoom();
+  }, [index, item && item.imgId]);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = e => {
+      e.preventDefault();
+      zoom.current.s = Math.min(6, Math.max(1, zoom.current.s * (e.deltaY < 0 ? 1.12 : 0.9)));
+      if (zoom.current.s <= 1) {
+        zoom.current.s = 1;
+        zoom.current.x = 0;
+        zoom.current.y = 0;
+      }
+      clampZoom();
+      applyZoom();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [item]);
+  const onDown = e => {
+    if (e.button) return;
+    if (e.target && e.target.closest && e.target.closest("button, input, textarea, a, [role='button']")) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.current.size === 2) {
+      const pair = [...pts.current.values()];
+      const d = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y) || 1;
+      pinch.current = { d: d, s: zoom.current.s };
+      swipeStart.current = null;
+      pan.current = null;
+      return;
+    }
+    if (zoom.current.s > 1.02) {
+      pan.current = { x: e.clientX, y: e.clientY, ox: zoom.current.x, oy: zoom.current.y };
+      swipeStart.current = null;
+    } else {
+      swipeStart.current = { x: e.clientX, y: e.clientY };
+      pan.current = null;
+    }
+  };
+  const onMove = e => {
+    if (!pts.current.has(e.pointerId)) return;
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current && pts.current.size >= 2) {
+      const pair = [...pts.current.values()];
+      const d = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y) || 1;
+      zoom.current.s = Math.min(6, Math.max(1, pinch.current.s * (d / pinch.current.d)));
+      clampZoom();
+      applyZoom();
+      return;
+    }
+    if (pan.current && zoom.current.s > 1.02) {
+      zoom.current.x = pan.current.ox + (e.clientX - pan.current.x);
+      zoom.current.y = pan.current.oy + (e.clientY - pan.current.y);
+      clampZoom();
+      applyZoom();
+    }
+  };
+  const onUp = e => {
+    pts.current.delete(e.pointerId);
+    if (pts.current.size < 2) pinch.current = null;
+    if (pan.current) {
+      pan.current = null;
+      return;
+    }
+    const s = swipeStart.current;
+    swipeStart.current = null;
+    if (!s || zoom.current.s > 1.02) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    const now = Date.now();
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+      if (now - lastTap.current < 280) {
+        lastTap.current = 0;
+        if (zoom.current.s > 1.05) resetZoom();
+        else {
+          zoom.current.s = 2.5;
+          zoom.current.x = 0;
+          zoom.current.y = 0;
+          applyZoom();
+        }
+        return;
+      }
+      lastTap.current = now;
+      return;
+    }
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+    if (items.length > 1) onNav(dx > 0 ? -1 : 1);
+  };
   if (!item) return null;
   const src = fullCache && fullCache[item.imgId] || imgCache[item.imgId];
   return /*#__PURE__*/React.createElement("div", {
@@ -2976,10 +3107,13 @@ function Lightbox({
     }
   }) : null, /*#__PURE__*/React.createElement("div", {
     className: "lb-stage",
-    onPointerDown: swipe.onPointerDown,
-    onPointerUp: swipe.onPointerUp,
-    onPointerCancel: swipe.onPointerCancel
+    ref: stageRef,
+    onPointerDown: onDown,
+    onPointerMove: onMove,
+    onPointerUp: onUp,
+    onPointerCancel: onUp
   }, src ? /*#__PURE__*/React.createElement("img", {
+    ref: imgRef,
     src: src,
     alt: item.caption || "gallery image",
     draggable: false,
@@ -2991,7 +3125,7 @@ function Lightbox({
       padding: 60
     }
   }, "Loading image\u2026"), items.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    className: "ss-btn",
+    className: "ss-btn lb-side",
     "aria-label": "Previous image",
     onPointerDown: hold,
     onClick: () => onNav(-1),
@@ -3004,7 +3138,7 @@ function Lightbox({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.left
   })), /*#__PURE__*/React.createElement("button", {
-    className: "ss-btn",
+    className: "ss-btn lb-side",
     "aria-label": "Next image",
     onPointerDown: hold,
     onClick: () => onNav(1),
@@ -3544,6 +3678,15 @@ function tileOf(fullCache, imgCache, id) {
    picture where you want it. Touch cannot, which is the only reason the arrows
    exist (1.158); putting them on every tile for a mouse adds two permanent
    buttons per picture for a gesture that already works. */
+const ON_CAP = typeof window !== "undefined" && !!window.Capacitor;
+const GRID_TILE = { small: 140, medium: 210, large: 320 };
+function readGridTile() {
+  try {
+    const v = localStorage.getItem("rcv-gridsize");
+    if (v && GRID_TILE[v]) return v;
+  } catch (e) {}
+  return "medium";
+}
 const CAN_DRAG = typeof window !== "undefined" && window.matchMedia
   ? window.matchMedia("(hover: hover) and (pointer: fine)").matches
   : true;
@@ -4500,6 +4643,13 @@ function ImageGridView({
   const [thumbDrag, setThumbDrag] = useState(false);
   /* which tile is being touched, before anything has been decided about it */
   const [pressId, setPressId] = useState(null);
+  const [tileSize, setTileSize] = useState(readGridTile);
+  const setGridTile = s => {
+    setTileSize(s);
+    try {
+      localStorage.setItem("rcv-gridsize", s);
+    } catch (e) {}
+  };
   const liftIt = useCallback(id => {
     setDragId(id);
     setThumbDrag(true);
@@ -4667,7 +4817,20 @@ function ImageGridView({
     style: {
       fontSize: 22
     }
-  }, title, " · ", album === null ? items.length : shownItems.length + " of " + items.length)), /*#__PURE__*/React.createElement("button", {
+  }, title, " · ", album === null ? items.length : shownItems.length + " of " + items.length)), /*#__PURE__*/React.createElement("span", {
+    className: "eyebrow",
+    style: {
+      marginLeft: 8
+    }
+  }, "Size"), ["small", "medium", "large"].map(s => /*#__PURE__*/React.createElement("button", {
+    key: s,
+    className: "chip" + (tileSize === s ? " on" : ""),
+    style: {
+      cursor: "pointer",
+      textTransform: "capitalize"
+    },
+    onClick: () => setGridTile(s)
+  }, s)), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
       const allShown = shownItems.length > 0 && shownItems.every(it => sel[it.imgId]);
@@ -4952,7 +5115,7 @@ function ImageGridView({
     ref: gridRef,
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
+      gridTemplateColumns: "repeat(auto-fill, minmax(" + (GRID_TILE[tileSize] || 210) + "px, 1fr))",
       gap: 14
     }
   }, album !== null && shownItems.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -6514,14 +6677,14 @@ function CharacterPage({
       padding: "28px 30px 80px"
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: hasAside ? "cpage-grid" : undefined
+    className: hasAside && !ON_CAP ? "cpage-grid" : undefined
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
       gap: 14,
       minWidth: 0,
-      ...(hasAside ? {} : {
+      ...(hasAside && !ON_CAP ? {} : {
         maxWidth: 1180,
         margin: "0 auto",
         width: "100%"
@@ -6625,7 +6788,7 @@ function CharacterPage({
       maxWidth: 860,
       marginTop: 10
     }
-  })))), hasAside && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })))), hasAside && !ON_CAP && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -7158,14 +7321,14 @@ function PersonaPage({
       padding: "28px 30px 80px"
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: hasAside ? "cpage-grid" : undefined
+    className: hasAside && !ON_CAP ? "cpage-grid" : undefined
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
       gap: 14,
       minWidth: 0,
-      ...(hasAside ? {} : {
+      ...(hasAside && !ON_CAP ? {} : {
         maxWidth: 1180,
         margin: "0 auto",
         width: "100%"
@@ -7269,7 +7432,7 @@ function PersonaPage({
       maxWidth: 860,
       marginTop: 10
     }
-  })))), hasAside && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })))), hasAside && !ON_CAP && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -13308,7 +13471,7 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "");
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "");
   const sheetOpen = !!(viewCharId || viewPersonaId);
   const overlayOpen = !!(showSettings || showGuide);
   quietRef.current = overlayOpen;
