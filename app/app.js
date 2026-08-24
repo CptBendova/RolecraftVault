@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.203";
+const APP_VERSION = "1.204";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.203";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.203 — current",
+  heading: "1.204 — current",
+  notes: ["On a tablet, an S Pen now does what a finger does. The grid was only listening for a thumb, so the pen could tap a picture but could not drag it, and a drag often scrolled the page instead. The pen now picks a picture up as soon as it moves, a tap still opens it, and hovering shows the buttons on the tile."]
+}, {
+  heading: "1.203",
   notes: ["Pictures in the grid sit in even squares so the page stays tidy, but each one is shown in its own shape, 2:3 or 16:9 or whatever it is, instead of being cropped. The rest of the square is empty. The gallery beside a character on Windows does the same.","Zooming with the mouse wheel, and Small, Medium and Large at the top of the grid, work on Windows as well as on a phone."]
 }, {
   heading: "1.202",
@@ -2647,6 +2650,7 @@ const GUIDE = [
         "Carry a picture to the top or the bottom of the screen and the gallery scrolls along with you, so a long gallery can be rearranged without letting go.",
         "Putting a second finger down while you are moving a picture sets it back where it was and scrolls instead, so nothing is moved by accident.",
         "A quick tap opens a picture, as it always has. Pinch or double-tap that picture to zoom in.",
+        "An S Pen on a tablet does the same as a finger: tap to open, drag to move, hover to see the buttons on a tile. Two fingers still scroll.",
         "The character page does not keep a strip of pictures down the side. Open Grid to see them, and change how big they are with Small, Medium or Large at the top."
       ],
       "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
@@ -3701,6 +3705,15 @@ function readGridTile() {
 const CAN_DRAG = typeof window !== "undefined" && window.matchMedia
   ? window.matchMedia("(hover: hover) and (pointer: fine)").matches
   : true;
+/* A finger is "touch". An S Pen (and other styli) is "pen". Android WebView
+   also sometimes reports a stylus as "mouse". HTML5 drag-and-drop does not
+   work in that WebView, so the pointer path has to take all of them. */
+function usesPointerDrag(e) {
+  const t = e && e.pointerType;
+  if (t === "touch" || t === "pen") return true;
+  if (ON_CAP && t === "mouse") return true;
+  return false;
+}
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
   (c.sections || []).forEach(s => parts.push(s.title, s.content));
@@ -4696,16 +4709,23 @@ function ImageGridView({
     const refuse = e => {
       if (!touchFrom.current) return;
       if (e.touches && e.touches.length > 1) return;   // two fingers: let it scroll
+      if (e.pointerType === "mouse" && !ON_CAP) return;
       const from = touchFrom.current;
       const t = e.touches && e.touches[0];
-      if (t && !from.moved) {
-        if (Math.abs(t.clientX - from.x) <= 4 && Math.abs(t.clientY - from.y) <= 4) return;
+      const x = t ? t.clientX : e.clientX;
+      const y = t ? t.clientY : e.clientY;
+      if (!from.moved && x != null) {
+        if (Math.abs(x - from.x) <= 4 && Math.abs(y - from.y) <= 4) return;
         from.moved = true;
       }
       if (e.cancelable) e.preventDefault();
     };
     el.addEventListener("touchmove", refuse, { passive: false });
-    return () => el.removeEventListener("touchmove", refuse);
+    el.addEventListener("pointermove", refuse, { passive: false });
+    return () => {
+      el.removeEventListener("touchmove", refuse);
+      el.removeEventListener("pointermove", refuse);
+    };
   }, []);
   /* While a picture is being carried, the grid follows it near the edges, or a
      long gallery could only be rearranged within one screenful. */
@@ -4713,6 +4733,7 @@ function ImageGridView({
     if (!thumbDrag) return;
     const stop = e => { if (e.cancelable) e.preventDefault(); };
     document.addEventListener("touchmove", stop, { passive: false });
+    document.addEventListener("pointermove", stop, { passive: false });
     let raf = 0;
     let edge = 0;
     const step = () => {
@@ -4724,15 +4745,19 @@ function ImageGridView({
     };
     const track = e => {
       const t = e.touches && e.touches[0];
-      if (!t) return;
+      const y = t ? t.clientY : e.clientY;
+      if (y == null) return;
       const h = window.innerHeight;
-      edge = t.clientY < 90 ? -12 : t.clientY > h - 90 ? 12 : 0;
+      edge = y < 90 ? -12 : y > h - 90 ? 12 : 0;
     };
     document.addEventListener("touchmove", track, { passive: true });
+    document.addEventListener("pointermove", track, { passive: true });
     raf = requestAnimationFrame(step);
     return () => {
       document.removeEventListener("touchmove", stop);
+      document.removeEventListener("pointermove", stop);
       document.removeEventListener("touchmove", track);
+      document.removeEventListener("pointermove", track);
       cancelAnimationFrame(raf);
     };
   }, [thumbDrag]);
@@ -5146,11 +5171,11 @@ function ImageGridView({
     "aria-pressed": !!sel[it.imgId],
     /* how a tile is found from a point on the screen */
     "data-imgid": it.imgId,
-    draggable: !!(onMoveImage && it.movable),
+    draggable: !!(onMoveImage && it.movable && CAN_DRAG && !ON_CAP),
     onPointerDown: e => {
-      if (e.pointerType !== "touch" || !onMoveImage || !it.movable) return;
+      if (!usesPointerDrag(e) || !onMoveImage || !it.movable) return;
       /* A second finger while one is already down is a scroll, not a move.
-         Put the picture back and stay out of the way. */
+         Put the picture back and stay out of the way. An S Pen is one pointer. */
       if (touchFrom.current) {
         cancelHold();
         touchFrom.current = null;
@@ -5160,6 +5185,7 @@ function ImageGridView({
         setOverId(null);
         return;
       }
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
       touchFrom.current = { x: e.clientX, y: e.clientY, id: it.imgId, moved: false };
       cancelHold();
       /* answer straight away, before anything is decided. Most of what felt
@@ -5167,7 +5193,7 @@ function ImageGridView({
       setPressId(it.imgId);
     },
     onPointerMove: e => {
-      if (e.pointerType !== "touch") return;
+      if (!usesPointerDrag(e)) return;
       const from = touchFrom.current;
       if (!from) return;
       if (!thumbDrag) {
@@ -5183,7 +5209,7 @@ function ImageGridView({
       if (over && over !== overId) setOverId(over);
     },
     onPointerUp: e => {
-      if (e.pointerType !== "touch") return;
+      if (!usesPointerDrag(e)) return;
       cancelHold();
       setPressId(null);
       const from = touchFrom.current;

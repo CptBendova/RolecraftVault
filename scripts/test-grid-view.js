@@ -86,12 +86,15 @@ check("a second finger stands the drag down", /A second finger while one is alre
 check("one finger is refused a scroll, two are not", /if \(e\.touches && e\.touches\.length > 1\) return;/.test(SRC));
 check("the refusal is armed from first touch, not from the lift",
   /el\.addEventListener\("touchmove", refuse, \{ passive: false \}\)/.test(SRC));
-check("only touch takes this path", /if \(e\.pointerType !== "touch"/.test(SRC));
+check("touch and stylus take the pointer-drag path",
+  /function usesPointerDrag/.test(SRC) && /usesPointerDrag\(e\)/.test(SRC));
+check("a tablet stylus is not left to HTML5 drag",
+  /draggable: !!\(onMoveImage && it\.movable && CAN_DRAG && !ON_CAP\)/.test(SRC));
 check("the page is held still while carrying",
   /document\.addEventListener\("touchmove", stop, \{ passive: false \}\)/.test(SRC));
 check("and released again afterwards",
   /document\.removeEventListener\("touchmove", stop\)/.test(SRC));
-check("a long grid scrolls as you near the edge", /edge = t\.clientY < 90 \? -12/.test(SRC));
+check("a long grid scrolls as you near the edge", /edge = y < 90 \? -12/.test(SRC));
 check("the drop lands on whatever is under the finger", /const over = tileUnder\(e\.clientX, e\.clientY\) \|\| overId/.test(SRC));
 check("a carry does not also open the picture", /onClick: \(\) => \{ if \(!thumbDrag\) setLb\(i\); \}/.test(SRC));
 check("the carried tile is marked", /thumbDrag && dragId === it\.imgId \? " thumb-held"/.test(SRC));
