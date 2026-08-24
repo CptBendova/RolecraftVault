@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.192";
+const APP_VERSION = "1.193";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.192";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.192 — current",
+  heading: "1.193 — current",
+  notes: ["New setting: Graphics, with Quality and Performance. Quality is the app as it has been. Performance is the same app drawn more cheaply, for a computer that is finding it heavy.","In Performance nothing moves. The light that drifts behind your library, the dust, the gleam that travels across the crest and the short film of the metal are not drawn at all, rather than drawn and held still, so they cost nothing. The frosted blur behind dialogs is dropped too: it is one of the most expensive things on screen, because the whole window underneath has to be redrawn through it.","It also stops the app doing work you have not asked for. Normally it reads a few pictures ahead so a gallery is ready before you reach it; in Performance it waits until you open something, and holds fewer pictures in memory once it has. Opening a character still shows it at full size. Nothing loads at lower quality; there is simply less of it kept ready.","The app guesses once, the first time it runs, from what your computer reports about its memory and processor, and picks the mode that suits it. Anything it cannot find out is treated as capable. If you have asked your system for less motion, it starts in Performance. Change it whenever you like; it is remembered, and it applies from the lock screen onwards.","Nothing about your vault changes either way, and neither does what anything looks like standing still. The colours, the spacing and the size of everything are identical in both."]
+}, {
+  heading: "1.192",
   notes: ["The Windows app can run full screen. Settings has a Screen setting with two choices, Window and Full screen, and F11 switches between them at any time from anywhere in the app.","There is no title bar in full screen, so there is a plain way back out rather than a shortcut you have to know: open Settings and the Screen setting offers Leave full screen. Escape does the same, and so does F11 again. Escape is left alone everywhere else, so it still closes whatever you have open as it always did.","The app opens the way you left it. If you close it full screen it opens full screen, and the windowed size you had is remembered separately, so switching back puts the window where it was rather than somewhere arbitrary.","This is the Windows app only. The web edition and the Android app are already whatever size their browser or their device gives them, so the setting is not shown there."]
 }, {
   heading: "1.191",
@@ -2002,6 +2005,19 @@ const CSS = `
   @keyframes kb2 { from { transform: scale(1.05) translate(-1.4%, -0.5%); } to { transform: scale(1.14) translate(1%, 0.7%); } }
   @keyframes kb3 { from { transform: scale(1.15) translate(0, 0.8%); } to { transform: scale(1.05) translate(0, -0.6%); } }
   @media (prefers-reduced-motion: reduce) { .rcv * { transition: none !important; animation: none !important; } }
+  /* Performance mode. Everything here is either motion or a compositing effect
+     that costs a full-screen pass to draw. The colours, spacing and type are
+     untouched: it should look like the same app sitting still, not a plainer
+     one. The layers that exist only to move are not rendered at all rather than
+     hidden, so they cost nothing to keep still. */
+  .rcv.perf *, .rcv.perf *::before, .rcv.perf *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .rcv.perf .modal-back, .rcv.perf .blurbtn, .rcv.perf .ss-btn { backdrop-filter: none !important; }
+  .rcv.perf .crest-mark::before, .rcv.perf .crest-mark::after { display: none !important; }
+  .rcv.perf .crest-mark { box-shadow: 0 0 0 1px var(--brass-line); }
+  .rcv.perf .lock-glow, .rcv.perf .rcv-ambient, .rcv.perf .dust-field { display: none !important; }
   @media (max-width: 1020px) and (min-width: 761px) {
     .rcv .sidebar { width: 72px !important; padding: 18px 10px !important; }
     .rcv .sidebar .navlabel { display: none; }
@@ -2022,6 +2038,38 @@ const CSS = `
 `;
 
 /* ---------- tiny icons ---------- */
+/* Read during render by the pieces that would otherwise have to be handed it
+   through half a dozen components. The root sets it before any child renders,
+   which is the same arrangement quietRef already uses for Settings. */
+let PERF = (() => {
+  /* Initialised here, not on the first render: the image budgets below are
+     worked out in the root's body before the line that syncs this flag, so a
+     flag that only became true afterwards would leave the first render holding
+     quality-sized caches. setPerfMode keeps it in step from then on. */
+  try {
+    const v = localStorage.getItem("rcv-perfmode");
+    if (v === "performance") return true;
+    if (v === "quality") return false;
+  } catch (e) {}
+  return detectPerfMode() === "performance";
+})();
+
+/* Only consulted the first time, and only to choose a starting point. Both
+   figures are coarse and either may be missing, so anything unknown is treated
+   as capable: the setting is one click away, and guessing "slow" for a fast
+   machine is the more annoying mistake. */
+function detectPerfMode() {
+  try {
+    if (typeof window !== "undefined" && window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "performance";
+    const gb = Number(navigator.deviceMemory) || 0;
+    const cores = Number(navigator.hardwareConcurrency) || 0;
+    if (gb && gb <= 4) return "performance";
+    if (cores && cores <= 4) return "performance";
+  } catch (e) {}
+  return "quality";
+}
+
 const Ic = ({
   d,
   size = 17
@@ -2106,7 +2154,9 @@ function CrestMark({
   const vid = useRef(null);
   const [failed, setFailed] = useState(false);
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const useLive = !!(live && size >= 96 && !reduce && !failed);
+  /* The living crest decodes video continuously behind the lock screen and in
+     the sidebar. The still is the same picture. */
+  const useLive = !!(live && size >= 96 && !reduce && !failed && !PERF);
   const src = crestFile(size);
   useEffect(() => {
     const el = vid.current;
@@ -2224,7 +2274,8 @@ function AmbientLayer({
   paused = false
 }) {
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduce) return null;
+  /* Not merely stilled: the canvas and its animation frame are never created. */
+  if (reduce || PERF) return null;
   return /*#__PURE__*/React.createElement("div", {
     className: "rcv-ambient",
     "aria-hidden": "true"
@@ -2670,7 +2721,7 @@ function LockScreen({
       justifyContent: "center",
       zIndex: 90
     }
-  }, /*#__PURE__*/React.createElement(DustField, {
+  }, !PERF && /*#__PURE__*/React.createElement(DustField, {
     count: 70
   }), /*#__PURE__*/React.createElement("div", {
     className: "lock-glow",
@@ -9300,6 +9351,8 @@ function TransferQr(props) {
   }, /*#__PURE__*/React.createElement("rect", { width: d, height: d, fill: "#ffffff" }), /*#__PURE__*/React.createElement("path", { d: path, fill: "#111111" }));
 }
 function SettingsModal({
+  perfMode,
+  setPerfMode,
   onResetLayout,
   onClose,
   onExport,
@@ -9608,6 +9661,37 @@ function SettingsModal({
     className: "btn btn-ghost",
     onClick: onResetLayout
   }, "Reset layout to defaults"), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 10
+    }
+  }, "Graphics"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, [["quality", "Quality"], ["performance", "Performance"]].map(([m, label]) => /*#__PURE__*/React.createElement("button", {
+    key: m,
+    className: "btn " + (perfMode === m ? "btn-primary" : "btn-ghost"),
+    style: {
+      flex: 1
+    },
+    onClick: () => setPerfMode(m)
+  }, label))), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      margin: "8px 0 0",
+      fontSize: 13
+    }
+  }, perfMode === "performance" ? "Nothing moves, and the app keeps fewer pictures in memory. The drifting light, the dust, the gleam on the crest and the short film of it are not drawn at all. Pictures still open at full size when you open them; they are simply not fetched in advance." : "Everything on: the drifting light behind the library, the dust, the breathing crest and its short film, and pictures read ahead so a gallery is ready before you reach it."), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      margin: "6px 0 0",
+      fontSize: 13
+    }
+  }, "Nothing about your vault changes either way, and neither does what anything looks like standing still. If the app feels heavy, choose Performance."), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), window.win && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -10579,6 +10663,22 @@ function RolecraftVault() {
     setThemeState(t);
     try {
       localStorage.setItem("rcv-theme", t);
+    } catch {}
+  };
+  /* Beside the theme, and for the same reason: the lock screen needs it before
+     the vault can be opened. */
+  const [perfMode, setPerfModeState] = useState(() => {
+    try {
+      const saved = localStorage.getItem("rcv-perfmode");
+      if (saved === "quality" || saved === "performance") return saved;
+    } catch {}
+    return detectPerfMode();
+  });
+  const setPerfMode = m => {
+    setPerfModeState(m);
+    PERF = m === "performance";
+    try {
+      localStorage.setItem("rcv-perfmode", m);
     } catch {}
   };
   const [view, setView] = useState("dashboard");
@@ -11678,9 +11778,11 @@ function RolecraftVault() {
   const PHONE_CARD_MAX = 1000000;
   /* A data URL is a JavaScript string, so it costs about two bytes of memory
      per character. The budget below is that memory cost, not the file size. */
-  const IMG_CACHE_BYTES = ON_PHONE
-    ? Math.round(Math.max(2, Math.min(8, DEVICE_GB)) * 55) * 1024 * 1024
-    : 0;
+  const IMG_CACHE_BYTES = PERF
+    ? 96 * 1024 * 1024
+    : ON_PHONE
+      ? Math.round(Math.max(2, Math.min(8, DEVICE_GB)) * 55) * 1024 * 1024
+      : 0;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;
@@ -11722,7 +11824,7 @@ function RolecraftVault() {
   }, []);
   const imgQueue = useRef([]);
   const imgBusy = useRef(0);
-  const IMG_INFLIGHT = ON_TABLET ? 4 : ON_PHONE ? 3 : 4;
+  const IMG_INFLIGHT = PERF ? 2 : ON_TABLET ? 4 : ON_PHONE ? 3 : 4;
   const quietRef = useRef(false);
   const pumpImg = useCallback(() => {
     if (quietRef.current) return;
@@ -11785,8 +11887,8 @@ function RolecraftVault() {
      idle; the open record jumps the queue. */
   /* A tablet shows far more pictures at once than a phone, so holding only
      eight ready meant the rest were fetched again as they scrolled into view. */
-  const FULL_CACHE_MAX = ON_TABLET ? 24 : ON_PHONE ? 8 : 48;
-  const FULL_MEM_MAX = ON_TABLET ? 48 : ON_PHONE ? 24 : 64;
+  const FULL_CACHE_MAX = PERF ? 6 : ON_TABLET ? 24 : ON_PHONE ? 8 : 48;
+  const FULL_MEM_MAX = PERF ? 12 : ON_TABLET ? 48 : ON_PHONE ? 24 : 64;
   const fullMem = useRef({});
   const fullLoading = useRef(new Set());
   const fullOrder = useRef([]);
@@ -11962,7 +12064,7 @@ function RolecraftVault() {
      Portraits and covers go first, because those are what a library screen
      actually draws. */
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || PERF) return;
     const lead = [], rest = [];
     const add = (id, isLead) => {
       if (id) (isLead ? lead : rest).push(id);
@@ -12966,7 +13068,8 @@ function RolecraftVault() {
   }];
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast);
+  PERF = perfMode === "performance";
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "");
   const sheetOpen = !!(viewCharId || viewPersonaId);
   const overlayOpen = !!(showSettings || showGuide);
   quietRef.current = overlayOpen;
@@ -13228,7 +13331,7 @@ function RolecraftVault() {
     const wallShow = wall.slice(off).concat(wall.slice(0, off)).slice(0, 18);
     const wallVisible = wallShow.slice(0, Math.max(1, wallCols) * 2);
     wallVisible.forEach(w => w.imgId && loadImage(w.imgId));
-    if (spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
+    if (!PERF && spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
     const quick = [{
       label: "New character",
@@ -16356,6 +16459,8 @@ function RolecraftVault() {
     loading: statsOpen.loading,
     onClose: () => setStatsOpen(null)
   }), showSettings && /*#__PURE__*/React.createElement(SettingsModal, {
+    perfMode: perfMode,
+    setPerfMode: setPerfMode,
     onResetLayout: async () => {
       setDashOrderRaw(DASH_KEYS.slice());
       setTextSize("medium");
