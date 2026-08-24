@@ -32,7 +32,10 @@ check("the viewer still asks for the original",
 
 console.log("\nwhat the grid shows:\n");
 check("drag is still wired", /onDrop: e => \{[\s\S]{0,200}onMoveImage\(dragId, it\.imgId\)/.test(SRC));
-check("arrows only where dragging cannot work", /onMoveImage && it\.movable && !CAN_DRAG/.test(SRC));
+/* The reorder arrows are gone entirely. They existed only because touch had no
+   drag; now it has one, on every pointer, so there is nothing left for them to
+   do and they were two permanent buttons on every picture. */
+check("no reorder arrows anywhere", !/movebtn/.test(SRC));
 check("CAN_DRAG asks the pointer, not the platform",
   /CAN_DRAG[\s\S]{0,160}\(hover: hover\) and \(pointer: fine\)/.test(SRC));
 check("the open button is no longer forced visible",

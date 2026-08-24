@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.196";
+const APP_VERSION = "1.197";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,8 +26,8 @@ const APP_VERSION = "1.196";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.196 — current",
-  notes: ["You can rearrange pictures with your thumb on a phone or tablet. Hold a picture for a moment until it lifts, slide it onto the one you want it to swap with, and let go. The grid scrolls on its own if you carry a picture to the top or bottom edge, so a long gallery can be rearranged without putting it down.","Dragging in the app has always relied on something that plainly does not exist on a touch screen, which is the only reason the arrows on each picture were there. This is built on touch instead.","Holding first is deliberate. A finger moving across a grid nearly always means scrolling, so a picture is only picked up once your thumb has rested on it, and moving before that scrolls as it always did. A quick tap still opens the picture.","The arrows are still there on a touch screen. They are the surer way if you would rather not hold and slide, and they are unaffected by this."]
+  heading: "1.197 — current",
+  notes: ["You can rearrange pictures with your thumb on a phone or tablet. Hold a picture in the grid until it lifts, slide it onto the one you want it to change places with, and let go. Carry it to the top or bottom of the screen and the grid scrolls along with you, so a long gallery can be rearranged without putting the picture down halfway.","Dragging had always relied on something that does not exist on a touch screen, which is the only reason the arrows on each picture were ever added. Now that a thumb can move a picture directly, the arrows are gone. Every picture had two of them sitting on it permanently, which on a small tile is a good part of the picture covered.","Holding first is deliberate. A finger moving across a grid nearly always means scrolling, so a picture is only picked up once your thumb has rested on it. Move before that and the page scrolls exactly as it always did, and a quick tap still opens the picture.","On a computer nothing changes: dragging a picture with the mouse works as it always has, and the arrows had already gone from there in 1.194."]
 }, {
   heading: "1.195",
   notes: ["Pictures in the grid show an open hand when you point at them, and the hand closes while you are moving one. It was a magnifying glass before, which promised zooming and said nothing about the fact that pictures can be dragged into the order you want at all.","Where a picture cannot be dragged the magnifying glass is still right, and still there: on a touch screen, and in the smaller picture lists on lore entries and prompts, where clicking really is all it does."]
@@ -1803,7 +1803,6 @@ const CSS = `
   .rcv .blurbtn.on { color: #d9b25c; border-color: rgba(217,178,92,.55); }
   /* Moving a picture without dragging it, which is the only way on a touch
      screen. Along the bottom because every other corner of a tile is taken. */
-  .rcv .movebtn { top: auto; bottom: 8px; opacity: 1; }
   /* The tile controls step back until the tile is pointed at. Where there is no
      pointer to hover with they stay visible, because otherwise they could never
      be reached. A selected tile keeps its tick whatever the pointer, so the
@@ -5038,52 +5037,7 @@ function ImageGridView({
     blurred: blurred,
     onToggleBlur: onToggleBlur,
     label: it.label
-  }), onMoveImage && it.movable && !CAN_DRAG && shownItems.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, i > 0 && /*#__PURE__*/React.createElement("span", {
-    className: "blurbtn on movebtn",
-    role: "button",
-    tabIndex: 0,
-    "aria-label": "Move " + (it.label || "this picture") + " earlier",
-    title: "Move earlier",
-    style: {
-      left: 8,
-      right: "auto"
-    },
-    onClick: e => {
-      e.stopPropagation();
-      onMoveImage(it.imgId, shownItems[i - 1].imgId);
-    },
-    onKeyDown: e => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        onMoveImage(it.imgId, shownItems[i - 1].imgId);
-      }
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.left,
-    size: 14
-  })), i < shownItems.length - 1 && /*#__PURE__*/React.createElement("span", {
-    className: "blurbtn on movebtn",
-    role: "button",
-    tabIndex: 0,
-    "aria-label": "Move " + (it.label || "this picture") + " later",
-    title: "Move later",
-    style: {
-      right: 8
-    },
-    onClick: e => {
-      e.stopPropagation();
-      onMoveImage(it.imgId, shownItems[i + 1].imgId);
-    },
-    onKeyDown: e => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        onMoveImage(it.imgId, shownItems[i + 1].imgId);
-      }
-    }
-  }, /*#__PURE__*/React.createElement(Ic, {
-    d: icons.right,
-    size: 14
-  }))), onSetAlbum && (it.album || "").trim() && /*#__PURE__*/React.createElement("span", {
+  }), onSetAlbum && (it.album || "").trim() && /*#__PURE__*/React.createElement("span", {
     title: "Album: " + it.album,
     style: {
       position: "absolute",
