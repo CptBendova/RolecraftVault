@@ -60,5 +60,33 @@ if (m) {
   check("a grid that does not reorder keeps the magnifier", cursor(null, true, true, false) === "zoom-in");
 }
 
-console.log(bad ? "\n" + bad + " FAILED" : "\nThe grid draws previews, and its controls and cursor suit the pointer.");
+console.log("\ndragging with a thumb:\n");
+check("tiles can be found from a point", /"data-imgid": it\.imgId/.test(SRC));
+check("a picture is picked up by holding, not by moving", /holdTimer\.current = setTimeout/.test(SRC));
+check("the hold is abandoned once the finger travels", /from\.moved = true;\s*\n\s*cancelHold\(\)/.test(SRC));
+check("only touch takes this path", /if \(e\.pointerType !== "touch"/.test(SRC));
+check("the page is held still while carrying",
+  /document\.addEventListener\("touchmove", stop, \{ passive: false \}\)/.test(SRC));
+check("and released again afterwards",
+  /document\.removeEventListener\("touchmove", stop\)/.test(SRC));
+check("a long grid scrolls as you near the edge", /edge = t\.clientY < 90 \? -12/.test(SRC));
+check("the drop lands on whatever is under the finger", /const over = tileUnder\(e\.clientX, e\.clientY\) \|\| overId/.test(SRC));
+check("a carry does not also open the picture", /onClick: \(\) => \{ if \(!thumbDrag\) setLb\(i\); \}/.test(SRC));
+check("the carried tile is marked", /thumbDrag && dragId === it\.imgId \? " thumb-held"/.test(SRC));
+
+/* Driven for real in a touch-emulated browser against a seeded six picture
+   gallery, which is the only way to prove the gesture rather than its parts:
+
+     carried g2 onto g3   ->  g1,g2,g3,g4,g5,g6  became  g1,g3,g2,g4,g5,g6
+     a flick past a tile  ->  nothing picked up, order untouched
+     a quick tap          ->  still opens the picture
+
+   To repeat it: serve web/, open it with a mobile viewport, seed a character
+   through window.storage, then dispatch PointerEvents with pointerType "touch"
+   — pointerdown, wait past 320ms, pointermove, pointerup. Note that a
+   character's portrait appears in the grid but is not movable, and that at 375
+   points wide the grid is a single column, so a drop target more than one tile
+   away is off screen and elementFromPoint returns nothing. */
+
+console.log(bad ? "\n" + bad + " FAILED" : "\nThe grid draws previews, and its controls, cursor and dragging suit the pointer.");
 process.exit(bad ? 1 : 0);

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.195";
+const APP_VERSION = "1.196";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.195";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.195 — current",
+  heading: "1.196 — current",
+  notes: ["You can rearrange pictures with your thumb on a phone or tablet. Hold a picture for a moment until it lifts, slide it onto the one you want it to swap with, and let go. The grid scrolls on its own if you carry a picture to the top or bottom edge, so a long gallery can be rearranged without putting it down.","Dragging in the app has always relied on something that plainly does not exist on a touch screen, which is the only reason the arrows on each picture were there. This is built on touch instead.","Holding first is deliberate. A finger moving across a grid nearly always means scrolling, so a picture is only picked up once your thumb has rested on it, and moving before that scrolls as it always did. A quick tap still opens the picture.","The arrows are still there on a touch screen. They are the surer way if you would rather not hold and slide, and they are unaffected by this."]
+}, {
+  heading: "1.195",
   notes: ["Pictures in the grid show an open hand when you point at them, and the hand closes while you are moving one. It was a magnifying glass before, which promised zooming and said nothing about the fact that pictures can be dragged into the order you want at all.","Where a picture cannot be dragged the magnifying glass is still right, and still there: on a touch screen, and in the smaller picture lists on lore entries and prompts, where clicking really is all it does."]
 }, {
   heading: "1.194",
@@ -1814,6 +1817,10 @@ const CSS = `
   .rcv .draghandle:hover { color: var(--text); background: var(--nav-hov); }
   .rcv .draghandle:active { cursor: grabbing; }
   .rcv .drag-over { outline: 2px dashed var(--brass-line); outline-offset: 3px; }
+  /* Held in a thumb: lifted slightly, so it is clear which picture is moving
+     and that letting go will put it somewhere. */
+  .rcv .tile.thumb-held { transform: scale(1.06); opacity: .9; z-index: 5;
+    box-shadow: 0 10px 26px rgba(0,0,0,.5); }
   .rcv .dragging { opacity: .45; }
   .rcv .sec-head { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
   .rcv .wtile { position: relative; border-radius: 13px; overflow: hidden; border: 1px solid var(--line);
@@ -4430,6 +4437,57 @@ function ImageGridView({
   const [editVal, setEditVal] = useState("");
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  /* Picking a picture up with a thumb. holdTimer is the pause that separates
+     "I am moving this" from "I am scrolling past it". */
+  const holdTimer = useRef(null);
+  const touchFrom = useRef(null);
+  const [thumbDrag, setThumbDrag] = useState(false);
+  const cancelHold = useCallback(() => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  }, []);
+  /* Which picture is under the finger. The tile is found from the point rather
+     than from the event, because the element the gesture started on keeps the
+     events for the whole gesture. */
+  const tileUnder = useCallback((x, y) => {
+    const el = typeof document !== "undefined" && document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+    const tile = el && el.closest ? el.closest("[data-imgid]") : null;
+    return tile ? tile.getAttribute("data-imgid") : null;
+  }, []);
+  /* While a picture is held, the page must not scroll under it. A passive
+     listener cannot refuse a scroll, so this one is added deliberately as
+     non-passive, and only for as long as the drag lasts. Near the top or
+     bottom edge the page is nudged along, or a long grid could only ever be
+     rearranged within one screenful. */
+  useEffect(() => {
+    if (!thumbDrag) return;
+    const stop = e => { if (e.cancelable) e.preventDefault(); };
+    document.addEventListener("touchmove", stop, { passive: false });
+    let raf = 0;
+    let edge = 0;
+    const step = () => {
+      if (edge) {
+        const sc = document.querySelector(".rcv > .scrollbody") || document.scrollingElement;
+        if (sc) sc.scrollTop += edge;
+      }
+      raf = requestAnimationFrame(step);
+    };
+    const track = e => {
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      const h = window.innerHeight;
+      edge = t.clientY < 90 ? -12 : t.clientY > h - 90 ? 12 : 0;
+    };
+    document.addEventListener("touchmove", track, { passive: true });
+    raf = requestAnimationFrame(step);
+    return () => {
+      document.removeEventListener("touchmove", stop);
+      document.removeEventListener("touchmove", track);
+      cancelAnimationFrame(raf);
+    };
+  }, [thumbDrag]);
   const commitRename = () => {
     if (editId && onRename) onRename(editId, editVal.trim());
     setEditId(null);
@@ -4818,11 +4876,61 @@ function ImageGridView({
     }
   }, album === "" ? "Every image is filed into an album." : "\u201c" + album + "\u201d is empty \u2014 switch to All, tick some images, then add them to this album."), shownItems.map((it, i) => /*#__PURE__*/React.createElement("div", {
     key: it.imgId,
-    className: "tile" + (overId === it.imgId && dragId && dragId !== it.imgId ? " drag-over" : "") + (dragId === it.imgId ? " dragging" : ""),
+    className: "tile" + (overId === it.imgId && dragId && dragId !== it.imgId ? " drag-over" : "") + (dragId === it.imgId ? " dragging" : "") + (thumbDrag && dragId === it.imgId ? " thumb-held" : ""),
     role: "button",
     tabIndex: 0,
     "aria-pressed": !!sel[it.imgId],
+    /* how a tile is found from a point on the screen */
+    "data-imgid": it.imgId,
     draggable: !!(onMoveImage && it.movable),
+    onPointerDown: e => {
+      if (e.pointerType !== "touch" || !onMoveImage || !it.movable) return;
+      touchFrom.current = { x: e.clientX, y: e.clientY, id: it.imgId, moved: false };
+      cancelHold();
+      /* long enough not to fire while a finger is on its way past, short
+         enough not to feel like waiting */
+      holdTimer.current = setTimeout(() => {
+        holdTimer.current = null;
+        if (!touchFrom.current || touchFrom.current.moved) return;
+        setDragId(it.imgId);
+        setThumbDrag(true);
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+      }, 320);
+    },
+    onPointerMove: e => {
+      if (e.pointerType !== "touch") return;
+      const from = touchFrom.current;
+      if (!from) return;
+      if (!thumbDrag) {
+        /* still deciding: enough movement means this was a scroll */
+        if (Math.abs(e.clientX - from.x) > 12 || Math.abs(e.clientY - from.y) > 12) {
+          from.moved = true;
+          cancelHold();
+        }
+        return;
+      }
+      const over = tileUnder(e.clientX, e.clientY);
+      if (over && over !== overId) setOverId(over);
+    },
+    onPointerUp: e => {
+      if (e.pointerType !== "touch") return;
+      cancelHold();
+      const from = touchFrom.current;
+      touchFrom.current = null;
+      if (!thumbDrag) return;
+      const over = tileUnder(e.clientX, e.clientY) || overId;
+      setThumbDrag(false);
+      setDragId(null);
+      setOverId(null);
+      if (from && over && over !== from.id) onMoveImage(from.id, over);
+    },
+    onPointerCancel: () => {
+      cancelHold();
+      touchFrom.current = null;
+      setThumbDrag(false);
+      setDragId(null);
+      setOverId(null);
+    },
     onDragStart: e => {
       if (!onMoveImage || !it.movable) return;
       setDragId(it.imgId);
@@ -4862,7 +4970,7 @@ function ImageGridView({
       borderColor: sel[it.imgId] ? "var(--brass)" : undefined,
       boxShadow: sel[it.imgId] ? "0 0 0 2px var(--brass-line)" : undefined
     },
-    onClick: () => setLb(i),
+    onClick: () => { if (!thumbDrag) setLb(i); },
     onKeyDown: e => e.key === "Enter" && setLb(i)
   }, /*#__PURE__*/React.createElement("span", {
     /* the tick stays put once something is selected, so a part-selected grid
