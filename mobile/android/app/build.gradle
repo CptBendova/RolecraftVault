@@ -3,6 +3,13 @@ apply plugin: 'com.android.application'
 // Release signing. keystore.properties and the keystore it points at are both
 // gitignored, so a clone without them still builds — it just produces an
 // unsigned release APK instead of failing. See keys/android-keystore.txt.
+// Resolves a keystore path from keystore.properties: absolute is taken as is,
+// anything relative is read against mobile/android/, so the same file works on
+// any machine regardless of where the project sits.
+def ksFile = { String path ->
+    def f = new File(path)
+    return f.isAbsolute() ? f : rootProject.file(path)
+}
 def keystorePropsFile = rootProject.file("keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
@@ -28,7 +35,9 @@ android {
     signingConfigs {
         release {
             if (keystoreProps['storeFile']) {
-                storeFile file(keystoreProps['storeFile'])
+                // Absolute paths do not survive a move to another machine, so a
+                // relative one is resolved against mobile/android/ instead.
+                storeFile ksFile(keystoreProps['storeFile'])
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
