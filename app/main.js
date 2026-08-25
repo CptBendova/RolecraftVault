@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, session } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, shell, session, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.210";
+const FACTORY_BUILD = "1.211";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1462,8 +1462,33 @@ function sendWindowState() {
   } catch (e) {}
 }
 
+/* A saved position is only good while the screen it was on still exists. Undock
+   a laptop, unplug the second monitor, or let Windows renumber the displays, and
+   the window is restored to coordinates that are now off every screen: the
+   process starts, a window exists, nothing appears, and it reads as "it just
+   didn't open". Electron honours those coordinates exactly, so the check has to
+   be made here. Anything that no longer overlaps a display is centred on the
+   nearest one, at a size that fits it. */
+function onScreenBounds(saved) {
+  if (!saved || typeof saved.x !== "number" || typeof saved.y !== "number") return saved;
+  try {
+    const b = { x: saved.x, y: saved.y, width: saved.width || 1280, height: saved.height || 820 };
+    const overlaps = a => b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y;
+    const hit = screen.getAllDisplays().find(d => overlaps(d.workArea));
+    const a = (hit || screen.getDisplayMatching(b)).workArea;
+    /* Size first: a window saved on a 4K monitor and reopened on a laptop is
+       larger than the screen, and its title bar ends up somewhere unreachable.
+       Then position, clamped so the whole window sits inside the work area. A
+       window that was already fine keeps exactly the place it had. */
+    const width = Math.min(b.width, a.width);
+    const height = Math.min(b.height, a.height);
+    const x = Math.min(Math.max(b.x, a.x), a.x + a.width - width);
+    const y = Math.min(Math.max(b.y, a.y), a.y + a.height - height);
+    return { ...saved, x, y, width, height };
+  } catch (e) { return { ...saved, x: undefined, y: undefined }; }
+}
 function createWindow() {
-  const saved = loadBounds();
+  const saved = onScreenBounds(loadBounds());
   const win = new BrowserWindow({
     width: saved ? saved.width : 1280, height: saved ? saved.height : 820,
     x: saved ? saved.x : undefined, y: saved ? saved.y : undefined,
@@ -1482,6 +1507,19 @@ function createWindow() {
     if (saved && saved.fullScreen) win.setFullScreen(true);
     sendWindowState();
   });
+  /* A renderer that runs out of memory or crashes leaves the window standing
+     there with nothing in it and no way back: the vault looks like it shut
+     itself down. Reload once and it comes back at the lock screen with the
+     vault untouched, since everything on disk is written as it goes. Bounded,
+     because a crash that repeats would otherwise reload forever. */
+  let renderReloads = 0;
+  win.webContents.on("render-process-gone", (_e, details) => {
+    if (details && details.reason === "clean-exit") return;
+    if (win.isDestroyed() || renderReloads >= 3) return;
+    renderReloads++;
+    try { win.webContents.reload(); } catch (e) {}
+  });
+  win.on("unresponsive", () => { try { win.webContents.forcefullyCrashRenderer(); } catch (e) {} });
   win.setMenuBarVisibility(false);
   win.on("enter-full-screen", sendWindowState);
   win.on("leave-full-screen", sendWindowState);
@@ -1555,6 +1593,23 @@ function createWindow() {
   });
 }
 
+/* Two copies would read and write the same vault files at once, and the loser
+   of a race silently overwrites the winner. A second launch hands its request
+   to the copy already running instead, which also covers double-clicking the
+   shortcut when the window is somewhere you cannot see. */
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+} else {
+  app.on("second-instance", () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return;
+    const b = onScreenBounds({ x: win.getBounds().x, y: win.getBounds().y, width: win.getBounds().width, height: win.getBounds().height });
+    if (b && typeof b.x === "number") win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
 app.on("before-quit", () => stopTransferServer());
 app.whenReady().then(() => {
   dataDir = path.join(app.getPath("userData"), "vault");

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.210";
+const APP_VERSION = "1.211";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.210";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.210 — current",
+  heading: "1.211 — current",
+  notes: ["The app opens where you can see it again. It remembered the exact spot it was last closed in, without checking that spot still exists, so after unplugging a monitor, undocking a laptop, or changing your screen layout it reopened off the edge of the display: it really was running, there was just nothing on screen. A window bigger than the screen it lands on is now brought down to fit as well.", "The app no longer grows in memory until Windows closes it. On Windows nothing ever released picture previews, so a large library browsed for a while kept climbing until the app was killed and reappeared on its own. Pictures on screen are still never dropped.", "If the interface does crash, it now reloads itself instead of leaving an empty window. Your vault is written as you go, so nothing is lost.", "Opening a second copy now brings the one already running to the front instead of starting a rival that writes to the same vault."]
+}, {
+  heading: "1.210",
   notes: ["Dragging a picture to reorder it looks like it is working again. It did reorder in 1.209, but nothing on screen said so: the picture you were carrying no longer faded, and the dashed outline showing where it would land was gone, so it looked broken even though it was not.", "The picture no longer stretches while you carry it. What followed the pointer was the raw image squashed into a square rather than the tile as drawn, so a wide picture came off the grid distorted.", "Found by shirohibiki."]
 }, {
   heading: "1.209",
@@ -12408,11 +12411,18 @@ function RolecraftVault() {
   const PHONE_CARD_MAX = 1000000;
   /* A data URL is a JavaScript string, so it costs about two bytes of memory
      per character. The budget below is that memory cost, not the file size. */
+  /* Windows had no ceiling at all: zero here skips the eviction below entirely,
+     so every preview ever drawn stayed in memory for as long as the vault was
+     open. A big library browsed for a while grows until the renderer is killed,
+     which looks like the app shutting itself down and coming back on its own.
+     A gigabyte is far above anything ordinary use reaches, so nothing is
+     evicted in practice — it is a backstop, not a budget. Pictures on screen
+     are pinned and never dropped whatever the total. */
   const IMG_CACHE_BYTES = PERF
     ? 96 * 1024 * 1024
     : ON_PHONE
       ? Math.round(Math.max(2, Math.min(8, DEVICE_GB)) * 55) * 1024 * 1024
-      : 0;
+      : 1024 * 1024 * 1024;
   const queueImg = useCallback((id, v) => {
     imgBuf.current[id] = v;
     if (imgFlush.current) return;

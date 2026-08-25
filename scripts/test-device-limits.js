@@ -50,7 +50,14 @@ for (const d of devices) {
   /* invariants that must hold whatever the numbers are */
   if (d.cap && d.w >= 600 && !r.ON_TABLET) { console.log("     FAIL: not detected as a tablet"); bad++; }
   if (d.cap && d.w < 600 && r.ON_TABLET) { console.log("     FAIL: phone detected as a tablet"); bad++; }
-  if (!d.cap && r.IMG_CACHE_BYTES !== 0) { console.log("     FAIL: desktop should be unlimited"); bad++; }
+  /* Desktop used to be 0 here, and 0 skips the eviction loop entirely, so every
+     preview ever drawn stayed in memory until the vault was locked. A large
+     library browsed for a while grew until the renderer was killed, which looks
+     from the outside like the app shutting itself down and coming back. It
+     needs a ceiling — well above anything ordinary use reaches, so nothing is
+     evicted in practice, but not absent. */
+  if (!d.cap && r.IMG_CACHE_BYTES <= 0) { console.log("     FAIL: desktop has no ceiling, so previews grow without bound"); bad++; }
+  if (!d.cap && r.IMG_CACHE_BYTES < 512 * MB) { console.log("     FAIL: desktop ceiling is tight enough to evict in ordinary use"); bad++; }
   if (d.cap && r.IMG_CACHE_BYTES <= 0) { console.log("     FAIL: android needs a budget"); bad++; }
   if (r.ON_TABLET && r.FULL_CACHE_MAX <= 8) { console.log("     FAIL: tablet ready set not raised"); bad++; }
 }
