@@ -77,6 +77,7 @@ app.whenReady().then(async () => {
   // a real drag: press, move in steps, release — Chromium starts a native drag
   const dbg = win.webContents.debugger;
   try { dbg.attach("1.3"); } catch (e) { return finish(2, "  could not attach the debugger: " + e.message); }
+  let midDrag = null;
   const drag = async (from, to) => {
     const send = (m, p) => dbg.sendCommand(m, p);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x: Math.round(from.x), y: Math.round(from.y), button: "left", clickCount: 1, buttons: 1 });
@@ -84,6 +85,16 @@ app.whenReady().then(async () => {
       await send("Input.dispatchMouseEvent", { type: "mouseMoved", button: "left", buttons: 1,
         x: Math.round(from.x + (to.x - from.x) * i / 12), y: Math.round(from.y + (to.y - from.y) * i / 12) });
       await new Promise(r => setTimeout(r, 60));
+      {
+        const snap = await win.webContents.executeJavaScript(
+        `({ dragging: document.querySelectorAll(".dragging").length,
+            over: document.querySelectorAll(".drag-over").length,
+            imgIsDragSource: [...document.querySelectorAll(".imggrid img, .cpage-aside img")].some(im => im.draggable) })`);
+        if (!midDrag) midDrag = { dragging: 0, over: 0, imgIsDragSource: snap.imgIsDragSource, trace: [] };
+        midDrag.dragging = Math.max(midDrag.dragging, snap.dragging);
+        midDrag.over = Math.max(midDrag.over, snap.over);
+        midDrag.trace.push(snap.dragging + "/" + snap.over);
+      }
     }
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: Math.round(to.x), y: Math.round(to.y), button: "left", clickCount: 1, buttons: 0 });
     await new Promise(r => setTimeout(r, 1500));
@@ -94,12 +105,19 @@ app.whenReady().then(async () => {
     const info = await open(where);
     if (info.fail) { console.log("  FAIL  " + where + ": " + info.fail); bad++; continue; }
     const before = info.order;
+    midDrag = null;
     await drag(info.from, info.to);
     const after = await readOrder(info.sel);
     const moved = JSON.stringify(before) !== JSON.stringify(after);
     if (!moved) bad++;
     console.log("  " + (moved ? "PASS" : "FAIL") + "  " + where.padEnd(6) +
-      "  " + JSON.stringify(before) + " -> " + JSON.stringify(after));
+      "  reorders   " + JSON.stringify(before) + " -> " + JSON.stringify(after));
+    const md = midDrag || {};
+    const carried = md.dragging === 1, target = md.over === 1, ghostOk = md.imgIsDragSource === false;
+    if (!carried) bad++; if (!target) bad++; if (!ghostOk) bad++;
+    console.log("  " + (carried ? "PASS" : "FAIL") + "  " + where.padEnd(6) + "  the carried picture is faded while you hold it (.dragging=" + md.dragging + ")");
+    console.log("  " + (target ? "PASS" : "FAIL") + "  " + where.padEnd(6) + "  the tile it would land on is outlined (.drag-over peak=" + md.over + ")  trace " + (md.trace||[]).join(" "));
+    console.log("  " + (ghostOk ? "PASS" : "FAIL") + "  " + where.padEnd(6) + "  the tile drags, not the bare img, so the ghost is not stretched");
     // back to the library for the next pass
     await win.webContents.reload();
     await new Promise(r => setTimeout(r, 2600));

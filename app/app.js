@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.209";
+const APP_VERSION = "1.210";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.209";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.209 — current",
+  heading: "1.210 — current",
+  notes: ["Dragging a picture to reorder it looks like it is working again. It did reorder in 1.209, but nothing on screen said so: the picture you were carrying no longer faded, and the dashed outline showing where it would land was gone, so it looked broken even though it was not.", "The picture no longer stretches while you carry it. What followed the pointer was the raw image squashed into a square rather than the tile as drawn, so a wide picture came off the grid distorted.", "Found by shirohibiki."]
+}, {
+  heading: "1.209",
   notes: ["Dragging a picture with the mouse to reorder it works again on Windows. You could pick a picture up and carry it, but letting go did nothing and it stayed where it was. Reported by CptBendova."]
 }, {
   heading: "1.208",
@@ -4709,6 +4712,36 @@ function ImageGridView({
       holdTimer.current = null;
     }
   }, []);
+  /* The two drag classes, put on and taken off by hand.
+
+     Everything a tile looks like comes from state, and React cannot repaint
+     during a native drag: Chromium runs one in a nested modal loop and the
+     update does not flush until the gesture is over. So the picture being
+     carried never faded and the tile under the pointer never got its dashed
+     outline — the reorder worked, but nothing on screen said where the picture
+     would land, or even that one had been picked up. React rewrites className
+     when it next renders, which is after the drag, and both classes are
+     cleared by then anyway. */
+  const markDragging = useCallback(el => { if (el) el.classList.add("dragging"); }, []);
+  /* Re-stated on every dragover rather than once when the drag begins. React
+     does render once early in the gesture, from state that has not caught up,
+     and rewriting className wipes a class that was only set at dragstart —
+     which is why the carried picture stopped fading while the outline, put back
+     on each move, survived. */
+  const markOver = useCallback((el, sourceId) => {
+    const root = gridRef.current;
+    if (!root || !el) return;
+    root.querySelectorAll("[data-imgid]").forEach(x => {
+      x.classList.toggle("dragging", !!sourceId && x.getAttribute("data-imgid") === sourceId);
+      if (x !== el) x.classList.remove("drag-over");
+    });
+    el.classList.add("drag-over");
+  }, []);
+  const clearDragMarks = useCallback(() => {
+    const root = gridRef.current;
+    if (!root) return;
+    root.querySelectorAll(".dragging, .drag-over").forEach(x => x.classList.remove("dragging", "drag-over"));
+  }, []);
   /* Which picture is under the finger. The tile is found from the point rather
      than from the event, because the element the gesture started on keeps the
      events for the whole gesture. */
@@ -5286,6 +5319,7 @@ function ImageGridView({
          could carry a picture and nothing happened when you let go. The state
          stays for the styling; only the ref is trusted mid-drag. */
       dragIdRef.current = it.imgId;
+      markDragging(e.currentTarget);
       setDragId(it.imgId);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -5294,6 +5328,7 @@ function ImageGridView({
     },
     onDragEnd: () => {
       dragIdRef.current = null;
+      clearDragMarks();
       setDragId(null);
       setOverId(null);
     },
@@ -5301,9 +5336,11 @@ function ImageGridView({
       // the ref, not the state: see the note in onDragStart
       if (!dragIdRef.current || !it.movable) return;
       e.preventDefault();
+      if (dragIdRef.current !== it.imgId) markOver(e.currentTarget, dragIdRef.current);
       if (overId !== it.imgId) setOverId(it.imgId);
     },
-    onDragLeave: () => {
+    onDragLeave: e => {
+      e.currentTarget.classList.remove("drag-over");
       if (overId === it.imgId) setOverId(null);
     },
     onDrop: e => {
@@ -5311,6 +5348,7 @@ function ImageGridView({
       const from = dragIdRef.current;
       if (from && it.movable && from !== it.imgId) onMoveImage(from, it.imgId);
       dragIdRef.current = null;
+      clearDragMarks();
       setDragId(null);
       setOverId(null);
     },
@@ -5438,6 +5476,12 @@ function ImageGridView({
   }, variantNameOf(it.variantId)), tileOf(fullCache, imgCache, it.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: tileOf(fullCache, imgCache, it.imgId),
     alt: it.label || "image",
+    /* An img is draggable on its own, so it, not the tile, became the drag
+       source — and Chromium paints that ghost from the image's own bitmap
+       stretched to the element box, ignoring object-fit, so a wide picture
+       came off the grid squashed into a square. Hand the gesture to the tile
+       and the ghost is a picture of the tile, letterboxed as drawn. */
+    draggable: false,
     className: blurred[it.imgId] ? "blur-img" : undefined
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6198,6 +6242,16 @@ function CharacterPage({
      is still null for every dragover: preventDefault was never called and the
      drop was refused. You could carry a picture and nothing happened. */
   const railDragRef = useRef(null);
+  /* React cannot repaint during a native drag, so the faded source and the
+     dashed outline on the target are put on by hand. Same reason as the ref
+     above: nothing on screen moved while a picture was being carried. */
+  const railMark = (el, cls) => {
+    const rail = el && el.closest && el.closest(".cpage-aside");
+    if (!rail) return;
+    if (cls === null) { rail.querySelectorAll(".dragging, .drag-over").forEach(x => x.classList.remove("dragging", "drag-over")); return; }
+    if (cls === "drag-over") rail.querySelectorAll(".drag-over").forEach(x => { if (x !== el) x.classList.remove("drag-over"); });
+    el.classList.add(cls);
+  };
   const [railOver, setRailOver] = useState(null);
   const gridItems = (() => {
     const seen = new Set();
@@ -6930,6 +6984,7 @@ function CharacterPage({
     draggable: true,
     onDragStart: e => {
       railDragRef.current = i;
+      railMark(e.currentTarget, "dragging");
       setRailDrag(i);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -6938,15 +6993,18 @@ function CharacterPage({
     },
     onDragEnd: () => {
       railDragRef.current = null;
+      railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
     },
     onDragOver: e => {
       if (railDragRef.current === null) return; // the ref: see the note by the declaration
       e.preventDefault();
+      if (railDragRef.current !== i) railMark(e.currentTarget, "drag-over");
       if (railOver !== i) setRailOver(i);
     },
-    onDragLeave: () => {
+    onDragLeave: e => {
+      e.currentTarget.classList.remove("drag-over");
       if (railOver === i) setRailOver(null);
     },
     onDrop: e => {
@@ -6959,6 +7017,7 @@ function CharacterPage({
         onReorderImages(next);
       }
       railDragRef.current = null;
+      railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
     },
@@ -6974,6 +7033,8 @@ function CharacterPage({
     label: "image " + (i + 1)
   }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: picOf(fullCache, imgCache, g.imgId),
+    // the tile is the drag source, not this: see the note in the grid's tile
+    draggable: false,
     className: blurred[g.imgId] ? "blur-img" : undefined,
     alt: g.caption || "gallery image " + (i + 1)
   }) : /*#__PURE__*/React.createElement("div", {
@@ -7148,6 +7209,16 @@ function PersonaPage({
      is still null for every dragover: preventDefault was never called and the
      drop was refused. You could carry a picture and nothing happened. */
   const railDragRef = useRef(null);
+  /* React cannot repaint during a native drag, so the faded source and the
+     dashed outline on the target are put on by hand. Same reason as the ref
+     above: nothing on screen moved while a picture was being carried. */
+  const railMark = (el, cls) => {
+    const rail = el && el.closest && el.closest(".cpage-aside");
+    if (!rail) return;
+    if (cls === null) { rail.querySelectorAll(".dragging, .drag-over").forEach(x => x.classList.remove("dragging", "drag-over")); return; }
+    if (cls === "drag-over") rail.querySelectorAll(".drag-over").forEach(x => { if (x !== el) x.classList.remove("drag-over"); });
+    el.classList.add(cls);
+  };
   const [railOver, setRailOver] = useState(null);
   const gridItems = (() => {
     const seen = new Set();
@@ -7583,6 +7654,7 @@ function PersonaPage({
     draggable: true,
     onDragStart: e => {
       railDragRef.current = i;
+      railMark(e.currentTarget, "dragging");
       setRailDrag(i);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -7591,15 +7663,18 @@ function PersonaPage({
     },
     onDragEnd: () => {
       railDragRef.current = null;
+      railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
     },
     onDragOver: e => {
       if (railDragRef.current === null) return; // the ref: see the note by the declaration
       e.preventDefault();
+      if (railDragRef.current !== i) railMark(e.currentTarget, "drag-over");
       if (railOver !== i) setRailOver(i);
     },
-    onDragLeave: () => {
+    onDragLeave: e => {
+      e.currentTarget.classList.remove("drag-over");
       if (railOver === i) setRailOver(null);
     },
     onDrop: e => {
@@ -7612,6 +7687,7 @@ function PersonaPage({
         onReorderImages(next);
       }
       railDragRef.current = null;
+      railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
     },
@@ -7625,6 +7701,8 @@ function PersonaPage({
     label: "image " + (i + 1)
   }), picOf(fullCache, imgCache, g.imgId) ? /*#__PURE__*/React.createElement("img", {
     src: picOf(fullCache, imgCache, g.imgId),
+    // the tile is the drag source, not this: see the note in the grid's tile
+    draggable: false,
     className: blurred[g.imgId] ? "blur-img" : undefined,
     alt: g.caption || "gallery image " + (i + 1)
   }) : /*#__PURE__*/React.createElement("div", {
