@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.213";
+const APP_VERSION = "1.214";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.213";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.213 — current",
+  heading: "1.214 — current",
+  notes: ["On a phone or tablet, the arrows that reorder your dashboard panels and the sections of a character are now big enough to hit. They were the only thing that worked there and were smaller than a fingertip: the grip beside them looks like something you could drag, but dragging that way is not possible on Android at all, so it has been taken away where it cannot work. Dragging on Windows is unchanged.", "The size and filter buttons above the picture grid are easier to hit on a phone for the same reason. There is no pinch to fall back on, so they were the only way to change how the grid looks."]
+}, {
+  heading: "1.213",
   notes: ["Escape now closes the thing on top and nothing else. Pressing it while the stats panel was open closed the character behind it and left the panel sitting over your library, so you lost your place and still had to dismiss the panel.", "Cards, pictures and foldaway sections can be opened with the space bar as well as Enter. They are buttons and said so, but only answered Enter, so reaching one with the keyboard and pressing space did nothing except scroll the page underneath."]
 }, {
   heading: "1.212",
@@ -1867,6 +1870,16 @@ const CSS = `
   .rcv .draghandle:hover { color: var(--text); background: var(--nav-hov); }
   .rcv .draghandle:active { cursor: grabbing; }
   .rcv .drag-over { outline: 2px dashed var(--brass-line); outline-offset: 3px; }
+  /* A grip is a promise of dragging, and HTML5 drag does not exist in the
+     Android WebView, so on the phone build it is an inert handle. Hidden
+     there, and the arrows beside it become the control. */
+  .rcv.phone .draghandle { display: none; }
+  .rcv.phone .btn-move { min-width: 44px; min-height: 44px; padding: 4px 10px; }
+  /* A chip that is a button is a control, and in the picture grid the size and
+     the album and version filters are chips and nothing else — there is no
+     pinch to fall back on. At 21px tall they were a poor target for a thumb.
+     Only the button ones: a tag is a span and stays as it is. */
+  .rcv.phone button.chip { min-height: 36px; padding: 6px 12px; }
   /* Held in a thumb: lifted slightly, so it is clear which picture is moving
      and that letting go will put it somewhere. */
   .rcv .tile.thumb-held { transform: scale(1.06); opacity: .9; z-index: 5;
@@ -6988,7 +7001,7 @@ function CharacterPage({
     d: icons.grip,
     size: 15
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "btn btn-ghost btn-move",
     "aria-label": "Move " + s.title + " up",
     disabled: i === 0,
     onClick: e => {
@@ -7003,7 +7016,7 @@ function CharacterPage({
     d: icons.cup,
     size: 14
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "btn btn-ghost btn-move",
     "aria-label": "Move " + s.title + " down",
     disabled: i === prose.length - 1,
     onClick: e => {
@@ -7698,7 +7711,7 @@ function PersonaPage({
     d: icons.grip,
     size: 15
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "btn btn-ghost btn-move",
     "aria-label": "Move " + s.title + " up",
     disabled: i === 0,
     onClick: e => {
@@ -7713,7 +7726,7 @@ function PersonaPage({
     d: icons.cup,
     size: 14
   })), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+    className: "btn btn-ghost btn-move",
     "aria-label": "Move " + s.title + " down",
     disabled: i === prose.length - 1,
     onClick: e => {
@@ -14202,7 +14215,7 @@ function RolecraftVault() {
         d: icons.grip,
         size: 14
       })), /*#__PURE__*/React.createElement("button", {
-        className: "btn btn-ghost",
+        className: "btn btn-ghost btn-move",
         "aria-label": "Move " + label + " up",
         disabled: first,
         onClick: () => moveDash(id, -1),
@@ -14214,7 +14227,7 @@ function RolecraftVault() {
         d: icons.cup,
         size: 13
       })), /*#__PURE__*/React.createElement("button", {
-        className: "btn btn-ghost",
+        className: "btn btn-ghost btn-move",
         "aria-label": "Move " + label + " down",
         disabled: last,
         onClick: () => moveDash(id, 1),
