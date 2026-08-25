@@ -31,7 +31,7 @@ const finish = (code, msg) => { if (done) return; done = true; if (msg) console.
 setTimeout(() => finish(2, "  timed out"), 90000);
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 1400, height: 1000 });
+  const win = new BrowserWindow({ show: false, width: 1400, height: 1400 });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
   await new Promise(r => setTimeout(r, 2500));
 
@@ -40,6 +40,8 @@ app.whenReady().then(async () => {
     for (const k of ["p","b","g1","g2","g3"]) { await s.set("img:"+k, ${JSON.stringify(px)}); await s.set("th:"+k, ${JSON.stringify(px)}); }
     await s.set("chars:all", JSON.stringify([{ id:"c1", name:"Drag Subject", tags:[], searchables:[],
       profileImg:"p", banner:"b", variants:[],
+      story:"A backstory paragraph.", personality:"A personality paragraph.",
+      sections:[{id:"s1",title:"Alpha",content:"first"},{id:"s2",title:"Beta",content:"second"}],
       gallery:[{imgId:"g1",caption:"a",album:"",variantId:""},
                {imgId:"g2",caption:"b",album:"",variantId:""},
                {imgId:"g3",caption:"c",album:"",variantId:""}],
@@ -57,13 +59,30 @@ app.whenReady().then(async () => {
     if (!card) return { fail: "character not reachable" };
     card.click(); await sleep(1300);
     ${where === "grid" ? `const g = btn(/^Grid$/); if (!g) return { fail: "no Grid button" }; g.click(); await sleep(1300);` : ``}
-    const sel = ${where === "grid" ? `".imggrid [data-imgid]"` : `".cpage-aside .tile"`};
-    const tiles = [...document.querySelectorAll(sel)];
-    if (tiles.length < 3) return { fail: "not enough tiles in " + sel + " (" + tiles.length + ")" };
-    const label = t => { const im = t.querySelector("img"); return t.getAttribute("data-imgid") || (im ? im.alt : "?"); };
+    const sel = ${where === "grid" ? `".imggrid [data-imgid]"` : where === "aside" ? `".cpage-aside .tile"` : `".card"`};
+    let tiles = [...document.querySelectorAll(sel)];
+    if (${JSON.stringify("sections")} === ${JSON.stringify("PLACEHOLDER")}) {}
+    if (sel === ".card") {
+      // only the prose cards, and only ones fully on screen: a target below the
+      // fold takes the pointer out of the window and the drag cancels
+      tiles = tiles.filter(c => c.querySelector(".sec-head"))
+                   .filter(c => { const r = c.getBoundingClientRect(); return r.top > 0 && r.bottom < window.innerHeight - 10; });
+    }
+    const need = sel === ".card" ? 2 : 3;
+    if (tiles.length < need) return { fail: "not enough tiles in " + sel + " (" + tiles.length + ")" };
+    const label = t => {
+      const h = t.querySelector && t.querySelector(".sec-head");
+      if (h) return (h.textContent || "").split(String.fromCharCode(10)).join(" ").trim().slice(0, 14);
+      const im = t.querySelector("img");
+      return t.getAttribute("data-imgid") || (im ? im.alt : "?");
+    };
     // drag the first movable tile onto the last one
-    const movable = tiles.filter(t => t.draggable);
-    const src = movable[0], dst = movable[movable.length - 1];
+    const grips = [...document.querySelectorAll(".draghandle")];
+    const movable = sel === ".card" ? tiles : tiles.filter(t => t.draggable);
+    if (movable.length < 2) return { fail: "not enough movable in " + sel };
+    // sections are dragged by their grip; tiles by themselves
+    const src = sel === ".card" ? grips[0] : movable[0];
+    const dst = movable[movable.length - 1];
     const a = src.getBoundingClientRect(), b = dst.getBoundingClientRect();
     return { order: tiles.map(label),
              from: { x: a.left + a.width/2, y: a.top + a.height/2 },
@@ -72,7 +91,11 @@ app.whenReady().then(async () => {
   })()`);
 
   const readOrder = async sel => await win.webContents.executeJavaScript(
-    `[...document.querySelectorAll(${JSON.stringify(sel)})].map(t => { const im = t.querySelector("img"); return t.getAttribute("data-imgid") || (im ? im.alt : "?"); })`);
+    `[...document.querySelectorAll(${JSON.stringify(sel)})]${sel === ".card" ? '.filter(c => c.querySelector(".sec-head"))' : ""}.map(t => {
+       const h = t.querySelector && t.querySelector(".sec-head");
+       if (h) return (h.textContent || "").split(String.fromCharCode(10)).join(" ").trim().slice(0, 14);
+       const im = t.querySelector("img");
+       return t.getAttribute("data-imgid") || (im ? im.alt : "?"); })`);
 
   // a real drag: press, move in steps, release — Chromium starts a native drag
   const dbg = win.webContents.debugger;
@@ -101,7 +124,7 @@ app.whenReady().then(async () => {
   };
 
   let bad = 0;
-  for (const where of ["grid", "aside"]) {
+  for (const where of ["grid", "aside", "sections"]) {
     const info = await open(where);
     if (info.fail) { console.log("  FAIL  " + where + ": " + info.fail); bad++; continue; }
     const before = info.order;

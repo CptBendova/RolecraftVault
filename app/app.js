@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.211";
+const APP_VERSION = "1.212";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.211";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.211 — current",
+  heading: "1.212 — current",
+  notes: ["Dragging a section by its grip to reorder it works again, on both characters and personas. It did nothing at all: you could pick a section up and carry it, and letting go left everything where it was. The up and down arrows beside the grip always worked, which is probably why this went unreported for so long.", "Dragging is steadier everywhere else too. Sections, pictures and the dashboard panels all now accept a picture the moment it is carried over them rather than a fraction later, so a drop is never quietly ignored."]
+}, {
+  heading: "1.211",
   notes: ["The app opens where you can see it again. It remembered the exact spot it was last closed in, without checking that spot still exists, so after unplugging a monitor, undocking a laptop, or changing your screen layout it reopened off the edge of the display: it really was running, there was just nothing on screen. A window bigger than the screen it lands on is now brought down to fit as well.", "The app no longer grows in memory until Windows closes it. On Windows nothing ever released picture previews, so a large library browsed for a while kept climbing until the app was killed and reappeared on its own. Pictures on screen are still never dropped.", "If the interface does crash, it now reloads itself instead of leaving an empty window. Your vault is written as you go, so nothing is lost.", "Opening a second copy now brings the one already running to the front instead of starting a rival that writes to the same vault."]
 }, {
   heading: "1.210",
@@ -5335,6 +5338,14 @@ function ImageGridView({
       setDragId(null);
       setOverId(null);
     },
+    /* Accepted on entry as well as on hover. A tile has children — the tick, the
+       buttons, the picture — and crossing into one fires dragenter for it;
+       leaving that unaccepted is enough for Chromium to stop sending dragover
+       and never offer the drop. */
+    onDragEnter: e => {
+      if (!dragIdRef.current || !it.movable) return;
+      e.preventDefault();
+    },
     onDragOver: e => {
       // the ref, not the state: see the note in onDragStart
       if (!dragIdRef.current || !it.movable) return;
@@ -6417,15 +6428,39 @@ function CharacterPage({
     [key]: !p[key]
   }));
   const [dragIdx, setDragIdx] = useState(null);
+  /* Read instead of dragIdx while a drag is in flight. Chromium runs a native
+     drag in a nested modal loop and React does not flush inside it, so the
+     state is still null at dragover: preventDefault is never called, the drop
+     is refused, and dragging a section to reorder it did nothing at all. */
+  const dragIdxRef = useRef(null);
+  /* React cannot repaint during a native drag either, so the faded row and the
+     dashed outline are set by hand, and re-stated on every dragover because a
+     single render mid-gesture rewrites className and wipes them. */
+  const markRowDrag = (el, fromIdx) => {
+    const list = el && el.parentElement;
+    if (!list) return;
+    [...list.children].forEach((x, n) => {
+      if (!x.classList || !x.classList.contains("card")) return;
+      x.classList.toggle("dragging", n === fromIdx);
+      if (x !== el) x.classList.remove("drag-over");
+    });
+    el.classList.add("drag-over");
+  };
+  const clearRowDrag = el => {
+    const list = el && el.parentElement;
+    if (list) [...list.children].forEach(x => x.classList && x.classList.remove("dragging", "drag-over"));
+  };
   const [overIdx, setOverIdx] = useState(null);
   const dropTo = i => {
-    if (dragIdx === null || dragIdx === i) {
+    const from = dragIdxRef.current;
+    dragIdxRef.current = null;
+    if (from === null || from === i) {
       setDragIdx(null);
       setOverIdx(null);
       return;
     }
     const keys = prose.map(b => b.key);
-    const [moved] = keys.splice(dragIdx, 1);
+    const [moved] = keys.splice(from, 1);
     keys.splice(i, 0, moved);
     setDragIdx(null);
     setOverIdx(null);
@@ -6866,16 +6901,24 @@ function CharacterPage({
     style: {
       padding: "18px 22px"
     },
-    onDragOver: e => {
-      if (dragIdx === null) return;
+    onDragEnter: e => {
+      if (dragIdxRef.current === null || dragIdxRef.current === i) return;
       e.preventDefault();
+    },
+    onDragOver: e => {
+      // the ref, not the state: see the note by dragIdxRef
+      if (dragIdxRef.current === null || dragIdxRef.current === i) return;
+      e.preventDefault();
+      markRowDrag(e.currentTarget, dragIdxRef.current);
       if (overIdx !== i) setOverIdx(i);
     },
-    onDragLeave: () => {
+    onDragLeave: e => {
+      e.currentTarget.classList.remove("drag-over");
       if (overIdx === i) setOverIdx(null);
     },
     onDrop: e => {
       e.preventDefault();
+      clearRowDrag(e.currentTarget);
       dropTo(i);
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -6899,13 +6942,17 @@ function CharacterPage({
     "aria-label": "Drag to move " + s.title,
     onClick: e => e.stopPropagation(),
     onDragStart: e => {
+      dragIdxRef.current = i;
       setDragIdx(i);
       try {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", s.key);
       } catch (err) {}
     },
-    onDragEnd: () => {
+    onDragEnd: e => {
+      dragIdxRef.current = null;
+      const row = e.currentTarget.closest && e.currentTarget.closest(".card");
+      if (row) clearRowDrag(row);
       setDragIdx(null);
       setOverIdx(null);
     }
@@ -6999,6 +7046,10 @@ function CharacterPage({
       railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
+    },
+    onDragEnter: e => {
+      if (railDragRef.current === null || railDragRef.current === i) return;
+      e.preventDefault();
     },
     onDragOver: e => {
       if (railDragRef.current === null) return; // the ref: see the note by the declaration
@@ -7190,15 +7241,39 @@ function PersonaPage({
     [key]: !prev[key]
   }));
   const [dragIdx, setDragIdx] = useState(null);
+  /* Read instead of dragIdx while a drag is in flight. Chromium runs a native
+     drag in a nested modal loop and React does not flush inside it, so the
+     state is still null at dragover: preventDefault is never called, the drop
+     is refused, and dragging a section to reorder it did nothing at all. */
+  const dragIdxRef = useRef(null);
+  /* React cannot repaint during a native drag either, so the faded row and the
+     dashed outline are set by hand, and re-stated on every dragover because a
+     single render mid-gesture rewrites className and wipes them. */
+  const markRowDrag = (el, fromIdx) => {
+    const list = el && el.parentElement;
+    if (!list) return;
+    [...list.children].forEach((x, n) => {
+      if (!x.classList || !x.classList.contains("card")) return;
+      x.classList.toggle("dragging", n === fromIdx);
+      if (x !== el) x.classList.remove("drag-over");
+    });
+    el.classList.add("drag-over");
+  };
+  const clearRowDrag = el => {
+    const list = el && el.parentElement;
+    if (list) [...list.children].forEach(x => x.classList && x.classList.remove("dragging", "drag-over"));
+  };
   const [overIdx, setOverIdx] = useState(null);
   const dropTo = i => {
-    if (dragIdx === null || dragIdx === i) {
+    const from = dragIdxRef.current;
+    dragIdxRef.current = null;
+    if (from === null || from === i) {
       setDragIdx(null);
       setOverIdx(null);
       return;
     }
     const keys = prose.map(b => b.key);
-    const [moved] = keys.splice(dragIdx, 1);
+    const [moved] = keys.splice(from, 1);
     keys.splice(i, 0, moved);
     setDragIdx(null);
     setOverIdx(null);
@@ -7536,16 +7611,24 @@ function PersonaPage({
     style: {
       padding: "18px 22px"
     },
-    onDragOver: e => {
-      if (dragIdx === null) return;
+    onDragEnter: e => {
+      if (dragIdxRef.current === null || dragIdxRef.current === i) return;
       e.preventDefault();
+    },
+    onDragOver: e => {
+      // the ref, not the state: see the note by dragIdxRef
+      if (dragIdxRef.current === null || dragIdxRef.current === i) return;
+      e.preventDefault();
+      markRowDrag(e.currentTarget, dragIdxRef.current);
       if (overIdx !== i) setOverIdx(i);
     },
-    onDragLeave: () => {
+    onDragLeave: e => {
+      e.currentTarget.classList.remove("drag-over");
       if (overIdx === i) setOverIdx(null);
     },
     onDrop: e => {
       e.preventDefault();
+      clearRowDrag(e.currentTarget);
       dropTo(i);
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -7569,13 +7652,17 @@ function PersonaPage({
     "aria-label": "Drag to move " + s.title,
     onClick: e => e.stopPropagation(),
     onDragStart: e => {
+      dragIdxRef.current = i;
       setDragIdx(i);
       try {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", s.key);
       } catch (err) {}
     },
-    onDragEnd: () => {
+    onDragEnd: e => {
+      dragIdxRef.current = null;
+      const row = e.currentTarget.closest && e.currentTarget.closest(".card");
+      if (row) clearRowDrag(row);
       setDragIdx(null);
       setOverIdx(null);
     }
@@ -7669,6 +7756,10 @@ function PersonaPage({
       railMark(e && e.currentTarget, null);
       setRailDrag(null);
       setRailOver(null);
+    },
+    onDragEnter: e => {
+      if (railDragRef.current === null || railDragRef.current === i) return;
+      e.preventDefault();
     },
     onDragOver: e => {
       if (railDragRef.current === null) return; // the ref: see the note by the declaration
@@ -12031,6 +12122,11 @@ function RolecraftVault() {
     toast("Dashboard layout reset to default");
   };
   const [dashDrag, setDashDrag] = useState(null);
+  /* Read instead of dashDrag mid-gesture: React does not flush during a native
+     drag, so the state was still null at dragover, preventDefault was never
+     called and dragging a panel by its grip did nothing. The up and down
+     buttons beside it always worked, which is why this went unnoticed. */
+  const dashDragRef = useRef(null);
   const [dashOver, setDashOver] = useState(null);
   const moveDash = (key, dir) => {
     const i = dashOrder.indexOf(key);
@@ -14047,6 +14143,7 @@ function RolecraftVault() {
         "aria-label": "Drag to move " + label,
         title: "Drag to reorder",
         onDragStart: e => {
+          dashDragRef.current = id;
           setDashDrag(id);
           try {
             e.dataTransfer.effectAllowed = "move";
@@ -14054,6 +14151,8 @@ function RolecraftVault() {
           } catch (err) {}
         },
         onDragEnd: () => {
+          dashDragRef.current = null;
+          document.querySelectorAll(".drag-over").forEach(x => x.classList.remove("drag-over"));
           setDashDrag(null);
           setDashOver(null);
         }
@@ -14092,21 +14191,33 @@ function RolecraftVault() {
       style: {
         borderRadius: 14
       },
-      onDragOver: e => {
-        if (!dashDrag || dashDrag === id) return;
+      onDragEnter: e => {
+        if (!dashDragRef.current || dashDragRef.current === id) return;
         e.preventDefault();
+      },
+      onDragOver: e => {
+        // the ref, not the state: see the note by dashDragRef
+        if (!dashDragRef.current || dashDragRef.current === id) return;
+        e.preventDefault();
+        /* and the outline by hand, for the same reason */
+        document.querySelectorAll(".drag-over").forEach(x => { if (x !== e.currentTarget) x.classList.remove("drag-over"); });
+        e.currentTarget.classList.add("drag-over");
         if (dashOver !== id) setDashOver(id);
       },
-      onDragLeave: () => {
+      onDragLeave: e => {
+        e.currentTarget.classList.remove("drag-over");
         if (dashOver === id) setDashOver(null);
       },
       onDrop: e => {
         e.preventDefault();
-        if (!dashDrag || dashDrag === id) return;
-        const next = dashOrder.filter(k => k !== dashDrag);
-        const from = dashOrder.indexOf(dashDrag),
+        const held = dashDragRef.current;
+        dashDragRef.current = null;
+        document.querySelectorAll(".drag-over").forEach(x => x.classList.remove("drag-over"));
+        if (!held || held === id) return;
+        const next = dashOrder.filter(k => k !== held);
+        const from = dashOrder.indexOf(held),
           to = dashOrder.indexOf(id);
-        next.splice(from < to ? next.indexOf(id) + 1 : next.indexOf(id), 0, dashDrag);
+        next.splice(from < to ? next.indexOf(id) + 1 : next.indexOf(id), 0, held);
         setDashOrder(next);
         setDashDrag(null);
         setDashOver(null);
