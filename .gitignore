@@ -17,5 +17,6 @@ keys/*.keystore
 keys/*.p12
 keys/android-keystore.txt
 mobile/android/keystore.properties
-tmp-vault*/
-tmp-patched*/
+# throwaway Electron profiles for driving the app in a test.
+# Chromium keeps them locked after exit, so they cannot always be removed.
+tmp-*/

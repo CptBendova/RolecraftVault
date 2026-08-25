@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.208";
+const APP_VERSION = "1.209";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.208";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.208 — current",
+  heading: "1.209 — current",
+  notes: ["Dragging a picture with the mouse to reorder it works again on Windows. You could pick a picture up and carry it, but letting go did nothing and it stayed where it was. Reported by CptBendova."]
+}, {
+  heading: "1.208",
   notes: ["Carrying a picture to the top or bottom of the grid now scrolls the grid. It was scrolling the library behind it instead, which you cannot see, so a long gallery could only be rearranged within one screenful. On a phone or tablet, where carrying a picture is the only way to reorder, that was the whole feature.", "Ticking pictures and then switching album or version no longer keeps them ticked. The count and the buttons read every picture, not just the ones on screen, so Delete selected could remove pictures you were not looking at, and it says itself that it cannot be undone.", "Filtering to a version that has no pictures of its own now says so, instead of showing an empty page with no explanation."]
 }, {
   heading: "1.207",
@@ -4676,6 +4679,7 @@ function ImageGridView({
   const [editId, setEditId] = useState(null);
   const [editVal, setEditVal] = useState("");
   const [dragId, setDragId] = useState(null);
+  const dragIdRef = useRef(null); // read during a native drag, when state cannot update
   const [overId, setOverId] = useState(null);
   /* Picking a picture up with a thumb. holdTimer is the pause that separates
      "I am moving this" from "I am scrolling past it". */
@@ -5274,6 +5278,14 @@ function ImageGridView({
          media query — a mouse never sets touchFrom, so it is left alone even on
          a touchscreen PC, which is what asking CAN_DRAG here got wrong. */
       if (touchFrom.current || thumbDrag) { e.preventDefault(); return; }
+      /* A ref as well as the state, and the ref is what dragover and drop read.
+         Chromium runs a native drag in a nested modal loop, and React's update
+         never flushes inside it — the tile does not even get its .dragging
+         class until the drag is over. So dragId is still null for every
+         dragover, preventDefault is never called, and the drop is refused: you
+         could carry a picture and nothing happened when you let go. The state
+         stays for the styling; only the ref is trusted mid-drag. */
+      dragIdRef.current = it.imgId;
       setDragId(it.imgId);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -5281,11 +5293,13 @@ function ImageGridView({
       } catch (err) {}
     },
     onDragEnd: () => {
+      dragIdRef.current = null;
       setDragId(null);
       setOverId(null);
     },
     onDragOver: e => {
-      if (!dragId || !it.movable) return;
+      // the ref, not the state: see the note in onDragStart
+      if (!dragIdRef.current || !it.movable) return;
       e.preventDefault();
       if (overId !== it.imgId) setOverId(it.imgId);
     },
@@ -5294,7 +5308,9 @@ function ImageGridView({
     },
     onDrop: e => {
       e.preventDefault();
-      if (dragId && it.movable && dragId !== it.imgId) onMoveImage(dragId, it.imgId);
+      const from = dragIdRef.current;
+      if (from && it.movable && from !== it.imgId) onMoveImage(from, it.imgId);
+      dragIdRef.current = null;
       setDragId(null);
       setOverId(null);
     },
@@ -6177,6 +6193,11 @@ function CharacterPage({
   const [ss, setSs] = useState(false);
   const [grid, setGrid] = useState(false);
   const [railDrag, setRailDrag] = useState(null);
+  /* Read instead of railDrag during a native drag. Chromium runs one in a
+     nested modal loop and React's update never flushes inside it, so the state
+     is still null for every dragover: preventDefault was never called and the
+     drop was refused. You could carry a picture and nothing happened. */
+  const railDragRef = useRef(null);
   const [railOver, setRailOver] = useState(null);
   const gridItems = (() => {
     const seen = new Set();
@@ -6908,6 +6929,7 @@ function CharacterPage({
     className: "tile" + (vi === 0 ? " full" : "") + (railOver === i && railDrag !== null && railDrag !== i ? " drag-over" : "") + (railDrag === i ? " dragging" : ""),
     draggable: true,
     onDragStart: e => {
+      railDragRef.current = i;
       setRailDrag(i);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -6915,11 +6937,12 @@ function CharacterPage({
       } catch (err) {}
     },
     onDragEnd: () => {
+      railDragRef.current = null;
       setRailDrag(null);
       setRailOver(null);
     },
     onDragOver: e => {
-      if (railDrag === null) return;
+      if (railDragRef.current === null) return; // the ref: see the note by the declaration
       e.preventDefault();
       if (railOver !== i) setRailOver(i);
     },
@@ -6928,12 +6951,14 @@ function CharacterPage({
     },
     onDrop: e => {
       e.preventDefault();
-      if (railDrag !== null && railDrag !== i) {
+      const railFrom = railDragRef.current;
+      if (railFrom !== null && railFrom !== i) {
         const next = (c.gallery || []).slice();
-        const [m] = next.splice(railDrag, 1);
+        const [m] = next.splice(railFrom, 1);
         next.splice(i, 0, m);
         onReorderImages(next);
       }
+      railDragRef.current = null;
       setRailDrag(null);
       setRailOver(null);
     },
@@ -7118,6 +7143,11 @@ function PersonaPage({
   const addRef = useRef(null);
   const gallery = p.gallery || [];
   const [railDrag, setRailDrag] = useState(null);
+  /* Read instead of railDrag during a native drag. Chromium runs one in a
+     nested modal loop and React's update never flushes inside it, so the state
+     is still null for every dragover: preventDefault was never called and the
+     drop was refused. You could carry a picture and nothing happened. */
+  const railDragRef = useRef(null);
   const [railOver, setRailOver] = useState(null);
   const gridItems = (() => {
     const seen = new Set();
@@ -7552,6 +7582,7 @@ function PersonaPage({
     className: "tile" + (i === 0 ? " full" : "") + (railOver === i && railDrag !== null && railDrag !== i ? " drag-over" : "") + (railDrag === i ? " dragging" : ""),
     draggable: true,
     onDragStart: e => {
+      railDragRef.current = i;
       setRailDrag(i);
       try {
         e.dataTransfer.effectAllowed = "move";
@@ -7559,11 +7590,12 @@ function PersonaPage({
       } catch (err) {}
     },
     onDragEnd: () => {
+      railDragRef.current = null;
       setRailDrag(null);
       setRailOver(null);
     },
     onDragOver: e => {
-      if (railDrag === null) return;
+      if (railDragRef.current === null) return; // the ref: see the note by the declaration
       e.preventDefault();
       if (railOver !== i) setRailOver(i);
     },
@@ -7572,12 +7604,14 @@ function PersonaPage({
     },
     onDrop: e => {
       e.preventDefault();
-      if (railDrag !== null && railDrag !== i) {
+      const railFrom = railDragRef.current;
+      if (railFrom !== null && railFrom !== i) {
         const next = gallery.slice();
-        const [m] = next.splice(railDrag, 1);
+        const [m] = next.splice(railFrom, 1);
         next.splice(i, 0, m);
         onReorderImages(next);
       }
+      railDragRef.current = null;
       setRailDrag(null);
       setRailOver(null);
     },

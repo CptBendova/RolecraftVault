@@ -37,7 +37,15 @@ check("grid cells stay square", /\.rcv \.imggrid \.tile \{ aspect-ratio: 1;/.tes
 check("grid pictures keep their shape inside the cell", /\.rcv \.imggrid \.tile img[\s\S]{0,80}object-fit: contain/.test(SRC));
 
 console.log("\nwhat the grid shows:\n");
-check("drag is still wired", /onDrop: e => \{[\s\S]{0,200}onMoveImage\(dragId, it\.imgId\)/.test(SRC));
+check("drag is still wired", /onDrop: e => \{[\s\S]{0,260}onMoveImage\(from, it\.imgId\)/.test(SRC));
+/* The source is held in a ref, not in state. Chromium runs a native drag in a
+   nested modal loop and React never flushes inside it, so state set during
+   dragstart is still null at dragover: preventDefault was never called, the
+   drop was refused, and the picture could be carried but never moved. Only a
+   real mouse drag shows this, which is what test-native-drag.js is for. */
+check("dragover consults the ref, which is what survives a native drag",
+  /onDragOver: e => \{[\s\S]{0,120}dragIdRef\.current/.test(SRC));
+check("the drop reads the ref too", /const from = dragIdRef\.current;/.test(SRC));
 /* The reorder arrows are gone entirely. They existed only because touch had no
    drag; now it has one, on every pointer, so there is nothing left for them to
    do and they were two permanent buttons on every picture. */
