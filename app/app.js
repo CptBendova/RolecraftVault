@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.212";
+const APP_VERSION = "1.213";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.212";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.212 — current",
+  heading: "1.213 — current",
+  notes: ["Escape now closes the thing on top and nothing else. Pressing it while the stats panel was open closed the character behind it and left the panel sitting over your library, so you lost your place and still had to dismiss the panel.", "Cards, pictures and foldaway sections can be opened with the space bar as well as Enter. They are buttons and said so, but only answered Enter, so reaching one with the keyboard and pressing space did nothing except scroll the page underneath."]
+}, {
+  heading: "1.212",
   notes: ["Dragging a section by its grip to reorder it works again, on both characters and personas. It did nothing at all: you could pick a section up and carry it, and letting go left everything where it was. The up and down arrows beside the grip always worked, which is probably why this went unreported for so long.", "Dragging is steadier everywhere else too. Sections, pictures and the dashboard panels all now accept a picture the moment it is carried over them rather than a fraction later, so a drop is never quietly ignored."]
 }, {
   heading: "1.211",
@@ -3409,11 +3412,12 @@ function GuideModal({ onClose }) {
   useEffect(() => {
     const h = ev => {
       if (ev.key !== "Escape") return;
+      ev.stopPropagation(); // captured here; see the note in StatsModal
       // a section closes back to the contents; the contents closes the guide
       if (openId) setOpenId(null);else onClose();
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
   }, [onClose, openId]);
   const needle = q.trim().toLowerCase();
   const textOf = g => [g.title, g.summary].concat(g.body.map(b => Array.isArray(b) ? b.join(" ") : b)).join(" ").toLowerCase();
@@ -3738,6 +3742,16 @@ function usesPointerDrag(e) {
   if (ON_CAP && t === "mouse") return true;
   return false;
 }
+/* An element carrying role="button" has to answer Space as well as Enter: that
+   is the contract the role makes, and a keyboard user reaching one of these
+   cards pressed Space and got nothing but the page scrolling underneath it.
+   Swallowing the key is half the point. Deliberately not used on text inputs,
+   where Enter commits and a space is a space. */
+function activates(e) {
+  if (e.key !== "Enter" && e.key !== " ") return false;
+  e.preventDefault();
+  return true;
+}
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
   (c.sections || []).forEach(s => parts.push(s.title, s.content));
@@ -3868,11 +3882,18 @@ function StatsModal({
   onClose
 }) {
   useEffect(() => {
+    /* Capture, and stopped here, the way RecordModal already does it. In the
+       bubble phase the page underneath acts on the same press: Escape over
+       this closed the record behind it and left this standing. Guarding from
+       the page side means every page has to list every modal, and that list
+       had already drifted. */
     const h = e => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
@@ -4156,11 +4177,18 @@ function NewBucketModal({
 }) {
   const [name, setName] = useState("");
   useEffect(() => {
+    /* Capture, and stopped here, the way RecordModal already does it. In the
+       bubble phase the page underneath acts on the same press: Escape over
+       this closed the record behind it and left this standing. Guarding from
+       the page side means every page has to list every modal, and that list
+       had already drifted. */
     const h = e => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
@@ -4419,7 +4447,7 @@ function BlurBtn({
       onToggleBlur(imgId);
     },
     onKeyDown: e => {
-      if (e.key === "Enter") {
+      if (activates(e)) {
         e.stopPropagation();
         onToggleBlur(imgId);
       }
@@ -5774,7 +5802,7 @@ function LoreEntryView({
       cursor: "zoom-in"
     },
     onClick: () => setLb(i),
-    onKeyDown: ev => ev.key === "Enter" && setLb(i),
+    onKeyDown: ev => activates(ev) && setLb(i),
     "aria-label": "Open image " + (i + 1)
   }, /*#__PURE__*/React.createElement(BlurBtn, {
     imgId: im.imgId,
@@ -6154,7 +6182,7 @@ function LorebookPage({
       cursor: "pointer"
     },
     onClick: () => onOpenEntry(e),
-    onKeyDown: ev => ev.key === "Enter" && onOpenEntry(e)
+    onKeyDown: ev => activates(ev) && onOpenEntry(e)
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -6927,7 +6955,7 @@ function CharacterPage({
     role: "button",
     tabIndex: 0,
     "aria-expanded": !collapsed[s.key],
-    onKeyDown: e => e.key === "Enter" && toggleCollapse(s.key)
+    onKeyDown: e => activates(e) && toggleCollapse(s.key)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: collapsed[s.key] ? icons.right : icons.cdown,
     size: 14
@@ -7637,7 +7665,7 @@ function PersonaPage({
     role: "button",
     tabIndex: 0,
     "aria-expanded": !collapsed[s.key],
-    onKeyDown: e => e.key === "Enter" && toggleCollapse(s.key)
+    onKeyDown: e => activates(e) && toggleCollapse(s.key)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: collapsed[s.key] ? icons.right : icons.cdown,
     size: 14
@@ -7884,11 +7912,18 @@ function UpdateFromJsonModal({
 }) {
   const [choice, setChoice] = useState(currentVIdx >= 0 ? "variant" : "default");
   useEffect(() => {
+    /* Capture, and stopped here, the way RecordModal already does it. In the
+       bubble phase the page underneath acts on the same press: Escape over
+       this closed the record behind it and left this standing. Guarding from
+       the page side means every page has to list every modal, and that list
+       had already drifted. */
     const h = e => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
   const filled = VARIANT_FIELDS.filter(k => (incoming[k] || "").trim()).length;
   const opt = (val, title, sub, disabled) => /*#__PURE__*/React.createElement("button", {
@@ -7977,11 +8012,18 @@ function HistoryModal({
 }) {
   const [confirmId, setConfirmId] = useState(null);
   useEffect(() => {
+    /* Capture, and stopped here, the way RecordModal already does it. In the
+       bubble phase the page underneath acts on the same press: Escape over
+       this closed the record behind it and left this standing. Guarding from
+       the page side means every page has to list every modal, and that list
+       had already drifted. */
     const h = e => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
@@ -9105,7 +9147,7 @@ function CharacterEditor({
     role: "button",
     tabIndex: 0,
     "aria-expanded": advOpen,
-    onKeyDown: e => e.key === "Enter" && setAdvOpen(o => !o)
+    onKeyDown: e => activates(e) && setAdvOpen(o => !o)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: advOpen ? icons.cdown : icons.right,
     size: 14
@@ -14484,7 +14526,7 @@ function RolecraftVault() {
           })),
           index: i
         }),
-        onKeyDown: e => e.key === "Enter" && setWallLb({
+        onKeyDown: e => activates(e) && setWallLb({
           items: wallVisible.map(x => ({
             imgId: x.imgId,
             caption: x.label
@@ -14873,7 +14915,7 @@ function RolecraftVault() {
           setTimeout(() => bucketCoverRef.current && bucketCoverRef.current.click(), 0);
         },
         onKeyDown: e => {
-          if (e.key === "Enter") {
+          if (activates(e)) {
             e.stopPropagation();
             setCoverTarget(b);
             setTimeout(() => bucketCoverRef.current && bucketCoverRef.current.click(), 0);
@@ -15145,7 +15187,7 @@ function RolecraftVault() {
       boxShadow: "0 0 0 2px var(--brass-line)"
     } : undefined,
     onClick: () => selectMode ? toggleSelect(c.id) : setViewCharId(c.id),
-    onKeyDown: e => e.key === "Enter" && (selectMode ? toggleSelect(c.id) : setViewCharId(c.id))
+    onKeyDown: e => activates(e) && (selectMode ? toggleSelect(c.id) : setViewCharId(c.id))
   }, selectMode && /*#__PURE__*/React.createElement("span", {
     style: {
       position: "absolute",
@@ -15799,7 +15841,7 @@ function RolecraftVault() {
           overflow: "hidden"
         },
         onClick: () => setViewLoreBook(w),
-        onKeyDown: ev => ev.key === "Enter" && setViewLoreBook(w)
+        onKeyDown: ev => activates(ev) && setViewLoreBook(w)
       }, cover && imgCache[cover] && /*#__PURE__*/React.createElement("div", {
         style: {
           height: 110,
@@ -15982,7 +16024,7 @@ function RolecraftVault() {
           overflow: "hidden"
         },
         onClick: () => setViewPromptBook(w),
-        onKeyDown: ev => ev.key === "Enter" && setViewPromptBook(w)
+        onKeyDown: ev => activates(ev) && setViewPromptBook(w)
       }, cover && imgCache[cover] && /*#__PURE__*/React.createElement("div", {
         style: {
           height: 110,
@@ -16073,7 +16115,7 @@ function RolecraftVault() {
       blurred: blurred,
       onToggleBlur: toggleBlur,
       toast: toast,
-      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingRecord,
+      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingRecord || !!statsOpen || showGuide,
       onClose: () => setViewPersonaId(null),
       onEdit: () => setEditingRecord({
         type: "persona",
@@ -16262,7 +16304,7 @@ function RolecraftVault() {
     return /*#__PURE__*/React.createElement(LorebookPage, {
       world: viewLoreBook,
       entries: entries,
-      escOff: viewLoreEntryId !== null || !!editingRecord,
+      escOff: viewLoreEntryId !== null || !!editingRecord || !!statsOpen || showGuide,
       cover: meta.cover || null,
       imgCache: imgCache,
       fullCache: fullCache,
@@ -16493,7 +16535,7 @@ function RolecraftVault() {
       entriesNoun: "prompts",
       bookNoun: "collection",
       inLabel: "in this collection",
-      escOff: viewPromptEntryId !== null || !!editingRecord,
+      escOff: viewPromptEntryId !== null || !!editingRecord || !!statsOpen || showGuide,
       cover: meta.cover || null,
       imgCache: imgCache,
       fullCache: fullCache,
@@ -16886,7 +16928,7 @@ function RolecraftVault() {
       blurred: blurred,
       onToggleBlur: toggleBlur,
       toast: toast,
-      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingChar || !!editingRecord,
+      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingChar || !!editingRecord || !!statsOpen || showGuide,
       onOpenLorebook: w => setViewLoreBook(w),
       onTagClick: t => {
         setViewCharId(null);
