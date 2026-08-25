@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.214";
+const APP_VERSION = "1.215";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.214";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.214 — current",
+  heading: "1.215 — current",
+  notes: ["Scanning a code on your phone now gives you a square to aim at. The camera sits in a framed window with its corners marked and a line that travels it, so there is somewhere obvious to hold the code and a sense of whether it is looking. Before it was a bare rectangle of camera with nothing to line anything up against.", "The square stays square whatever shape your screen is, including in landscape, and the Cancel button stays where you can reach it."]
+}, {
+  heading: "1.214",
   notes: ["On a phone or tablet, the arrows that reorder your dashboard panels and the sections of a character are now big enough to hit. They were the only thing that worked there and were smaller than a fingertip: the grip beside them looks like something you could drag, but dragging that way is not possible on Android at all, so it has been taken away where it cannot work. Dragging on Windows is unchanged.", "The size and filter buttons above the picture grid are easier to hit on a phone for the same reason. There is no pinch to fall back on, so they were the only way to change how the grid looks."]
 }, {
   heading: "1.213",
@@ -1880,6 +1883,44 @@ const CSS = `
      pinch to fall back on. At 21px tall they were a poor target for a thumb.
      Only the button ones: a tag is a span and stays as it is. */
   .rcv.phone button.chip { min-height: 36px; padding: 6px 12px; }
+  /* The scanner. A bare video gives you nowhere to put the code and no sense of
+     whether you are close enough, so the picture is framed in a square with the
+     corners marked: something to fill rather than a rectangle to wave at. The
+     width takes the smaller of the screen's width and height, so the square
+     stays square on a short screen instead of being cropped. */
+  /* flex: none, or the column shrinks it and the square stops being one: in
+     landscape it collapsed to 178x73. 52vh rather than 60 so the frame, the
+     hint and the button still fit together on a short screen. */
+  .rcv .qr-stage { display: flex; flex-direction: column; align-items: center;
+    justify-content: safe center; height: 100%; gap: 18px; padding: 20px; overflow-y: auto; }
+  /* Landscape on a phone leaves very little height. Everything tightens so the
+     square, the line of help and the button still fit without scrolling, which
+     is what pushed the button off the bottom before. */
+  @media (max-height: 560px) {
+    .rcv .qr-stage { gap: 10px; padding: 12px; }
+    .rcv .qr-stage .qr-frame { width: min(86vw, 44vh, 340px); }
+    /* The heading and the square say this already, and the two lines it takes
+       are the difference between the button fitting and not. */
+    .rcv .qr-hint { display: none; }
+  }
+  .rcv .qr-frame { position: relative; flex: 0 0 auto; width: min(86vw, 52vh, 340px); aspect-ratio: 1;
+    border-radius: 18px; overflow: hidden; background: #000;
+    box-shadow: 0 0 0 1px var(--brass-line), 0 20px 60px rgba(0,0,0,.6); }
+  .rcv .qr-frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rcv .qr-corners { position: absolute; inset: 0; pointer-events: none; }
+  .rcv .qr-corners span { position: absolute; width: 34px; height: 34px; border: 3px solid var(--brass); }
+  .rcv .qr-corners span:nth-child(1) { top: 14px; left: 14px; border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; }
+  .rcv .qr-corners span:nth-child(2) { top: 14px; right: 14px; border-left: 0; border-bottom: 0; border-radius: 0 12px 0 0; }
+  .rcv .qr-corners span:nth-child(3) { bottom: 14px; left: 14px; border-right: 0; border-top: 0; border-radius: 0 0 0 12px; }
+  .rcv .qr-corners span:nth-child(4) { bottom: 14px; right: 14px; border-left: 0; border-top: 0; border-radius: 0 0 12px 0; }
+  /* A line that travels the square, so it reads as looking rather than frozen. */
+  .rcv .qr-sweep { position: absolute; left: 16px; right: 16px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--brass), transparent);
+    animation: qrsweep 2.6s ease-in-out infinite; pointer-events: none; }
+  @keyframes qrsweep { 0%, 100% { top: 16%; opacity: .3; } 50% { top: 84%; opacity: .95; } }
+  /* Stilled everywhere else in perf mode, which would leave this parked mid-square
+     looking like something stuck. Taken out instead. */
+  .rcv.perf .qr-sweep { display: none; }
   /* Held in a thumb: lifted slightly, so it is clear which picture is moving
      and that letting go will put it somewhere. */
   .rcv .tile.thumb-held { transform: scale(1.06); opacity: .9; z-index: 5;
@@ -11075,18 +11116,28 @@ function SettingsModal({
   }, "Syncs over your local Wi\u2011Fi \u2014 nothing goes to the internet. Only records that actually differ are sent, so after the first sync repeat runs are quick. Both devices must be on the same network. On a phone, scan the QR instead of typing the code."),
   xferScan && /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
-    style: { zIndex: 70, background: "rgba(5,8,16,.92)" }
+    style: { zIndex: 70, background: "rgba(5,8,16,.94)" }
   }, /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 14, padding: 20 }
+    className: "qr-stage"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Scan the code"), /*#__PURE__*/React.createElement("div", {
+    className: "qr-frame"
   }, /*#__PURE__*/React.createElement("video", {
     ref: scanVideoRef,
     playsInline: true,
     muted: true,
-    autoPlay: true,
-    style: { width: "min(100%, 420px)", maxHeight: "70vh", borderRadius: 12, background: "#000", objectFit: "cover" }
+    autoPlay: true
   }), /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 14, color: "var(--mut)", textAlign: "center" }
-  }, "Point the camera at the code on the other device"), /*#__PURE__*/React.createElement("button", {
+    className: "qr-corners"
+  }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null),
+     /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null)),
+  /*#__PURE__*/React.createElement("div", {
+    className: "qr-sweep"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "qr-hint",
+    style: { fontSize: 14, color: "var(--mut)", textAlign: "center", maxWidth: 320, lineHeight: 1.5 }
+  }, "Hold the square over the code on the other device"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setXferScan(false)
   }, "Cancel"))),
