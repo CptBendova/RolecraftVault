@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.217";
+const FACTORY_BUILD = "1.218";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1627,6 +1627,23 @@ app.whenReady().then(() => {
   // vault that could still have records removed is not locked
   ipcMain.handle("vault-delete", (e, key) => { if (isLocked()) throw new Error("locked"); const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); forgetHash(key); return true; });
   ipcMain.handle("vault-list", (e, prefix) => allKeys().filter(k => !prefix || k.startsWith(prefix)));
+  /* Nothing here asks the browser for anything except the camera, and that is
+     only the QR scanner in the transfer panel. With no handler set, Electron
+     grants what is asked for, so a renderer that ever got away from us could
+     turn on a microphone or start reading the clipboard without a word. Say
+     what is allowed instead, and refuse the rest.
+
+     Both handlers: the request one covers a page asking, the check one covers
+     a page testing whether it may, and a permission left out of the second
+     still reports itself as available. */
+  /* Only the camera. Electron asks for "clipboard-read" even when the page is
+     merely writing, and reading someone's clipboard is a good deal more than
+     copying a prompt out of the app, so it is refused: copyText already falls
+     back to execCommand, which needs no permission and was checked to still
+     put the text on the real clipboard with this in place. */
+  const ALLOWED = new Set(["media"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(ALLOWED.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED.has(permission));
   setupAuthIpc();
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

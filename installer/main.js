@@ -131,8 +131,20 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      /* On, not off. This window runs elevated and its preload can copy the
+         payload into Program Files, so it is the last place to give a renderer
+         more room than it needs. The preload only uses contextBridge and
+         ipcRenderer, both of which work sandboxed. */
+      sandbox: true
     }
+  });
+  /* This window shows one local page and has no business anywhere else. A
+     dropped file or a stray link would otherwise be handed a preload that
+     installs software as administrator. */
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, url) => {
+    const here = "file:///" + path.join(__dirname, "index.html").split("\\").join("/");
+    if (decodeURI(url).toLowerCase() !== decodeURI(here).toLowerCase()) event.preventDefault();
   });
   win.setMenuBarVisibility(false);
   win.center();

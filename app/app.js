@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.217";
+const APP_VERSION = "1.218";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.217";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.217 — current",
+  heading: "1.218 — current",
+  notes: ["The app now refuses anything it has no business asking your computer for. It only ever needs the camera, and only for scanning a code, so that is the only thing it can ask: location, notifications and reading your clipboard are turned down before the question reaches you. Copying still works exactly as before.", "Setup is locked down harder. It runs with administrator rights, so it now runs its window sealed off, cannot be navigated anywhere, and cannot load anything from outside itself. Nothing about installing changes."]
+}, {
+  heading: "1.217",
   notes: ["Picking a photo your phone cannot show now says so instead of adding a blank square. Samsung and Pixel phones save photos in a format the app cannot open, and one of those went into your gallery anyway: it counted as added, took up room, and showed as an empty tile for ever. Those are turned away now, with a note saying how many were skipped.", "Adding pictures from the gallery is otherwise unchanged and still takes several at once."]
 }, {
   heading: "1.216",

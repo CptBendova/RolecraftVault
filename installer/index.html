@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- This page runs elevated and had no policy at all. Everything it needs is in
+     the file beside it, so nothing may be fetched from anywhere: no remote
+     script, style, image or connection. The inline script and styles are the
+     page's own and are allowed by name; there is no user content here for
+     anything to be injected into. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Rolecraft Vault Setup</title>
 <style>
 @font-face { font-family: "Inter"; font-weight: 400; src: url("fonts/inter-latin-400-normal.woff2") format("woff2"); }
