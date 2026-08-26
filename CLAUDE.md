@@ -99,6 +99,17 @@ Editing it by script is normal here. Two things bite repeatedly:
    diffs `app/vendor/` against the last tag, by name rather than by line because
    those are binaries, and names the files. `test-shell-detect.js` covers both
    halves of the rule.
+   **The converse is worth knowing: a renderer-only patch installs on an older
+   shell.** `main.js` refuses a package only when it is *marked* `needsShell` and
+   was built against a different `FACTORY_BUILD` (the `shellBuild` check). A
+   package with `needsShell: false` is accepted whatever build the copy is on, so
+   someone several releases behind still gets an interface fix without a 541 MB
+   download. The `factoryBuild` recorded when a patch is *applied* is a different
+   thing — that is what makes a patch go stale when the shell later changes.
+   Do not assume, as was assumed here once, that a version gap alone blocks a
+   patch: check `needsShell` on the package. 1.219 went out this way to a copy
+   still on shell 1.208, and `preload.js` was identical across that gap, so the
+   bridge the renderer talks to had not moved.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
 6. **Never reference a file from `app.js` by a bare relative path.** A patch is
@@ -471,6 +482,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-device-limits.js` | phone vs tablet vs desktop limits, across reported and unreported memory |
 | `test-phone-image-guard.js` | the rule keeping full originals off a phone, including when a picture has never been measured |
 | `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
+| `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
 
 They all follow the same rule, which is the point:
 
@@ -489,7 +501,18 @@ What has worked well besides:
 - **Drive the web build in the browser** for anything visual, and measure rather than
   eyeball: element rects, computed styles, grid track counts.
 - The transfer panel is Electron-only. To render it in the web build, stub
-  `window.transfer` before opening Settings.
+  `window.transfer` before opening Settings. Three things about that stub cost
+  an afternoon in 1.219, all of them making the harness look like the bug:
+  **every reply needs `ok: true`.** `preview` and `start` are both read as
+  `if (r && r.ok)`, so a stub returning a perfectly sensible
+  `{added, updated, removed}` sends the panel down its error path, no plan
+  appears, and the Confirm button — which is the *same* button with a different
+  label — never renders. It looks exactly like a broken panel.
+  **Type through the browser, not through `.value`.** Setting the input's value
+  leaves React's state empty and the button stays disabled. Focus the field and
+  use CDP `Input.insertText`.
+  **Settings is a modal over the library**, so close it before counting
+  `.char-card`s, or the library reads as empty and a passing fix looks failed.
 
 Things a harness **cannot** check, which must be tried by hand:
 
