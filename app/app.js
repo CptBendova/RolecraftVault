@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.215";
+const APP_VERSION = "1.216";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.215";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.215 — current",
+  heading: "1.216 — current",
+  notes: ["Exporting anything from the Android app now actually saves a file. Backups, character and persona files, CharSnap files and picture zips all did nothing at all: the app said it had exported, and no file was ever written, anywhere. Android does not allow the kind of download a browser does, and nothing here had ever done it the Android way.", "The file goes to your Documents folder where you can find it, and the message afterwards gives the name and where it went. If Android refuses that folder it falls back to the app's own storage and says so, rather than pretending. Windows is unchanged."]
+}, {
+  heading: "1.215",
   notes: ["Scanning a code on your phone now gives you a square to aim at. The camera sits in a framed window with its corners marked and a line that travels it, so there is somewhere obvious to hold the code and a sense of whether it is looking. Before it was a bare rectangle of camera with nothing to line anything up against.", "The square stays square whatever shape your screen is, including in landscape, and the Cancel button stays where you can reach it."]
 }, {
   heading: "1.214",
@@ -669,16 +672,75 @@ const SAMPLE_LORE_ENTRY_JSON = {
 function revokeSoon(url, delay) {
   setTimeout(() => URL.revokeObjectURL(url), delay || 60000);
 }
-function downloadJSON(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], {
-    type: "application/json"
+/* Saving a file, which is not the same job on both editions.
+
+   An <a download> is swallowed by the Android WebView: Capacitor wires no
+   DownloadListener — read its own Android source before doubting it — so the
+   click did nothing and every export silently failed while the toast said it
+   had worked. On the phone the bytes go through the Filesystem plugin
+   instead.
+
+   nativePromise, not Capacitor.Plugins: Plugins is built by @capacitor/core's
+   JS runtime and nothing here loads a bundler, so it does not exist. That is
+   the same trap the transfer hit, and rc-transfer.js calls nativePromise for
+   the same reason.
+
+   Where it can be written depends on the Android version and this app carries
+   no legacy-storage flag, so the public Documents folder is tried first and
+   the app's own storage after, and whichever worked is what the message
+   names. Guessing would be worse than asking. */
+let saveNotice = null;
+function setSaveNotice(fn) { saveNotice = fn; }
+const SAVE_SPOTS = [["DOCUMENTS", "Documents"], ["EXTERNAL", "the app's storage"], ["DATA", "the app's private files"]];
+/* Its own declaration rather than an async arrow inside the reader: scan-js
+   only tracks `function`, so an await in a nested arrow reads to it as a
+   mistake. Teaching it about arrows turned out to mis-scope every other await
+   in the file, so the code moved instead of the checker. */
+async function writeSomewhere(C, filename, data) {
+  let last = null;
+  for (const [dir, where] of SAVE_SPOTS) {
+    try {
+      await C.nativePromise("Filesystem", "writeFile", { path: filename, data, directory: dir, recursive: true });
+      return where;
+    } catch (e) { last = e; }
+  }
+  throw last || new Error("nowhere to write");
+}
+function phoneSave(filename, blob) {
+  const C = typeof window !== "undefined" && window.Capacitor;
+  if (!C || typeof C.nativePromise !== "function") return null;
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("could not read the file"));
+    r.onload = () => {
+      const s = String(r.result || "");
+      const comma = s.indexOf(",");
+      writeSomewhere(C, filename, comma >= 0 ? s.slice(comma + 1) : s).then(resolve, reject);
+    };
+    r.readAsDataURL(blob);
   });
+}
+function saveFile(blob, filename) {
+  const onPhone = phoneSave(filename, blob);
+  if (onPhone) {
+    onPhone.then(
+      where => saveNotice && saveNotice("Saved as " + filename + " in " + where),
+      e => saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e))
+    );
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
-  revokeSoon(url);
+  /* A multi-gigabyte archive is still being read out of this url long after a
+     small one has finished, and revoking it mid-download can cut it off. Hold
+     it for a minute per 200 MB, and never less than the original minute. */
+  revokeSoon(url, Math.max(60000, Math.ceil((blob.size || 0) / 2e8) * 60000));
+}
+function downloadJSON(obj, filename) {
+  saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }), filename);
 }
 function mulberry32(a) {
   return function () {
@@ -867,15 +929,7 @@ function zipWriter() {
   };
 }
 function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  /* A multi-gigabyte archive is still being read out of this url long after a
-     small one has finished, and revoking it mid-download can cut it off. Hold
-     it for a minute per 200 MB, and never less than the original minute. */
-  revokeSoon(url, Math.max(60000, Math.ceil(blob.size / 2e8) * 60000));
+  saveFile(blob, filename); // see saveFile: the phone cannot use an <a download>
 }
 const extOf = u => {
   const m = /^data:image\/([\w+]+)/.exec(u || "");
@@ -11809,6 +11863,10 @@ function RolecraftVault() {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 2400);
   }, []);
+  /* Saving on the phone finishes after the call that started it, and it is the
+     only path that can fail or land somewhere unexpected, so it says so itself
+     rather than the caller guessing. */
+  useEffect(() => { setSaveNotice(toast); return () => setSaveNotice(null); }, [toast]);
   /* Drives the bar for anything that walks a list of pictures. Repainting on
      every file would cost more than the work itself on a small library, so it
      paints at most eight times a second — but always on the last one, so it
