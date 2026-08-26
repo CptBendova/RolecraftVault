@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.216";
+const APP_VERSION = "1.217";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.216";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.216 — current",
+  heading: "1.217 — current",
+  notes: ["Picking a photo your phone cannot show now says so instead of adding a blank square. Samsung and Pixel phones save photos in a format the app cannot open, and one of those went into your gallery anyway: it counted as added, took up room, and showed as an empty tile for ever. Those are turned away now, with a note saying how many were skipped.", "Adding pictures from the gallery is otherwise unchanged and still takes several at once."]
+}, {
+  heading: "1.216",
   notes: ["Exporting anything from the Android app now actually saves a file. Backups, character and persona files, CharSnap files and picture zips all did nothing at all: the app said it had exported, and no file was ever written, anywhere. Android does not allow the kind of download a browser does, and nothing here had ever done it the Android way.", "The file goes to your Documents folder where you can find it, and the message afterwards gives the name and where it went. If Android refuses that folder it falls back to the app's own storage and says so, rather than pretending. Windows is unchanged."]
 }, {
   heading: "1.215",
@@ -788,10 +791,27 @@ function makeThumb(dataUrl, maxDim = 1000, quality = 0.85) {
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), 4000));
   return Promise.race([work, timeout]);
 }
+/* Readable is not the same as usable, and the difference matters most on a
+   phone: a Samsung or a Pixel hands its gallery pictures over as HEIC, which
+   Chromium cannot decode. The bytes read perfectly, so the picture was stored,
+   counted and added, and then showed as a blank tile for ever while the message
+   said it had been added. makeThumb returning null cannot be the signal — a
+   picture already under 1000px legitimately has no thumbnail — so it is decoded
+   once here. Everywhere that already says "Couldn't read that image" now says
+   it for this too. */
 function fileToDataUrl(file) {
   return new Promise((res, rej) => {
     const r = new FileReader();
-    r.onload = e => res(e.target.result);
+    r.onload = e => {
+      const url = String(e.target.result || "");
+      const probe = new Image();
+      probe.onload = () => {
+        if (probe.naturalWidth && probe.naturalHeight) res(url);
+        else rej(new Error("that picture cannot be shown here"));
+      };
+      probe.onerror = () => rej(new Error("that picture cannot be shown here"));
+      probe.src = url;
+    };
     r.onerror = rej;
     r.readAsDataURL(file);
   });
@@ -8595,7 +8615,11 @@ function CharacterEditor({
   const editorPortraitId = vIdx >= 0 && variants[vIdx] ? variants[vIdx].profileImg || null : c.profileImg;
   const uploadProfile = async files => {
     if (!files || !files[0]) return;
-    const orig = await fileToDataUrl(files[0]);
+    /* Every other upload path already says when a file will not do; these two
+       said nothing, so a picture that cannot be shown was added in silence. */
+    let orig;
+    try { orig = await fileToDataUrl(files[0]); }
+    catch (e) { toast("Couldn't use that image — " + ((e && e.message) || "it could not be read")); return; }
     const thumb = await makeThumb(orig).catch(() => null);
     const imgId = uid();
     await saveImage(imgId, orig, thumb);
@@ -8605,8 +8629,11 @@ function CharacterEditor({
   const uploadGallery = async files => {
     if (!files) return;
     const added = [];
+    let unusable = 0;
     for (const f of Array.from(files)) {
-      const orig = await fileToDataUrl(f);
+      let orig;
+      try { orig = await fileToDataUrl(f); }
+      catch (e) { unusable++; continue; }
       const thumb = await makeThumb(orig).catch(() => null);
       const imgId = uid();
       await saveImage(imgId, orig, thumb);
@@ -8621,7 +8648,8 @@ function CharacterEditor({
       gallery: [...(p.gallery || []), ...added]
     }));
     const vName = vIdx >= 0 && variants[vIdx] ? variants[vIdx].name || "variant" : "Default";
-    toast(added.length + (added.length === 1 ? " image added to \u201c" : " images added to \u201c") + vName + "\u201d");
+    toast(added.length + (added.length === 1 ? " image added to \u201c" : " images added to \u201c") + vName + "\u201d"
+      + (unusable ? " \u00b7 " + unusable + (unusable === 1 ? " could not be shown here and was skipped" : " could not be shown here and were skipped") : ""));
   };
   /* The gallery grid listed every picture in the character whichever version was
      selected, so editing a variant showed the Default’s pictures and vice versa
