@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.218";
+const APP_VERSION = "1.219";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.218";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.218 — current",
+  heading: "1.219 — current",
+  notes: ["A vault copied onto this device now appears straight away. Everything did arrive and was saved safely, but the window carried on showing the library it had loaded when you unlocked it, so a character you had just copied across was nowhere to be seen and the message ended by asking you to relaunch. It reads the vault back instead, and the characters, personas, lorebooks and prompts are simply there.", "The sending side now says when it is finished. It used to clear the bar and leave a code on screen under a button reading Stop sending, with nothing to tell you the other device had everything. It now says so plainly, and the button reads Done. Sending stays open afterwards so you can copy onto a second device, and the notice steps aside when one starts pulling."]
+}, {
+  heading: "1.218",
   notes: ["The app now refuses anything it has no business asking your computer for. It only ever needs the camera, and only for scanning a code, so that is the only thing it can ask: location, notifications and reading your clipboard are turned down before the question reaches you. Copying still works exactly as before.", "Setup is locked down harder. It runs with administrator rights, so it now runs its window sealed off, cannot be navigated anywhere, and cannot load anything from outside itself. Nothing about installing changes."]
 }, {
   heading: "1.217",
@@ -10193,6 +10196,7 @@ function TransferQr(props) {
 function SettingsModal({
   perfMode,
   setPerfMode,
+  onVaultReplaced,
   onResetLayout,
   onClose,
   onExport,
@@ -10221,6 +10225,8 @@ function SettingsModal({
   // which half of the panel is working, so the other one does not claim to be
   const [xferSharing, setXferSharing] = useState(false);
   const [xferScan, setXferScan] = useState(false);
+  // non-zero once a device has finished pulling from this one
+  const [xferSent, setXferSent] = useState(0);
   const scanVideoRef = useRef(null);
   const canShare = !(window.transfer && window.transfer.canShare === false);
   const canScan = typeof navigator !== "undefined" && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.Capacitor;
@@ -10263,7 +10269,14 @@ function SettingsModal({
   }, []);
   useEffect(() => {
     if (!window.transfer || !window.transfer.onProgress) return;
-    return window.transfer.onProgress(p => setXferProg(p && p.phase === "done" ? null : p));
+    return window.transfer.onProgress(p => {
+      /* Sharing stays open after a device has finished pulling — you may be
+         sending to a second one — so the bar is cleared but the fact that it
+         finished is kept and said. */
+      if (p && p.phase === "done") { setXferProg(null); setXferSent(Date.now()); return; }
+      if (p && p.phase !== "idle") setXferSent(0);
+      setXferProg(p);
+    });
   }, []);
   useEffect(() => {
     if (!xferScan) return;
@@ -11257,15 +11270,20 @@ function SettingsModal({
       style: { fontSize: 11.5, color: "var(--dim)", marginTop: 6, textAlign: "center" }
     }, "Scan with the phone"))),
   xferBar(),
+  xferSent && !xferProg ? /*#__PURE__*/React.createElement("div", {
+    style: { margin: "10px 0", padding: "9px 12px", borderRadius: 8, fontSize: 13, lineHeight: 1.5,
+      color: "var(--brass)", background: "var(--brass-soft)", border: "1px solid var(--brass-line)" }
+  }, "Complete — the other device has everything. You can stop sending, or leave this open to copy onto another device.") : null,
   /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: async () => {
       await window.transfer.stop();
       setXfer(null);
       setXferProg(null);
+      setXferSent(0);
       setXferMsg({ ok: true, text: "Sending stopped." });
     }
-  }, "Stop sending")) : /*#__PURE__*/React.createElement("button", {
+  }, xferSent && !xferProg ? "Done — stop sending" : "Stop sending")) : /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     disabled: xferBusy,
     style: { marginBottom: 10 },
@@ -11372,9 +11390,13 @@ function SettingsModal({
           if (r.updated) bits.push(r.updated + " updated");
           if (r.removed) bits.push(r.removed + " removed");
           const mb = r.bytes ? " (" + (r.bytes > 1048576 ? (r.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.bytes / 1024)) + " KB") + " transferred)" : "";
+          /* Read the vault back rather than asking for a relaunch. The records
+             were already written; only this window had not looked again. The
+             state belongs to the app, not to this panel, so it is asked. */
+          if (!r.partial && onVaultReplaced) onVaultReplaced();
           const partial = r.partial && r.failed
             ? " " + r.failed + " could not be saved this time. Copy again \u2014 what already arrived is kept."
-            : " Relaunch to see them.";
+            : "";
           setXferMsg({ ok: !r.partial, text: (bits.join(", ") || "No changes") + mb + " onto " + (r.thisDevice || "this device") + ", " + r.unchanged + " already matched." + partial });
         }
       } else setXferMsg({ ok: false, text: r && r.error || "Transfer failed" });
@@ -11972,6 +11994,13 @@ function RolecraftVault() {
   }, [refreshAuth]);
 
   /* --- data load (only once unlocked) --- */
+  /* Bumped when something outside the interface has rewritten the vault — a
+     transfer is the only thing that does. Re-runs exactly the load that runs at
+     unlock, so records, buckets, books and the blur list all come back together
+     rather than some subset of them. Until this existed the message ended
+     "Relaunch to see them", which is what it means when an app cannot show you
+     your own data. */
+  const [vaultTick, setVaultTick] = useState(0);
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
     (async () => {
@@ -12035,7 +12064,7 @@ function RolecraftVault() {
         setLoadError([]); // storage itself failed; damaged list is unknown
       }
     })();
-  }, [authState.checked, authState.locked]);
+  }, [authState.checked, authState.locked, vaultTick]);
 
   /* Previews (thumbs) for the library. On a phone every picture preview is
      queued after unlock so cards, the dashboard wall and galleries are not
@@ -17422,6 +17451,7 @@ function RolecraftVault() {
   }), showSettings && /*#__PURE__*/React.createElement(SettingsModal, {
     perfMode: perfMode,
     setPerfMode: setPerfMode,
+    onVaultReplaced: () => setVaultTick(t => t + 1),
     onResetLayout: async () => {
       setDashOrderRaw(DASH_KEYS.slice());
       setTextSize("medium");
