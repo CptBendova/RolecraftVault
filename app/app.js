@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.220";
+const APP_VERSION = "1.221";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.220";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.220 — current",
+  heading: "1.221 — current",
+  notes: ["The flickering line under the menu on a phone is gone. The menu becomes a row of icons that runs a little wider than the screen, and it was drawing a scrollbar along its bottom edge that was redrawn on every frame while you scrolled your characters, which is what made it flash. The row still slides across as it did; there is simply no bar over it now, and the menu is a few points taller for it.", "Nothing changes on a computer, where the menu runs down the side and keeps its narrow scrollbar for short windows."]
+}, {
+  heading: "1.220",
   notes: ["Sections can be copied from one character and pasted into another. Every section now has a copy button next to its bin, and once you have copied one a Paste button appears in any character or persona you open, named after the section so you know what is about to land. Rewriting the same appearance or speech notes by hand for a second character was the only way to move them before.", "It works between characters and personas in either direction, and the copy stays put until you copy something else, so one section can be pasted into as many records as you like. Copying also puts the text on your ordinary clipboard, so it can go into something outside the app. The character you copied from is never touched."]
 }, {
   heading: "1.219",
@@ -2250,6 +2253,15 @@ const CSS = `
     .rcv { flex-direction: column; }
     .rcv .sidebar { width: 100% !important; flex-direction: row !important; overflow-x: auto; padding: 10px !important; border-right: none !important; border-bottom: 1px solid var(--line); }
     .rcv .sidebar .brand, .rcv .sidebar .navlabel { display: none; }
+    /* The menu is a horizontal strip here and runs a couple of icons wider than
+       the screen, so it draws a scrollbar along its bottom edge. Styling
+       ::-webkit-scrollbar at all opts an element out of Android's overlay
+       scrollbars, which fade away by themselves — so that 6px bar is drawn
+       permanently and repainted on every frame of a fling, which is the flicker
+       under the menu while the library scrolls. A finger cannot grab a 6px bar
+       in any case, and the icons cut off at the edge already say there is more. */
+    .rcv .sidebar { scrollbar-width: none; }
+    .rcv .sidebar::-webkit-scrollbar { display: none; width: 0; height: 0; }
     .rcv .scrollbody { padding-left: 14px !important; padding-right: 14px !important; }
     .rcv .row { flex-direction: column; }
     .rcv .wall { grid-auto-rows: 118px; }
