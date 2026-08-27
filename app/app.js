@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.223";
+const APP_VERSION = "1.224";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.223";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.223 — current",
+  heading: "1.224 — current",
+  notes: ["Overwriting a character with an imported file now keeps the old one. Choosing “Overwrite existing” replaced it where it stood and threw its pictures away on the spot, which made it the one kind of deleting that could not be undone. The version you replaced now goes to Recently deleted for 30 days like anything else you delete, pictures and all, so you can put it back if the file was not what you expected. Personas work the same way.", "Emptying the bin no longer takes a picture that something else is still using. If a record in the bin and one in your library both pointed at the same picture, removing the one in the bin deleted that picture out from under the live record. Only pictures nothing else is holding are removed now."]
+}, {
+  heading: "1.223",
   notes: ["Recently deleted and Version history each open in a window of their own. Both used to unfold inside Settings, and once there were fifty things in the bin or a hundred releases in the list, opening either pushed everything below it out of reach and left you reading a long list through a slot a few lines tall. They now get the whole window.", "Both can be searched. Type a name to find the one character you meant out of fifty waiting in the bin, or a few words about something that changed to find the release it changed in. The bin's search appears once there is enough in there to need it.", "Settings itself is shorter as a result, and stays that way however much is in the bin. Closing either window puts you back in Settings where you were."]
 }, {
   heading: "1.222",
@@ -11847,14 +11850,17 @@ function RolecraftVault() {
       await applyImportedBlur(it.blurred);
     }
     let next = charsRef.current;
+    /* Overwriting is a deletion of what was there, and it used to be the one
+       that could not be undone: the record was replaced where it stood and its
+       pictures dropped on the spot. It goes to the bin whole, like any other
+       delete, and its pictures stay with it \u2014 purging is what removes those. */
+    const replaced = [];
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.item]));
       next = next.map(c => {
         const it = byId.get(c.id);
         if (!it) return c;
-        charImgIds(c).forEach(id => {
-          dropImage(id);
-        });
+        replaced.push(c);
         return {
           ...it.char,
           id: c.id,
@@ -11867,9 +11873,10 @@ function RolecraftVault() {
     charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
+    await sendManyToTrash("character", replaced);
     const parts = [];
     if (freshItems.length) parts.push(freshItems.length + " imported");
-    if (overwrites.length) parts.push(overwrites.length + " overwritten");
+    if (overwrites.length) parts.push(overwrites.length + " overwritten, the old " + (overwrites.length === 1 ? "one is" : "ones are") + " in the bin");
     if (mode === "skip") parts.push("duplicates skipped");
     toast("Characters: " + (parts.join(" \u00b7 ") || "nothing to do"));
   };
@@ -11880,16 +11887,15 @@ function RolecraftVault() {
       await applyImportedBlur(it.blurred);
     }
     let next = personasRef.current;
+    // same as the character path beside this one: the old one goes to the bin
+    // whole, pictures included, rather than being dropped where it stood
+    const replaced = [];
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.item]));
       next = next.map(p => {
         const it = byId.get(p.id);
         if (!it) return p;
-        // personaImgIds, not a list built here: the character path beside this
-        // one already uses charImgIds, and rule 2 exists because these drift
-        personaImgIds(p).forEach(id => {
-          dropImage(id);
-        });
+        replaced.push(p);
         return {
           ...it.persona,
           id: p.id,
@@ -11902,9 +11908,10 @@ function RolecraftVault() {
     personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
+    await sendManyToTrash("persona", replaced);
     const parts = [];
     if (freshItems.length) parts.push(freshItems.length + " imported");
-    if (overwrites.length) parts.push(overwrites.length + " overwritten");
+    if (overwrites.length) parts.push(overwrites.length + " overwritten, the old " + (overwrites.length === 1 ? "one is" : "ones are") + " in the bin");
     if (mode === "skip") parts.push("duplicates skipped");
     toast("Personas: " + (parts.join(" \u00b7 ") || "nothing to do"));
   };
@@ -13360,9 +13367,35 @@ function RolecraftVault() {
     await sSet("trash:all", JSON.stringify(next));
   };
   const sendToTrash = (type, record) => sendManyToTrash(type, [record]);
-  const purgeTrashEntry = async entry => {
-    forgetBlur(imageIdsOf(entry.type, entry.record));
-    imageIdsOf(entry.type, entry.record).forEach(id => {
+  /* Every image id something still alive is pointing at: the live records, and
+     anything else waiting in the bin. An import writes its pictures under the
+     ids carried in the file, so a record that was overwritten and the one that
+     replaced it can be holding the very same picture. Dropping the old one's
+     ids on the way out would take the live one's pictures with it.
+
+     Built with imageIdsOf rather than by hand, per rule 2. */
+  const heldImageIds = exceptTids => {
+    const skip = new Set(exceptTids || []);
+    const held = new Set();
+    const add = ids => (ids || []).forEach(id => {
+      if (id) held.add(id);
+    });
+    (charsRef.current || []).forEach(c => add(imageIdsOf("character", c)));
+    (personasRef.current || []).forEach(p => add(imageIdsOf("persona", p)));
+    (loreRef.current || []).forEach(e => add(imageIdsOf("lore", e)));
+    (promptsRef.current || []).forEach(e => add(imageIdsOf("prompt", e)));
+    (trash || []).forEach(t => {
+      if (!skip.has(t.tid)) add(imageIdsOf(t.type, t.record));
+    });
+    return held;
+  };
+  /* `held` is passed in by the sweep below, which purges several at once and
+     has to work out what survives all of them before it starts. */
+  const purgeTrashEntry = async (entry, held) => {
+    const keep = held || heldImageIds([entry.tid]);
+    const gone = imageIdsOf(entry.type, entry.record).filter(id => !keep.has(id));
+    forgetBlur(gone);
+    gone.forEach(id => {
       dropImage(id);
     });
   };
@@ -13417,7 +13450,9 @@ function RolecraftVault() {
     const stale = trash.filter(t => (t.deletedAt || 0) < cutoff);
     if (!stale.length) return;
     (async () => {
-      for (const e of stale) await purgeTrashEntry(e);
+      // what survives the whole sweep, worked out once before any of it goes
+      const held = heldImageIds(stale.map(t => t.tid));
+      for (const e of stale) await purgeTrashEntry(e, held);
       const rest = trash.filter(t => (t.deletedAt || 0) >= cutoff);
       setTrash(rest);
       await sSet("trash:all", JSON.stringify(rest));
