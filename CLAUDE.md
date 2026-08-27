@@ -506,6 +506,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
 | `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
 | `test-phone-scrollbars.js` | drawn scrollbars on a phone (menu, library column, panels), the theme row wrapping instead of running off the panel, and that the deliberate desktop bars survive. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
+| `test-settings-popups.js` | the bin and version history opening as their own windows, searchable, and Escape closing one without closing Settings. Needs Electron |
 
 They all follow the same rule, which is the point:
 
@@ -533,6 +534,11 @@ What has worked well besides:
   that fits on a desktop can still run off the card there.
 - Electron's `capturePage()` on a `show: false` window returns a stale or empty
   frame. `win.show()`, focus it, wait, then capture.
+- **A closed fold looks exactly like no fold.** Two assertions in
+  `test-settings-popups.js` passed against the very code they were written to
+  condemn, because the thing they measure only misbehaves once it is opened.
+  Press the control first, then measure. Run every new check against the old
+  code and read which ones *pass*: any that do are not testing what you think.
 - **Styling `::-webkit-scrollbar` opts that element out of Android's overlay
   scrollbars.** The overlay ones fade away by themselves and take no layout
   space; a styled one is drawn permanently and repainted on every frame of a
