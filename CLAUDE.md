@@ -505,7 +505,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
 | `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
 | `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
-| `test-sidebar-scrollbar.js` | a drawn scrollbar under the phone menu, and that the deliberate desktop one survives. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
+| `test-phone-scrollbars.js` | drawn scrollbars on a phone (menu, library column, panels), the theme row wrapping instead of running off the panel, and that the deliberate desktop bars survive. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
 
 They all follow the same rule, which is the point:
 
@@ -539,8 +539,8 @@ What has worked well besides:
   fling, which reads as a flickering bar. That was the flashing line under the
   phone menu in 1.221. On a touch layout, hide the bar (`scrollbar-width: none`
   plus `::-webkit-scrollbar { display: none }`) rather than styling it — a
-  finger cannot grab 6px anyway. Note `.scrollbody` and `.modal` still carry
-  styled bars, so the same thing is latent there.
+  finger cannot grab 6px anyway. `.sidebar`, `.scrollbody` and `.modal` are all hidden below 760px for
+  this reason; the desktop bars are deliberate and stay.
 - To see any of that from a desktop Chromium, launch with
   `app.commandLine.appendSwitch("enable-features", "OverlayScrollbar")`.
   Without it, desktop Chromium always reserves scrollbar space and the

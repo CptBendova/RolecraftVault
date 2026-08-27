@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.221";
+const APP_VERSION = "1.222";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.221";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.221 — current",
+  heading: "1.222 — current",
+  notes: ["The CharSnap theme was unreachable on a phone. Light, Dark and CharSnap do not fit across a small screen, so the row slid sideways inside the panel and CharSnap sat off the edge with nothing to say it was there. The choices wrap onto a second line now, so all of them are simply visible. Text contrast had the same problem with Maximum.", "The rest of the flickering lines are gone too. The library and the panels over it were each drawing a scrollbar the same way the menu was in 1.221, and on the library it was not even doing anything: the page is what scrolls there, so the bar had nothing to move and was taking up room at the edge of your screen for no reason. Everything still scrolls by swiping exactly as before.", "Nothing changes on a computer, where the scrollbars stay as they were."]
+}, {
+  heading: "1.221",
   notes: ["The flickering line under the menu on a phone is gone. The menu becomes a row of icons that runs a little wider than the screen, and it was drawing a scrollbar along its bottom edge that was redrawn on every frame while you scrolled your characters, which is what made it flash. The row still slides across as it did; there is simply no bar over it now, and the menu is a few points taller for it.", "Nothing changes on a computer, where the menu runs down the side and keeps its narrow scrollbar for short windows."]
 }, {
   heading: "1.220",
@@ -2262,6 +2265,14 @@ const CSS = `
        in any case, and the icons cut off at the edge already say there is more. */
     .rcv .sidebar { scrollbar-width: none; }
     .rcv .sidebar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    /* The same applies to the library column and to any panel over it. On the
+       library the bar is not even doing anything: the page is what scrolls
+       there, the column runs to its full height, and it still set aside 10px
+       for a scrollbar that had nothing to move. A panel does scroll, and is
+       swiped rather than dragged by a bar. Once styled, none of these can be
+       given back Android's fading overlay bar, so the honest choice is none. */
+    .rcv .scrollbody, .rcv .modal { scrollbar-width: none; }
+    .rcv .scrollbody::-webkit-scrollbar, .rcv .modal::-webkit-scrollbar { display: none; width: 0; height: 0; }
     .rcv .scrollbody { padding-left: 14px !important; padding-right: 14px !important; }
     .rcv .row { flex-direction: column; }
     .rcv .wall { grid-auto-rows: 118px; }
@@ -10653,7 +10664,11 @@ function SettingsModal({
   }, "Appearance"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 8,
+      /* Three of these do not fit across a phone: the row used to scroll
+         sideways inside the panel instead, which put CharSnap off the edge
+         where nothing said it was there. */
+      flexWrap: "wrap"
     }
   }, [["light", "Light", icons.sun], ["dark", "Dark", icons.moon], ["charsnap", "CharSnap", icons.persona]].map(([t, label, ic]) => /*#__PURE__*/React.createElement("button", {
     key: t,
@@ -10813,7 +10828,9 @@ function SettingsModal({
   }, "Text contrast"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 8,
+      // same three-across problem as the theme row above
+      flexWrap: "wrap"
     }
   }, [["normal", "Normal"], ["high", "Higher"], ["max", "Maximum"]].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
     key: v,
