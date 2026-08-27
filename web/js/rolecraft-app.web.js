@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.219";
+const APP_VERSION = "1.220";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.219";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.219 — current",
+  heading: "1.220 — current",
+  notes: ["Sections can be copied from one character and pasted into another. Every section now has a copy button next to its bin, and once you have copied one a Paste button appears in any character or persona you open, named after the section so you know what is about to land. Rewriting the same appearance or speech notes by hand for a second character was the only way to move them before.", "It works between characters and personas in either direction, and the copy stays put until you copy something else, so one section can be pasted into as many records as you like. Copying also puts the text on your ordinary clipboard, so it can go into something outside the app. The character you copied from is never touched."]
+}, {
+  heading: "1.219",
   notes: ["A vault copied onto this device now appears straight away. Everything did arrive and was saved safely, but the window carried on showing the library it had loaded when you unlocked it, so a character you had just copied across was nowhere to be seen and the message ended by asking you to relaunch. It reads the vault back instead, and the characters, personas, lorebooks and prompts are simply there.", "The sending side now says when it is finished. It used to clear the bar and leave a code on screen under a button reading Stop sending, with nothing to tell you the other device had everything. It now says so plainly, and the button reads Done. Sending stays open afterwards so you can copy onto a second device, and the notice steps aside when one starts pulling."]
 }, {
   heading: "1.218",
@@ -4476,12 +4479,69 @@ function DupeImportModal({
   }, sure ? "Yes, overwrite " + names.length : "Overwrite existing"))));
 }
 
+/* ---------- the section clipboard ---------- */
+/* A section lifted out of one record so it can be pasted into another. Module
+   level, with its own subscribers, rather than component state: copying in one
+   character and pasting into the next closes the editor holding it in between,
+   which would take any state with it. Deliberately not persisted — it is a
+   clipboard, and it holds a copy of somebody's writing, so it does not want a
+   storage key of its own. */
+const SECTION_CLIP = { value: null, subs: new Set() };
+
+function putSectionOnClip(sec) {
+  SECTION_CLIP.value = sec ? { title: sec.title || "", content: sec.content || "" } : null;
+  SECTION_CLIP.subs.forEach(fn => fn(SECTION_CLIP.value));
+}
+
+/* What the paste button calls itself. A section title has no length limit, and
+   an untrimmed one would run the button off the side of the card. */
+function pasteLabel(clip) {
+  const t = ((clip && clip.title) || "").trim();
+  if (!t) return " Paste section";
+  return " Paste “" + (t.length > 18 ? t.slice(0, 17) + "…" : t) + "”";
+}
+
+function useSectionClip() {
+  const [v, setV] = useState(SECTION_CLIP.value);
+  useEffect(() => {
+    SECTION_CLIP.subs.add(setV);
+    return () => {
+      SECTION_CLIP.subs.delete(setV);
+    };
+  }, []);
+  return v;
+}
+
+/* The system clipboard, so a section can also leave the app entirely. The
+   mechanics are lifted out of copyText, which lives inside RolecraftVault and
+   is out of reach from here. navigator.clipboard is not always the one that
+   answers: this window turns the clipboard permission down, and execCommand is
+   the fallback that still works. */
+function writeClipboard(txt, done) {
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    if (done) done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(() => {
+      if (done) done();
+    }).catch(fallback);
+  } else fallback();
+}
+
 /* ---------- editable sections list (used by record modals) ---------- */
 function SectionsField({
   sections,
   onChange,
   kindOf
 }) {
+  const clip = useSectionClip();
+  const [copiedId, setCopiedId] = useState(null);
   return /*#__PURE__*/React.createElement("div", null, sections.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--dim)",
@@ -4510,6 +4570,25 @@ function SectionsField({
       title: e.target.value
     } : x))
   }), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    "aria-label": "Copy section",
+    title: "Copy this section, to paste into another character or persona",
+    style: {
+      flexShrink: 0,
+      padding: "8px 11px"
+    },
+    onClick: () => {
+      putSectionOnClip(s);
+      /* Onto the system clipboard as well, so a section can be pasted into
+         something that is not this app. */
+      writeClipboard((s.title ? s.title + "\n" : "") + (s.content || ""));
+      setCopiedId(s.id);
+      setTimeout(() => setCopiedId(id => id === s.id ? null : id), 1400);
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: copiedId === s.id ? icons.check : icons.copy,
+    size: 14
+  })), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     "aria-label": "Remove section",
     style: {
@@ -4559,7 +4638,29 @@ function SectionsField({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.plus,
     size: 13
-  }), " Add section")));
+  }), " Add section")), clip && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      marginLeft: 8
+    },
+    title: "Add the copied section to the end of this list",
+    /* A fresh id, always. sectionOrder addresses a section as "sec:<id>", so
+       two sections sharing one id would share one place in the order. */
+    onClick: () => onChange([...sections, {
+      id: uid(),
+      title: clip.title,
+      content: clip.content
+    }])
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.copy,
+    size: 13
+  }), pasteLabel(clip))));
 }
 
 /* ---------- blur toggle corner button ---------- */
@@ -8372,6 +8473,12 @@ function CharacterEditor({
   });
   const [lightbox, setLightbox] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  /* The same clipboard the persona and lore editors use, so a section copied
+     here can be pasted there and the other way about. This editor keeps its own
+     sections list rather than using SectionsField, which is why the copy and
+     paste buttons have to be built twice — keep the two in step. */
+  const secClip = useSectionClip();
+  const [copiedSecId, setCopiedSecId] = useState(null);
   const cRef = useRef(null);
   cRef.current = c;
   const [confirmVar, setConfirmVar] = useState(false); // deleting a variant asks twice
@@ -9364,9 +9471,19 @@ function CharacterEditor({
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
+      /* Two buttons sit here once something has been copied, which is more than
+         a phone has room for beside the description. Let them drop to their own
+         line rather than run off the edge of the card. */
+      flexWrap: "wrap",
+      gap: 8,
       marginBottom: 12
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0,
+      flex: "1 1 220px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
   }, "Sections"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9374,7 +9491,36 @@ function CharacterEditor({
       color: "var(--mut)",
       marginTop: 3
     }
-  }, "Anything extra — appearance, abilities, inventory, scenario notes.")), /*#__PURE__*/React.createElement("button", {
+  }, "Anything extra — appearance, abilities, inventory, scenario notes.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      /* Wraps within itself as well as in the row above: on a narrow phone the
+         pair is wider than the card even with the whole row to itself. */
+      flexWrap: "wrap",
+      justifyContent: "flex-end",
+      maxWidth: "100%"
+    }
+  }, secClip && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    title: "Add the copied section to the end of this list",
+    /* A fresh id, always. sectionOrder addresses a section as "sec:<id>", so
+       two sections sharing one id would share one place in the order. */
+    onClick: () => set("sections", [...(c.sections || []), {
+      id: uid(),
+      title: secClip.title,
+      content: secClip.content
+    }])
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.copy,
+    size: 14
+  }), pasteLabel(secClip))), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => set("sections", [...c.sections, {
       id: uid(),
@@ -9390,7 +9536,7 @@ function CharacterEditor({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.plus,
     size: 14
-  }), " Add section"))), (c.sections || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+  }), " Add section")))), (c.sections || []).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--dim)",
       fontSize: 13.5,
@@ -9418,6 +9564,23 @@ function CharacterEditor({
       title: e.target.value
     } : x))
   }), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    "aria-label": "Copy section",
+    title: "Copy this section, to paste into another character or persona",
+    style: {
+      flexShrink: 0,
+      padding: "8px 11px"
+    },
+    onClick: () => {
+      putSectionOnClip(s);
+      writeClipboard((s.title ? s.title + "\n" : "") + (s.content || ""));
+      setCopiedSecId(s.id);
+      setTimeout(() => setCopiedSecId(id => id === s.id ? null : id), 1400);
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: copiedSecId === s.id ? icons.check : icons.copy,
+    size: 15
+  })), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     "aria-label": "Remove section",
     style: {
@@ -11838,18 +12001,7 @@ function RolecraftVault() {
   const [viewPromptEntryId, setViewPromptEntryId] = useState(null);
   const [newPBookOpen, setNewPBookOpen] = useState(false);
   const [newPBookName, setNewPBookName] = useState("");
-  const copyText = (txt, msg) => {
-    const fallback = () => {
-      const ta = document.createElement("textarea");
-      ta.value = txt;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-      toast(msg);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => toast(msg)).catch(fallback);else fallback();
-  };
+  const copyText = (txt, msg) => writeClipboard(txt, () => toast(msg));
   const bucketCoverRef = useRef(null);
   const [coverTarget, setCoverTarget] = useState(null);
   /* Everything here used to happen inside a setState updater: deleting the old
