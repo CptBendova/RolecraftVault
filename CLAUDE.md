@@ -232,6 +232,27 @@ Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
 for a user rather than a developer. Entries before 1.092 are reconstructed from the
 code, not a real record — the UI says so, and that label should stay.
 
+## Sections are edited in two places
+
+There is no single sections editor. `SectionsField` is the shared one, used by
+`RecordModal` for personas, lorebooks and prompts. **`CharacterEditor` keeps its
+own copy of the same list** — its own title input, bin, textarea and token
+label, wired to `set("sections", …)` instead of an `onChange` prop. Changing one
+does nothing to the other, and "edit character" is the one people mean.
+
+This cost a full cycle in 1.220: copy and paste buttons were added to
+`SectionsField`, the driver reported two bins and no copy buttons, and the
+feature was simply not on the screen it had been asked for. Anything touching
+sections has to be done twice and checked on both screens. `sectionKinds` and
+the token label are already shared; only the markup is duplicated.
+
+The clipboard behind copy and paste (`SECTION_CLIP`, `putSectionOnClip`,
+`useSectionClip`) is module level with its own subscribers, because copying in
+one editor and pasting in the next unmounts the component holding it. It is
+deliberately not persisted. A pasted section always takes a fresh `uid()`:
+`sectionOrder` addresses a section as `sec:<id>`, so a reused id would put two
+sections in one slot — the same shape of bug as rule 2.
+
 ## The in-app guide
 
 `GUIDE` in `app/app.js` is a 15-section contents page. It is plain JSON, so it can
@@ -483,6 +504,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-phone-image-guard.js` | the rule keeping full originals off a phone, including when a picture has never been measured |
 | `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
 | `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
+| `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
 
 They all follow the same rule, which is the point:
 
@@ -500,6 +522,16 @@ What has worked well besides:
   into the test — lift it, or the test proves nothing about the shipped code.
 - **Drive the web build in the browser** for anything visual, and measure rather than
   eyeball: element rects, computed styles, grid track counts.
+- **Ask the element that has a width whether something overflowed.** A flex row
+  sized to its own content always answers no: `scrollWidth > clientWidth` on the
+  button group was false while a button sat well off the side of the card
+  around it. Measure against the card, or compare `getBoundingClientRect().right`
+  with the container's. In 1.220 that false negative was caught only by looking
+  at a screenshot, which is exactly what measuring is meant to replace. Check a
+  narrow width too — 360px is the phone that breaks these rows, and a header
+  that fits on a desktop can still run off the card there.
+- Electron's `capturePage()` on a `show: false` window returns a stale or empty
+  frame. `win.show()`, focus it, wait, then capture.
 - The transfer panel is Electron-only. To render it in the web build, stub
   `window.transfer` before opening Settings. Three things about that stub cost
   an afternoon in 1.219, all of them making the harness look like the bug:
