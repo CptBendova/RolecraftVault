@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.226";
+const FACTORY_BUILD = "1.227";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -252,6 +252,19 @@ function stopTransferServer() {
 const transferFilePath = () => path.join(updatesDir, "transfer.bin");
 const deltaFilePath = () => path.join(updatesDir, "delta.bin");
 const deltaBatchPath = i => path.join(updatesDir, "delta-" + i + ".bin");
+/* Everything a transfer can leave behind. transfer.plain is the one that
+   matters: it is the decrypted stream of every record that arrived, written
+   to disk so it can be applied a line at a time. The receive path removes it
+   on every exit, but a crash, a power cut or a force quit runs none of those,
+   and it then sits there — an unencrypted copy of the vault, beside a vault
+   whose whole point is that it is encrypted. Swept at startup as well. */
+function clearTransferLeftovers() {
+  if (!updatesDir) return;
+  for (const name of ["transfer.plain", "incoming.bin", "transfer.bin"]) {
+    try { fs.unlinkSync(path.join(updatesDir, name)); } catch (e) {}
+  }
+  clearDeltaFiles();
+}
 function clearDeltaFiles() {
   if (!updatesDir) return;
   try { fs.unlinkSync(deltaFilePath()); } catch (e) {}
@@ -580,8 +593,12 @@ function startTransferServer() {
     }
     let start = 0, end = size;
     if (range && Number.isFinite(range.off)) {
-      start = Math.max(0, Math.min(size, range.off | 0));
-      const n = range.n != null && Number.isFinite(range.n) ? Math.max(0, range.n | 0) : (size - start);
+      /* | 0 is a 32-bit operation: any offset past 2 GB wrapped to a negative
+         number and read the wrong part of the file. Batches are small enough
+         today that nothing reaches it, but a single picture is sent as its own
+         file and vaults here run to several gigabytes. */
+      start = Math.max(0, Math.min(size, Math.floor(Number(range.off)) || 0));
+      const n = range.n != null && Number.isFinite(range.n) ? Math.max(0, Math.floor(Number(range.n)) || 0) : (size - start);
       end = Math.max(start, Math.min(size, start + n));
     }
     const len = end - start;
@@ -812,7 +829,11 @@ function startTransferServer() {
       resolve({ ok: false, error: msg });
     };
     transferServer.on("error", e => fail("Couldn't open a local port: " + e.message));
-    transferServer.listen(0, "0.0.0.0", () => {
+    /* The one address the code already worked out, rather than every interface
+       the machine has. On 0.0.0.0 this also answered on VPN adapters, virtual
+       switches and anything else attached, none of which is the local network
+       the pairing code was meant for. */
+    transferServer.listen(0, ip, () => {
       if (settled) return;
       const addr = transferServer && transferServer.address();
       if (!addr) return fail("Couldn't open a local port");
@@ -1192,6 +1213,12 @@ function writeFileAtomic(file, payload) {
   fs.renameSync(tmp, file);
 }
 function writeValue(key, value) {
+  /* Never write while locked. encodeValue with no master key falls back to
+     "raw:", so a write here would quietly store the record without the
+     password layer that security.json says it has. The IPC handlers gate
+     themselves too, for a clearer message; this is the backstop that covers
+     every other caller, receiving a transfer included. */
+  if (isLocked()) throw new Error("locked");
   writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
   rememberHash(key, value);
 }
@@ -1283,7 +1310,7 @@ function verifyPassword(pw) {
 }
 
 function setupAuthIpc() {
-  ipcMain.handle("transfer-start", () => startTransferServer());
+  ipcMain.handle("transfer-start", () => isLocked() ? { ok: false, error: "Unlock the vault first — sharing reads every record to work out what to send." } : startTransferServer());
   ipcMain.handle("transfer-mirror-respond", (e, id, decision) => {
     const finish = pendingMirrorAsks.get(String(id));
     if (!finish) return { ok: false };
@@ -1296,8 +1323,11 @@ function setupAuthIpc() {
     : { active: false, device: deviceName() });
   // progress goes back to the window that asked, so a closed window cannot be sent to
   const progressTo = e => p => { try { if (!e.sender.isDestroyed()) e.sender.send("transfer-progress", p); } catch (err) {} };
-  ipcMain.handle("transfer-receive", (e, code, replace) => receiveTransfer(code, replace, false, progressTo(e)));
-  ipcMain.handle("transfer-preview", (e, code, replace) => receiveTransfer(code, replace, true, progressTo(e)));
+  /* All three touch records: receiving writes them, and sharing reads every
+     one to build its manifest. A locked vault does neither. */
+  const refuseIfLocked = () => ({ ok: false, error: "Unlock the vault first — a transfer reads and writes your records." });
+  ipcMain.handle("transfer-receive", (e, code, replace) => isLocked() ? refuseIfLocked() : receiveTransfer(code, replace, false, progressTo(e)));
+  ipcMain.handle("transfer-preview", (e, code, replace) => isLocked() ? refuseIfLocked() : receiveTransfer(code, replace, true, progressTo(e)));
   ipcMain.handle("updates-status", () => {
     const act = activeUpdate();
     return { build: FACTORY_BUILD, active: act ? act.version : null, notes: act ? act.notes : "" };
@@ -1593,6 +1623,18 @@ function createWindow() {
   });
 }
 
+/* The main process had nothing catching a throw, so anything that got past a
+   try — a timer, a stream callback, a socket that failed at the wrong moment —
+   ended it outright. The window disappeared with no message. Neither of these
+   is a licence to throw: they are here so a bad moment in one corner does not
+   take the vault down, and so there is a record of it afterwards. */
+process.on("uncaughtException", err => {
+  try { console.error("Rolecraft Vault: uncaught exception in the main process:", err); } catch (e) {}
+});
+process.on("unhandledRejection", err => {
+  try { console.error("Rolecraft Vault: unhandled rejection in the main process:", err); } catch (e) {}
+});
+
 /* Two copies would read and write the same vault files at once, and the loser
    of a race silently overwrites the winner. A second launch hands its request
    to the copy already running instead, which also covers double-clicking the
@@ -1619,6 +1661,8 @@ app.whenReady().then(() => {
   updatesDir = path.join(app.getPath("userData"), "updates");
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(updatesDir, { recursive: true });
+  // anything a transfer left behind when it did not get to finish
+  clearTransferLeftovers();
   finishPendingRewrap();
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));

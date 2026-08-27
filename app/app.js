@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.226";
+const APP_VERSION = "1.227";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.226";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.226 — current",
+  heading: "1.227 — current",
+  notes: ["This one is the app itself rather than the interface, so it needs the installer. Your vault and settings are kept exactly as they are.", "A copy of your records could be left behind unencrypted. Receiving a vault from another device writes what arrives to a working file on the way in, and that file holds your records in the clear. It was always removed when the copy finished or failed, but not if the app was closed or lost power partway through, and it then simply stayed there. Anything left over is now cleared away, both when a copy ends and every time the app starts.", "Transfers now refuse to run while the vault is locked. Receiving while locked wrote every arriving record without the password layer, so records that should have been encrypted with your password were not. Sharing is held back too, since it reads every record to work out what to send.", "Sharing now offers itself only to your local network. It was answering on every connection the computer had, including VPNs and virtual adapters, rather than the one the pairing code is for.", "The app no longer disappears without a word. Nothing was catching an unexpected error in the app itself, so a bad moment in the background could end it outright with the window simply vanishing."]
+}, {
+  heading: "1.226",
   notes: ["The app no longer goes blank if something in your vault is damaged. One broken entry in Recently deleted was enough to take the whole screen down, and because there was nothing left on screen there was no way back in to fix it. Anything that cannot be drawn now shows a short message with Try again and Reload, and your vault is untouched either way.", "Everything in Recently deleted is reachable again. If the count in Settings said three and the window only showed you one, the missing ones were of a kind the list did not recognise: they were still taking up room and could be neither restored nor removed. They are listed now, under Other if they fit nothing else, and an entry too damaged to name shows as Untitled so you can still get rid of it.", "Searching your library now ignores spaces around what you typed, so pasting a name in finds it. A very long name no longer runs off the side of the editor or out of its card. Tag and bucket lists sort naturally instead of putting every capital letter first. An item in the bin can no longer claim more than thirty days left if a device's clock was wrong.", "Exporting a character named after something Windows reserves, like CON or AUX, now writes a file Windows will actually accept. And deleting a lorebook or prompt entry no longer removes a picture that another entry is still using."]
 }, {
   heading: "1.225",

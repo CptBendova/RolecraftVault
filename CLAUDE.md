@@ -254,6 +254,43 @@ pushed the rest of Settings out of reach.
 - Both windows search. The changelog searches the note bodies as well as the
   headings, because what you remember is the thing that changed.
 
+## The shell's own traps
+
+Shell fixes cost everyone a 541 MB installer, so it is worth finding them in
+batches. What the August 2026 sweep turned up, all fixed in 1.227:
+
+- **`encodeValue` falls back to `"raw:"` when there is no master key.** Anything
+  writing while locked therefore stored the record with no password layer at
+  all, under DPAPI only, while `security.json` went on saying a password was
+  set. `vault-set` and `vault-delete` were gated; **receiving a transfer was
+  not**, and it writes every record that arrives. `writeValue` itself now
+  refuses when `isLocked()`, which covers every caller including future ones.
+  Gate the IPC entry points too, for a message the panel can show.
+- **A transfer writes your records to disk in the clear.** `transfer.plain` is
+  the decrypted stream, applied a line at a time. The receive path removes it on
+  every exit it controls, but a crash or a force quit is not one of them.
+  `clearTransferLeftovers()` sweeps it, `incoming.bin` and `transfer.bin` at
+  startup as well as at the end of a transfer. It must not touch `updates/current/`,
+  which is the installed patch.
+- **The main process had nothing catching a throw.** Anything outside an
+  `ipcMain.handle` — a timer, a stream callback, a socket — ended the process and
+  the window simply vanished. `process.on("uncaughtException")` and
+  `unhandledRejection` now log instead.
+- **The transfer server listened on `0.0.0.0`** when `lanAddress()` had already
+  worked out the one address it wanted, so it also answered on VPN and virtual
+  adapters. It binds to `ip`.
+- **`x | 0` is 32-bit.** The range arithmetic in `sendFile` wrapped any offset
+  past 2 GB to a negative number. Vaults here run to several gigabytes.
+
+`main.js` is **CRLF**: build every multi-line anchor by joining with `
+`, or
+it will not match. Check the file is still all-CRLF after editing it.
+
+To try the real shell without touching the real vault:
+`npx electron app --user-data-dir=./tmp-vault --remote-debugging-port=9333`,
+then drive `window.storage` over CDP. Kill stray `electron.exe` first or the
+user-data folder stays locked and the next run cannot start.
+
 ## Nothing may take the whole interface down
 
 `app.js` mounts inside a `Boundary` class component (`getDerivedStateFromError` /
@@ -594,6 +631,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-settings-popups.js` | the bin and version history opening as their own windows, searchable, and Escape closing one without closing Settings. Needs Electron |
 | `test-import-overwrite.js` | an overwritten record reaching the bin with its pictures, and emptying the bin sparing a picture a live record still holds. Needs Electron |
 | `test-robustness.js` | a damaged or unrecognised bin entry blanking the app or hiding from every group, plus the countdown clamp, the search trim and a long name running off the editor. Needs Electron |
+| `test-shell-guards.js` | the shell's own guards: no write while locked, no plaintext left behind by a transfer, byte offsets past 2 GB, and the LAN-only listen. Lifts main.js; plain node |
 
 They all follow the same rule, which is the point:
 
