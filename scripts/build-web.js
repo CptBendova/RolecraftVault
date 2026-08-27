@@ -10,14 +10,18 @@ const root = path.join(__dirname, "..");
 const srcPath = path.join(root, "app", "app.js");
 const outPath = path.join(root, "web", "js", "rolecraft-app.web.js");
 
+/* The desktop mount. It is wrapped in the error boundary, so this is two lines
+   rather than one; kept as an exact string so a change to the mount still stops
+   the build loudly instead of shipping a web bundle that mounts nothing. */
 const DESKTOP_MOUNT =
-  'ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(RolecraftVault));';
+  'ReactDOM.createRoot(document.getElementById("root")).render(\n' +
+  '  React.createElement(Boundary, null, React.createElement(RolecraftVault)));';
 
 const WEB_MOUNT = `window.RolecraftVaultMount = function (el) {
   const node = typeof el === "string" ? document.querySelector(el) : el;
   if (!node) throw new Error("RolecraftVaultMount: element not found");
   const root = ReactDOM.createRoot(node);
-  root.render(React.createElement(RolecraftVault));
+  root.render(React.createElement(Boundary, null, React.createElement(RolecraftVault)));
   return root;
 };
 (function () {

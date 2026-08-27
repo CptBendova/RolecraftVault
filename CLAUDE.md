@@ -254,6 +254,33 @@ pushed the rest of Settings out of reach.
 - Both windows search. The changelog searches the note bodies as well as the
   headings, because what you remember is the thing that changed.
 
+## Nothing may take the whole interface down
+
+`app.js` mounts inside a `Boundary` class component (`getDerivedStateFromError` /
+`componentDidCatch`). Before 1.226 there was none, so **any** error thrown while
+drawing unmounted the entire tree: the page went blank, and with nothing left on
+it there was no way to reach Settings and undo whatever caused it. One bin entry
+whose `record` had gone was enough. The fallback offers Try again and Reload and
+says the vault is untouched.
+
+Two things follow from this:
+
+- **`scripts/build-web.js` pins the desktop mount as an exact string** and stops
+  the build if it does not match, rather than shipping a web bundle that mounts
+  nothing. Changing how the app mounts means updating `DESKTOP_MOUNT` there. It
+  caught exactly this in 1.226 — and note the failure is only visible if you read
+  the build output, because `npm run build:web` printing an error while a `grep
+  Wrote` finds nothing looks the same as success.
+- A boundary is a backstop, not a licence. Anything drawing from stored data
+  should still tolerate a record that is missing or malformed — `t.record || {}`
+  rather than `t.record.name`.
+
+**A list grouped by a fixed set of kinds needs a catch-all.** `TRASH_GROUPS` ends
+with `{ type: null, label: "Other" }` and `trashGroupOf()` routes anything
+unrecognised into it. Without that, grouping the bin in 1.225 made entries of any
+other kind invisible while Settings went on counting them, so they could be
+neither restored nor removed.
+
 ## The bin owns the pictures of what is in it
 
 Nothing that removes a record may drop its images. `deleteChar` never did;
@@ -566,6 +593,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-phone-scrollbars.js` | drawn scrollbars on a phone (menu, library column, panels), the theme row wrapping instead of running off the panel, and that the deliberate desktop bars survive. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
 | `test-settings-popups.js` | the bin and version history opening as their own windows, searchable, and Escape closing one without closing Settings. Needs Electron |
 | `test-import-overwrite.js` | an overwritten record reaching the bin with its pictures, and emptying the bin sparing a picture a live record still holds. Needs Electron |
+| `test-robustness.js` | a damaged or unrecognised bin entry blanking the app or hiding from every group, plus the countdown clamp, the search trim and a long name running off the editor. Needs Electron |
 
 They all follow the same rule, which is the point:
 

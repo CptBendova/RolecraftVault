@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.225";
+const APP_VERSION = "1.226";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.225";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.225 — current",
+  heading: "1.226 — current",
+  notes: ["The app no longer goes blank if something in your vault is damaged. One broken entry in Recently deleted was enough to take the whole screen down, and because there was nothing left on screen there was no way back in to fix it. Anything that cannot be drawn now shows a short message with Try again and Reload, and your vault is untouched either way.", "Everything in Recently deleted is reachable again. If the count in Settings said three and the window only showed you one, the missing ones were of a kind the list did not recognise: they were still taking up room and could be neither restored nor removed. They are listed now, under Other if they fit nothing else, and an entry too damaged to name shows as Untitled so you can still get rid of it.", "Searching your library now ignores spaces around what you typed, so pasting a name in finds it. A very long name no longer runs off the side of the editor or out of its card. Tag and bucket lists sort naturally instead of putting every capital letter first. An item in the bin can no longer claim more than thirty days left if a device's clock was wrong.", "Exporting a character named after something Windows reserves, like CON or AUX, now writes a file Windows will actually accept. And deleting a lorebook or prompt entry no longer removes a picture that another entry is still using."]
+}, {
+  heading: "1.225",
   notes: ["Recently deleted is now kept apart by kind. Characters, personas, lorebook entries and prompts each have their own heading with a count, and you open the one you want instead of reading past everything else. A small bin opens itself; a big one stays folded so you can see what is in it at a glance. Searching still works across all of them, and opens whichever heading it found something under.", "The two kinds that never arrive there say so. Lorebook and prompt entries are removed outright rather than kept for thirty days, and the guide has been saying otherwise, which is corrected. The guide now also mentions that importing a file over a character counts as deleting it, so the version you replaced is in the bin."]
 }, {
   heading: "1.224",
@@ -988,9 +991,19 @@ const extOf = u => {
 /* Windows refuses these names outright, whatever the extension, so a zip
    folder called CON/ cannot be unpacked there and a file called NUL.json
    cannot be written. A trailing underscore keeps the name readable. */
+/* Sorting names with no comparator compares UTF-16 code units, which puts
+   every capital ahead of every lowercase letter: Beta, Zebra, aardvark, apple.
+   Tag, bucket and book names are typed by hand and are full of mixed case. */
+const byName = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
 const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-const sanitizeName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
-const safeFileName = s => { const n = sanitizeName(s); return WINDOWS_RESERVED.test(n) ? n + "_" : n; };
+const cleanName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
+/* CON, PRN, AUX, NUL, COM1..9 and LPT1..9 are device names on Windows, and an
+   extension does not release them: CON.json cannot be written either. A
+   character really called Aux exported to a file Windows refuses. The guard
+   lived in safeFileName, which only five of the filename sites used, so it is
+   here instead where every one of them goes through it. */
+const sanitizeName = s => { const n = cleanName(s); return WINDOWS_RESERVED.test(n) ? n + "_" : n; };
+const safeFileName = sanitizeName;
 
 /* ---------- JSON import normalizers ---------- */
 /* Term lists (searchables) arrive in whatever shape produced the file. Anything
@@ -1915,6 +1928,12 @@ const CSS = `
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
   .rcv .char-card:hover { transform: translateY(-3px); border-color: var(--brass-line); }
+  /* A name with nothing to break on — no spaces, or one very long word — ran
+     straight off the side: out of the card, and past the right edge of the
+     editor's heading, where it was simply cut off. Break it wherever it has to
+     be broken. Headings and card captions only; body text keeps its normal
+     wrapping so ordinary writing is never chopped mid-word. */
+  .rcv h1, .rcv h2, .rcv .char-card .meta, .rcv .tile .meta { overflow-wrap: anywhere; }
   .rcv .char-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .rcv .char-card .veil { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, rgba(6,9,20,.92) 88%); }
   .rcv.light .char-card .veil { background: linear-gradient(180deg, transparent 30%, rgba(6,9,20,.55) 62%, rgba(6,9,20,.96) 100%); }
@@ -3865,13 +3884,18 @@ const VARIANT_TEXT_KEYS = ["tagline", "story", "personality", "scenario", "first
    that needs it cannot get it wrong. */
 function charImgIds(c) {
   if (!c) return [];
-  return [c.profileImg, c.banner,
+  /* Deduplicated. The same picture can be the portrait and a gallery entry, or
+     shared with a variant, and a caller that adds up sizes over this list would
+     count it twice. Every caller today keys by id or dedupes for itself, which
+     is exactly the kind of thing that stops being true quietly. */
+  return [...new Set([c.profileImg, c.banner,
     ...(c.gallery || []).map(g => g.imgId),
-    ...(c.variants || []).map(v => v.profileImg)].filter(Boolean);
+    ...(c.variants || []).map(v => v.profileImg)].filter(Boolean))];
 }
 function personaImgIds(p) {
   if (!p) return [];
-  return [p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean);
+  // deduplicated, for the reason given on charImgIds above
+  return [...new Set([p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean))];
 }
 function picOf(fullCache, imgCache, id) {
   return id ? fullCache && fullCache[id] || imgCache && imgCache[id] : null;
@@ -6192,7 +6216,7 @@ function LorebookPage({
   const label = world || "Unfiled";
   const needle = q.trim().toLowerCase();
   const [typeFilter, setTypeFilter] = useState(null);
-  const types = [...new Set(entries.map(e => (e.entryType || "").trim()).filter(Boolean))].sort();
+  const types = [...new Set(entries.map(e => (e.entryType || "").trim()).filter(Boolean))].sort(byName);
   const zTop = 54; // above character/persona pages (50) so attached books open on top
   const shown = entries.filter(e => !typeFilter || (e.entryType || "").trim() === typeFilter).filter(e => !needle || (e.title || "").toLowerCase().includes(needle) || (e.content || "").toLowerCase().includes(needle) || (e.entryType || "").toLowerCase().includes(needle) || (e.triggers || []).some(t => t.toLowerCase().includes(needle))).slice().sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   return /*#__PURE__*/React.createElement("div", {
@@ -10405,8 +10429,18 @@ const TRASH_GROUPS = [
   { type: "character", label: "Characters" },
   { type: "persona", label: "Personas" },
   { type: "lore", label: "Lorebook entries", note: "Lorebook entries are removed outright rather than kept here." },
-  { type: "prompt", label: "Prompts", note: "Prompts are removed outright rather than kept here." }
+  { type: "prompt", label: "Prompts", note: "Prompts are removed outright rather than kept here." },
+  /* Anything whose kind is not one of the four above. Nothing writes such an
+     entry today, but restoreFromTrash has always had a branch for one, and
+     grouping without this made any that did exist invisible: still counted in
+     Settings, still taking up the vault, and impossible to restore or remove
+     because no heading listed it. A catch-all cannot go stale. */
+  { type: null, label: "Other" }
 ];
+const trashGroupOf = t => {
+  const known = TRASH_GROUPS.some(g => g.type && g.type === (t && t.type));
+  return known ? t.type : null;
+};
 
 /* Recently deleted, in a window of its own.
 
@@ -10440,11 +10474,19 @@ function TrashModal({
     return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
   const needle = q.trim().toLowerCase();
-  const matches = t => !needle || ((t.record && t.record.name) || "").toLowerCase().includes(needle);
+  const matches = t => !needle || (((t.record || {}).name || (t.record || {}).title || "")).toLowerCase().includes(needle);
   const shown = all.filter(matches);
 
   const row = t => {
-    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
+    /* A damaged entry used to throw here and take the whole interface down with
+       it, because React unmounts the tree and there is then no way back in.
+       An entry with nothing left in it is still shown, so it can be removed. */
+    const rec = t.record || {};
+    /* Clamped at both ends. A vault carried between devices, or a machine with
+       the wrong clock, can leave a deletedAt in the future, which read as more
+       than the thirty days it is actually kept for. */
+    const age = Math.max(0, Date.now() - (t.deletedAt || 0));
+    const days = Math.max(0, Math.min(30, 30 - Math.floor(age / 864e5)));
     return /*#__PURE__*/React.createElement("div", {
       key: t.tid,
       style: {
@@ -10459,7 +10501,7 @@ function TrashModal({
       style: { flex: 1, minWidth: 150 }
     }, /*#__PURE__*/React.createElement("div", {
       style: { fontWeight: 600 }
-    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
+    }, rec.name || rec.title || "Untitled"), /*#__PURE__*/React.createElement("div", {
       style: { fontSize: 12, color: "var(--dim)" }
       // the group heading says what kind it is, so the line under the name does not
     }, days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left")),
@@ -10475,15 +10517,17 @@ function TrashModal({
   };
 
   const group = g => {
-    const mine = shown.filter(t => t.type === g.type);
-    const total = all.filter(t => t.type === g.type).length;
+    const mine = shown.filter(t => trashGroupOf(t) === g.type);
+    const total = all.filter(t => trashGroupOf(t) === g.type).length;
+    // "Other" is only worth a heading when something has actually landed in it
+    if (g.type === null && total === 0) return null;
     // a search opens whatever it found, so results are never hidden in a fold
     const opened = needle ? mine.length > 0 : !!open[g.type];
     const count = needle
       ? (mine.length ? mine.length + (mine.length === 1 ? " match" : " matches") : "no matches")
       : (total === 0 ? "none" : total === 1 ? "1 item" : total + " items");
     return /*#__PURE__*/React.createElement("div", {
-      key: g.type,
+      key: String(g.type),
       style: { marginTop: 12 }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setOpen(o => ({ ...o, [g.type]: !o[g.type] })),
@@ -12764,6 +12808,10 @@ function RolecraftVault() {
   const [cardSize, setCardSize] = useState("medium"); // character and persona cards: small | medium | large
   const [contrast, setContrast] = useState("normal"); // text contrast boost: normal | high | max
   const [trash, setTrash] = useState([]); // [{tid, type, record, deletedAt}] — restorable deletes
+  /* Kept in step with the state so anything that awaits partway through can ask
+     what the bin holds now rather than what it held when it started. */
+  const trashRef = useRef([]);
+  trashRef.current = trash;
   const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : "14.5px";
   const cardMinPx = cardSize === "small" ? "132px" : cardSize === "large" ? "268px" : "180px";
   const applyTextSize = async s => {
@@ -13536,8 +13584,15 @@ function RolecraftVault() {
     (async () => {
       // what survives the whole sweep, worked out once before any of it goes
       const held = heldImageIds(stale.map(t => t.tid));
+      const swept = new Set(stale.map(t => t.tid));
       for (const e of stale) await purgeTrashEntry(e, held);
-      const rest = trash.filter(t => (t.deletedAt || 0) >= cutoff);
+      /* Take the list as it is now rather than the one this started with.
+         Deleting or restoring something while the purge was running used to be
+         overwritten by a list computed before it happened, which meant a record
+         could leave the library and never arrive in the bin. Only the entries
+         actually swept are taken out. */
+      const rest = trashRef.current.filter(t => !swept.has(t.tid));
+      trashRef.current = rest;
       setTrash(rest);
       await sSet("trash:all", JSON.stringify(rest));
     })();
@@ -13635,10 +13690,16 @@ function RolecraftVault() {
   };
   const deleteRecord = async (type, r) => {
     if (type === "prompt" || type === "lore") {
-      // the blur list kept the ids of pictures that no longer exist
-      forgetBlur((r.images || []).map(im => im.imgId));
-      (r.images || []).forEach(im => {
-        dropImage(im.imgId);
+      /* These two are removed outright rather than kept in the bin, so their
+         pictures do go now. Only the ones nothing else is holding: a restored
+         backup writes images under the ids in the file, so two entries can be
+         pointing at the same picture, and taking one used to take the other's
+         with it. Same rule as purgeTrashEntry. */
+      const held = heldImageIds();
+      const gone = (r.images || []).map(im => im && im.imgId).filter(id => id && !held.has(id));
+      forgetBlur(gone);
+      gone.forEach(id => {
+        dropImage(id);
       });
       if (type === "prompt") setViewPromptEntryId(null);else setViewLoreEntryId(null);
     }
@@ -14326,11 +14387,11 @@ function RolecraftVault() {
   };
 
   /* --- derived --- */
-  const allTags = useMemo(() => [...new Set(chars.flatMap(c => c.tags || []))].sort(), [chars]);
+  const allTags = useMemo(() => [...new Set(chars.flatMap(c => c.tags || []))].sort(byName), [chars]);
   const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter))/* Every other list guards its fields; this one concatenated name, story and
    personality raw, so a character missing any of them had the literal word
    "undefined" folded into what gets searched — and typing it matched them. */
-.filter(c => !charQ || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+.filter(c => !charQ.trim() || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   /* This copied every character, persona, lore entry and prompt in the vault
      into a new object, sorted the lot, and threw all but six away — and it ran
      on every render, including while typing in a search box on a completely
@@ -15212,6 +15273,8 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("select", {
     value: sort,
     onChange: e => setSort(e.target.value),
+    // the only field on the library with nothing naming it to a screen reader
+    "aria-label": "Sort characters",
     style: {
       width: 190
     }
@@ -15304,7 +15367,7 @@ function RolecraftVault() {
     }
   }), /*#__PURE__*/React.createElement("datalist", {
     id: "rcv-buckets-bulk"
-  }, [...new Set([...chars.map(c => (c.bucket || "").trim()).filter(Boolean), ...Object.keys(bucketMeta)])].sort().map(b => /*#__PURE__*/React.createElement("option", {
+  }, [...new Set([...chars.map(c => (c.bucket || "").trim()).filter(Boolean), ...Object.keys(bucketMeta)])].sort(byName).map(b => /*#__PURE__*/React.createElement("option", {
     key: b,
     value: b
   }))), /*#__PURE__*/React.createElement("button", {
@@ -16092,7 +16155,7 @@ function RolecraftVault() {
       }
     }), /*#__PURE__*/React.createElement("datalist", {
       id: "rcv-pbuckets-bulk"
-    }, [...new Set([...personas.map(p => (p.bucket || "").trim()).filter(Boolean), ...Object.keys(pBucketMeta)])].sort().map(b => /*#__PURE__*/React.createElement("option", {
+    }, [...new Set([...personas.map(p => (p.bucket || "").trim()).filter(Boolean), ...Object.keys(pBucketMeta)])].sort(byName).map(b => /*#__PURE__*/React.createElement("option", {
       key: b,
       value: b
     }))), /*#__PURE__*/React.createElement("button", {
@@ -17590,8 +17653,8 @@ function RolecraftVault() {
     dropImage: dropImage,
     blurred: blurred,
     onToggleBlur: toggleBlur,
-    buckets: [...new Set([...chars.map(c => (c.bucket || "").trim()).filter(Boolean), ...Object.keys(bucketMeta)])].sort(),
-    allTags: [...new Set(chars.flatMap(c => c.tags || []))].sort(),
+    buckets: [...new Set([...chars.map(c => (c.bucket || "").trim()).filter(Boolean), ...Object.keys(bucketMeta)])].sort(byName),
+    allTags: [...new Set(chars.flatMap(c => c.tags || []))].sort(byName),
     loreBooks: (() => {
       const bk = {};
       lore.forEach(e => {
@@ -17601,7 +17664,7 @@ function RolecraftVault() {
       Object.keys(loreMeta).forEach(w => {
         if (!(w in bk)) bk[w] = 0;
       });
-      return Object.keys(bk).sort().map(name => ({
+      return Object.keys(bk).sort(byName).map(name => ({
         name,
         count: bk[name]
       }));
@@ -17648,7 +17711,7 @@ function RolecraftVault() {
       key: "bucket",
       label: "Bucket",
       placeholder: "Group personas — e.g. Main, AUs, One-offs",
-      datalist: [...new Set([...personas.map(p => (p.bucket || "").trim()).filter(Boolean), ...Object.keys(pBucketMeta)])].sort()
+      datalist: [...new Set([...personas.map(p => (p.bucket || "").trim()).filter(Boolean), ...Object.keys(pBucketMeta)])].sort(byName)
     }, {
       key: "lorebooks",
       label: "Lorebooks — attach worlds this persona lives in",
@@ -17663,7 +17726,7 @@ function RolecraftVault() {
         Object.keys(loreMeta || {}).forEach(w => {
           if (!(w in counts)) counts[w] = 0;
         });
-        return Object.keys(counts).sort().map(w => ({
+        return Object.keys(counts).sort(byName).map(w => ({
           value: w,
           label: w + " · " + counts[w]
         }));
@@ -17698,7 +17761,7 @@ function RolecraftVault() {
       key: "world",
       label: "World / lorebook",
       placeholder: "Pick an existing lorebook or type a new name",
-      datalist: [...new Set([...lore.map(e => (e.world || "").trim()).filter(Boolean), ...Object.keys(loreMeta || {})])].sort()
+      datalist: [...new Set([...lore.map(e => (e.world || "").trim()).filter(Boolean), ...Object.keys(loreMeta || {})])].sort(byName)
     }, {
       key: "entryType",
       label: "Type",
@@ -17735,7 +17798,7 @@ function RolecraftVault() {
       key: "collection",
       label: "Collection / prompt book",
       placeholder: "Pick an existing collection or type a new name",
-      datalist: [...new Set([...prompts.map(p => (p.collection || "").trim()).filter(Boolean), ...Object.keys(promptMeta || {})])].sort()
+      datalist: [...new Set([...prompts.map(p => (p.collection || "").trim()).filter(Boolean), ...Object.keys(promptMeta || {})])].sort(byName)
     }, {
       key: "tags",
       label: "Tags",
@@ -17982,11 +18045,68 @@ function RolecraftVault() {
     className: "toast"
   }, toastMsg));
 }
+/* Anything that throws while drawing used to take the whole interface with it:
+   React unmounts the tree, and with nothing left on the page there is no way
+   back in — not even to Settings to undo whatever caused it. One damaged entry
+   in the bin was enough to do it.
+
+   This catches the fall and keeps the app usable. It says what happened, offers
+   to try again, and offers a reload, because most of these are one bad record
+   in one screen rather than a vault that has stopped working. A class is used
+   because that is the only thing React gives for this. */
+class Boundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  componentDidCatch(err) {
+    try { console.error("Rolecraft Vault caught a rendering error:", err); } catch (e) {}
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    const line = (this.state.err && this.state.err.message) || String(this.state.err);
+    return React.createElement("div", {
+      style: {
+        position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24, background: "#04060d", color: "#e8ecf5",
+        font: "15px/1.6 system-ui, -apple-system, Segoe UI, sans-serif"
+      }
+    }, React.createElement("div", { style: { maxWidth: 520 } },
+      React.createElement("div", {
+        style: { fontSize: 12, letterSpacing: 2, textTransform: "uppercase", color: "#c9a227", marginBottom: 8 }
+      }, "Rolecraft Vault"),
+      React.createElement("div", { style: { fontSize: 22, marginBottom: 10 } }, "That screen could not be drawn"),
+      React.createElement("div", { style: { color: "#9aa3b8", marginBottom: 16 } },
+        "Your vault has not been changed. Try again, and if the same screen keeps failing, " +
+        "reload the app. Nothing has been deleted."),
+      React.createElement("div", {
+        style: { fontSize: 12.5, color: "#6f7890", marginBottom: 18, wordBreak: "break-word" }
+      }, line),
+      React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } },
+        React.createElement("button", {
+          onClick: () => this.setState({ err: null }),
+          style: {
+            padding: "9px 16px", borderRadius: 9, cursor: "pointer",
+            border: "1px solid #c9a227", background: "rgba(201,162,39,.12)", color: "#e8ecf5", font: "inherit"
+          }
+        }, "Try again"),
+        React.createElement("button", {
+          onClick: () => location.reload(),
+          style: {
+            padding: "9px 16px", borderRadius: 9, cursor: "pointer",
+            border: "1px solid #2a3350", background: "transparent", color: "#e8ecf5", font: "inherit"
+          }
+        }, "Reload"))));
+  }
+}
 window.RolecraftVaultMount = function (el) {
   const node = typeof el === "string" ? document.querySelector(el) : el;
   if (!node) throw new Error("RolecraftVaultMount: element not found");
   const root = ReactDOM.createRoot(node);
-  root.render(React.createElement(RolecraftVault));
+  root.render(React.createElement(Boundary, null, React.createElement(RolecraftVault)));
   return root;
 };
 (function () {
