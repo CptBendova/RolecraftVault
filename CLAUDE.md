@@ -232,6 +232,29 @@ Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
 for a user rather than a developer. Entries before 1.092 are reconstructed from the
 code, not a real record — the UI says so, and that label should stay.
 
+## The bin owns the pictures of what is in it
+
+Nothing that removes a record may drop its images. `deleteChar` never did;
+the JSON import's overwrite path did, which is why an overwritten character
+could not be restored until 1.224. Move the record with `sendToTrash` /
+`sendManyToTrash` and leave the pictures alone — `purgeTrashEntry` is the
+only thing that removes them, when the entry is emptied or ages out.
+
+**And purging only removes what nothing else holds.** `heldImageIds()`
+collects every id the live records and the *other* bin entries point at, and
+`purgeTrashEntry` drops the remainder. This is not hypothetical: a restored
+backup writes images under the ids in the file, so a binned record and a live
+one can hold the same picture, and emptying the bin used to take the live
+one's picture with it. The 30-day sweep computes that set **once**, before
+anything goes, or entries purged in the same pass keep each other alive.
+Build these lists with `imageIdsOf` / `charImgIds` / `personaImgIds`, per
+rule 2 — never by hand.
+
+Character and persona imports remap every image id (`normalizeCharacterImport`),
+so an import cannot cause that collision itself. Lore and prompt entries are
+the exception to all of this: they still delete outright and never reach the
+bin, which is deliberate.
+
 ## Sections are edited in two places
 
 There is no single sections editor. `SectionsField` is the shared one, used by
@@ -507,6 +530,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
 | `test-phone-scrollbars.js` | drawn scrollbars on a phone (menu, library column, panels), the theme row wrapping instead of running off the panel, and that the deliberate desktop bars survive. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
 | `test-settings-popups.js` | the bin and version history opening as their own windows, searchable, and Escape closing one without closing Settings. Needs Electron |
+| `test-import-overwrite.js` | an overwritten record reaching the bin with its pictures, and emptying the bin sparing a picture a live record still holds. Needs Electron |
 
 They all follow the same rule, which is the point:
 
