@@ -505,6 +505,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
 | `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
 | `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
+| `test-sidebar-scrollbar.js` | a drawn scrollbar under the phone menu, and that the deliberate desktop one survives. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
 
 They all follow the same rule, which is the point:
 
@@ -532,6 +533,21 @@ What has worked well besides:
   that fits on a desktop can still run off the card there.
 - Electron's `capturePage()` on a `show: false` window returns a stale or empty
   frame. `win.show()`, focus it, wait, then capture.
+- **Styling `::-webkit-scrollbar` opts that element out of Android's overlay
+  scrollbars.** The overlay ones fade away by themselves and take no layout
+  space; a styled one is drawn permanently and repainted on every frame of a
+  fling, which reads as a flickering bar. That was the flashing line under the
+  phone menu in 1.221. On a touch layout, hide the bar (`scrollbar-width: none`
+  plus `::-webkit-scrollbar { display: none }`) rather than styling it — a
+  finger cannot grab 6px anyway. Note `.scrollbody` and `.modal` still carry
+  styled bars, so the same thing is latent there.
+- To see any of that from a desktop Chromium, launch with
+  `app.commandLine.appendSwitch("enable-features", "OverlayScrollbar")`.
+  Without it, desktop Chromium always reserves scrollbar space and the
+  difference is invisible. The measurement that settles it is the room the
+  element sets aside: `offsetHeight - clientHeight - borders`, which is 0 for an
+  overlay bar and the styled width for a drawn one. Comparing screenshot pixels
+  during a scroll proves nothing — the content underneath is moving too.
 - The transfer panel is Electron-only. To render it in the web build, stub
   `window.transfer` before opening Settings. Three things about that stub cost
   an afternoon in 1.219, all of them making the harness look like the bug:
