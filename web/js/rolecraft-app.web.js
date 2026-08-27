@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.222";
+const APP_VERSION = "1.223";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.222";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.222 — current",
+  heading: "1.223 — current",
+  notes: ["Recently deleted and Version history each open in a window of their own. Both used to unfold inside Settings, and once there were fifty things in the bin or a hundred releases in the list, opening either pushed everything below it out of reach and left you reading a long list through a slot a few lines tall. They now get the whole window.", "Both can be searched. Type a name to find the one character you meant out of fifty waiting in the bin, or a few words about something that changed to find the release it changed in. The bin's search appears once there is enough in there to need it.", "Settings itself is shorter as a result, and stays that way however much is in the bin. Closing either window puts you back in Settings where you were."]
+}, {
+  heading: "1.222",
   notes: ["The CharSnap theme was unreachable on a phone. Light, Dark and CharSnap do not fit across a small screen, so the row slid sideways inside the panel and CharSnap sat off the edge with nothing to say it was there. The choices wrap onto a second line now, so all of them are simply visible. Text contrast had the same problem with Maximum.", "The rest of the flickering lines are gone too. The library and the panels over it were each drawing a scrollbar the same way the menu was in 1.221, and on the library it was not even doing anything: the page is what scrolls there, so the bar had nothing to move and was taking up room at the edge of your screen for no reason. Everything still scrolls by swiping exactly as before.", "Nothing changes on a computer, where the scrollbars stay as they were."]
 }, {
   heading: "1.221",
@@ -10379,7 +10382,198 @@ function TransferQr(props) {
     style: { display: "block", background: "#fff", borderRadius: 10 }
   }, /*#__PURE__*/React.createElement("rect", { width: d, height: d, fill: "#ffffff" }), /*#__PURE__*/React.createElement("path", { d: path, fill: "#111111" }));
 }
+/* Recently deleted, in a window of its own.
+
+   This was a fold inside Settings with a 220px scroller in it. A month of
+   deleting leaves fifty or more waiting, and everything below it in Settings
+   went out of reach behind a list you had to read through a letterbox. Here it
+   has the room, and a search, because picking one thing out of fifty by eye is
+   the actual problem rather than the scrolling. */
+function TrashModal({
+  trash,
+  onRestore,
+  onDelete,
+  onClose
+}) {
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const h = ev => {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation(); // captured here; see the note in StatsModal
+      onClose();
+    };
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
+  }, [onClose]);
+  const all = trash || [];
+  const kindOf = t => t.type === "character" ? "Character" : t.type === "persona" ? "Persona" : t.type === "lore" ? "Lore" : t.type === "prompt" ? "Prompt" : t.type;
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? all.filter(t => ((t.record && t.record.name) || "").toLowerCase().includes(needle) || kindOf(t).toLowerCase().includes(needle)) : all;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: { zIndex: 80 },
+    onMouseDown: ev => {
+      if (ev.target === ev.currentTarget) onClose();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: {
+      position: "relative",
+      maxWidth: 620,
+      background: "var(--panel)",
+      boxShadow: "var(--shadow)"
+    },
+    role: "dialog",
+    "aria-label": "Recently deleted"
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    label: "Close recently deleted"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "The bin"), /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: { fontSize: 24, margin: "2px 0 6px", paddingRight: 44 }
+  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: "var(--mut)", lineHeight: 1.6, marginBottom: 12 }
+  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."),
+  all.length > 8 && /*#__PURE__*/React.createElement("input", {
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Search what is in the bin…",
+    "aria-label": "Search recently deleted",
+    style: { width: "100%", marginBottom: 14 }
+  }),
+  all.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, color: "var(--dim)", padding: "18px 0" }
+  }, "Nothing is waiting in here.") : shown.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, color: "var(--dim)", padding: "18px 0" }
+  }, "Nothing in the bin matches “" + q.trim() + "”.") : shown.map(t => {
+    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.tid,
+      style: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "8px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { flex: 1, minWidth: 150 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 600 }
+    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: "var(--dim)" }
+    }, kindOf(t) + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: { padding: "5px 10px", fontSize: 12.5 },
+      onClick: () => onRestore && onRestore(t)
+    }, "Restore"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: { padding: "5px 10px", fontSize: 12.5, color: "var(--danger)", borderColor: "var(--danger-line)" },
+      onClick: () => onDelete && onDelete(t)
+    }, "Delete now"));
+  })));
+}
+
+/* Version history, in a window of its own, for the same reason: there are well
+   over a hundred releases now, and opening the fold inside Settings buried
+   everything under it. The search reads the notes as well as the headings,
+   because what you remember is usually the thing that changed, not the number
+   it changed in. */
+function ChangelogModal({ onClose }) {
+  const [q, setQ] = useState("");
+  const [openRel, setOpenRel] = useState(0);
+  useEffect(() => {
+    const h = ev => {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
+  }, [onClose]);
+  const needle = q.trim().toLowerCase();
+  const textOf = rel => (rel.heading + " " + (rel.notes || []).join(" ")).toLowerCase();
+  const shown = needle ? CHANGELOG.filter(rel => textOf(rel).includes(needle)) : CHANGELOG;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-back",
+    style: { zIndex: 80 },
+    onMouseDown: ev => {
+      if (ev.target === ev.currentTarget) onClose();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    style: {
+      position: "relative",
+      maxWidth: 620,
+      background: "var(--panel)",
+      boxShadow: "var(--shadow)"
+    },
+    role: "dialog",
+    "aria-label": "Version history"
+  }, /*#__PURE__*/React.createElement(CloseX, {
+    onClose: onClose,
+    label: "Close version history"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "This copy is v" + APP_VERSION), /*#__PURE__*/React.createElement("div", {
+    className: "serif",
+    style: { fontSize: 24, margin: "2px 0 6px", paddingRight: 44 }
+  }, "Version history"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: "var(--mut)", lineHeight: 1.6, marginBottom: 12 }
+  }, "What changed in each release, newest first. Pick one to read it."), /*#__PURE__*/React.createElement("input", {
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Search what changed…",
+    "aria-label": "Search version history",
+    style: { width: "100%", marginBottom: 14 }
+  }), shown.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, color: "var(--dim)", padding: "18px 0" }
+  }, "No release mentions “" + q.trim() + "”.") : shown.map((rel, ri) => /*#__PURE__*/React.createElement("div", {
+    key: rel.heading,
+    style: { marginTop: ri ? 8 : 0 }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setOpenRel(o => o === ri ? -1 : ri),
+    "aria-expanded": openRel === ri,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      background: "none",
+      border: 0,
+      padding: 0,
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 600,
+      color: "var(--brass)",
+      textAlign: "left"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      opacity: .7,
+      transform: openRel === ri ? "rotate(90deg)" : "none",
+      transition: "transform .12s"
+    }
+  }, "▸"), rel.heading), openRel === ri && /*#__PURE__*/React.createElement("div", {
+    style: { paddingLeft: 17, marginTop: 6 }
+  }, rel.reconstructed && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, color: "var(--dim)", marginBottom: 6, lineHeight: 1.5 }
+  }, "No release notes were kept for these, so the list below was pieced together from the code. The order is right, but the version numbers they shipped under are unknown."), /*#__PURE__*/React.createElement("ul", {
+    style: { margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--mut)", lineHeight: 1.6 }
+  }, rel.notes.map((n, ni) => /*#__PURE__*/React.createElement("li", {
+    key: ni,
+    style: { marginBottom: 4 }
+  }, n))))))));
+}
+
 function SettingsModal({
+  onOpenTrash,
+  onOpenHistory,
   perfMode,
   setPerfMode,
   onVaultReplaced,
@@ -10610,12 +10804,9 @@ function SettingsModal({
   const importRef = useRef(null);
   // version history is collapsed by default — it is reference material, not
   // something to scroll past every time Settings is opened
-  const [histOpen, setHistOpen] = useState(false);
   const [contribOpen, setContribOpen] = useState(false);
   // the bin is collapsed too — with 30 days of deletions it would otherwise
   // push everything below it off the screen
-  const [trashOpen, setTrashOpen] = useState(false);
-  const [openRel, setOpenRel] = useState(0);
   const desktop = !!window.auth;
   const web = typeof window !== "undefined" && window.vaultPlatform === "web";
   /* The Android app is this same web build inside a WebView, so it reports
@@ -11082,191 +11273,21 @@ function SettingsModal({
     }
   })), /*#__PURE__*/React.createElement("div", {
     className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setTrashOpen(o => !o),
-    "aria-expanded": trashOpen,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      width: "100%",
-      background: "none",
-      border: 0,
-      padding: 0,
-      cursor: "pointer",
-      font: "inherit",
-      color: "var(--text)",
-      textAlign: "left"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      width: 9,
-      color: "var(--mut)",
-      transform: trashOpen ? "rotate(90deg)" : "none",
-      transition: "transform .12s"
-    }
-  }, "▸"), /*#__PURE__*/React.createElement("span", null, "Recently deleted"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 400,
-      fontSize: 12,
-      color: "var(--dim)"
-    }
-  }, (trash || []).length === 0 ? "empty" : (trash.length === 1 ? "1 item" : trash.length + " items") + " waiting"))), trashOpen && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: "var(--mut)",
-      lineHeight: 1.55,
-      margin: "10px 0"
-    }
-  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."), trashOpen && (trash || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "scrollbody",
-    style: {
-      maxHeight: 220,
-      overflowY: "auto",
-      marginBottom: 6
-    }
-  }, trash.map(t => {
-    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.tid,
-      style: {
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        flexWrap: "wrap",
-        padding: "8px 0",
-        borderBottom: "1px solid var(--line)"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 150
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontWeight: 600
-      }
-    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: "var(--dim)"
-      }
-    }, (t.type === "character" ? "Character" : t.type === "persona" ? "Persona" : t.type === "lore" ? "Lore" : t.type === "prompt" ? "Prompt" : t.type) + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      style: {
-        padding: "5px 10px",
-        fontSize: 12.5
-      },
-      onClick: () => onRestoreTrash && onRestoreTrash(t)
-    }, "Restore"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      style: {
-        padding: "5px 10px",
-        fontSize: 12.5,
-        color: "var(--danger)",
-        borderColor: "var(--danger-line)"
-      },
-      onClick: () => onEmptyTrash && onEmptyTrash(t)
-    }, "Delete now"));
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setHistOpen(o => !o),
-    "aria-expanded": histOpen,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      width: "100%",
-      background: "none",
-      border: 0,
-      padding: 0,
-      cursor: "pointer",
-      font: "inherit",
-      color: "var(--text)",
-      textAlign: "left"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      width: 9,
-      color: "var(--mut)",
-      transform: histOpen ? "rotate(90deg)" : "none",
-      transition: "transform .12s"
-    }
-  }, "▸"), /*#__PURE__*/React.createElement("span", null, "Version history"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 400,
-      fontSize: 12,
-      color: "var(--dim)"
-    }
-  }, "v" + APP_VERSION))), histOpen && CHANGELOG.map((rel, ri) => /*#__PURE__*/React.createElement("div", {
-    key: ri,
-    style: {
-      marginTop: ri ? 8 : 10
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setOpenRel(o => o === ri ? -1 : ri),
-    "aria-expanded": openRel === ri,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      width: "100%",
-      background: "none",
-      border: 0,
-      padding: 0,
-      cursor: "pointer",
-      fontSize: 13,
-      fontWeight: 600,
-      color: "var(--brass)",
-      textAlign: "left"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      width: 9,
-      opacity: .7,
-      transform: openRel === ri ? "rotate(90deg)" : "none",
-      transition: "transform .12s"
-    }
-  }, "▸"), rel.heading), openRel === ri && /*#__PURE__*/React.createElement("div", {
-    style: {
-      paddingLeft: 17,
-      marginTop: 6
-    }
-  }, rel.reconstructed && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "var(--dim)",
-      marginBottom: 6,
-      lineHeight: 1.5
-    }
-  }, "No release notes were kept for these, so the list below was pieced together from the code. The order is right, but the version numbers they shipped under are unknown."), /*#__PURE__*/React.createElement("ul", {
-    style: {
-      margin: 0,
-      paddingLeft: 18,
-      fontSize: 13,
-      color: "var(--mut)",
-      lineHeight: 1.6
-    }
-  }, rel.notes.map((n, ni) => /*#__PURE__*/React.createElement("li", {
-    key: ni,
-    style: {
-      marginBottom: 4
-    }
-  }, n)))))), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    onClick: onOpenTrash
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, (trash || []).length === 0 ? "Nothing waiting. Anything you delete is kept here for 30 days." : (trash.length === 1 ? "1 item" : trash.length + " items") + " waiting, kept for 30 days.")), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    onClick: onOpenHistory
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Version history"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, "This copy is v" + APP_VERSION + ". Read what changed in each release.")), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11801,6 +11822,12 @@ function RolecraftVault() {
   const [editingChar, setEditingChar] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null); // {type, record}
   const [showSettings, setShowSettings] = useState(false);
+  /* Both of these used to be folds inside Settings. With fifty in the bin or a
+     hundred releases listed, opening one pushed everything under it out of
+     reach, so they are windows of their own now. Held here rather than in
+     Settings so they sit beside it instead of inside it. */
+  const [showTrash, setShowTrash] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   /* Zipping a whole library is not quick — measured at about 27 MB a second
      through reading, decoding and checksumming, so twenty gigabytes is over ten
@@ -17646,6 +17673,8 @@ function RolecraftVault() {
       toast("Layout reset to defaults");
     },
     onClose: () => setShowSettings(false),
+    onOpenTrash: () => setShowTrash(true),
+    onOpenHistory: () => setShowHistory(true),
     textSize: textSize,
     setTextSize: applyTextSize,
     cardSize: cardSize,
@@ -17692,6 +17721,13 @@ function RolecraftVault() {
       lore: lore.length,
       prompts: prompts.length
     }
+  }), showTrash && /*#__PURE__*/React.createElement(TrashModal, {
+    trash: trash,
+    onRestore: restoreFromTrash,
+    onDelete: emptyFromTrash,
+    onClose: () => setShowTrash(false)
+  }), showHistory && /*#__PURE__*/React.createElement(ChangelogModal, {
+    onClose: () => setShowHistory(false)
   }), /*#__PURE__*/React.createElement("input", {
     ref: bucketCoverRef,
     type: "file",
