@@ -16,7 +16,7 @@ app/                the Electron app (this is the product)
   main.js           main process: storage encryption, updates, Wi-Fi transfer
   preload.js        the only bridge between main and the interface
   index.html        entry page + CSP
-  app.js            THE ENTIRE INTERFACE (~640 KB, compiled React) — see below
+  app.js            THE ENTIRE INTERFACE (~805 KB, compiled React) — see below
   icon.ico          the app's crest, 10 sizes; BrowserWindow and the shortcuts
   icon.png          the same at 256, for anything that will not take an .ico
   vendor/           React UMD builds + self-hosted fonts
@@ -133,7 +133,7 @@ Editing it by script is normal here. Two things bite repeatedly:
 | `personas:all` | array of personas |
 | `lore:all` | array of lore entries |
 | `prompts:all` | array of prompts |
-| `trash:all` | the bin: `[{tid, type, record, deletedAt}]`, purged after 30 days |
+| `trash:all` | the bin: `[{tid, type, record, deletedAt}]`, purged after 30 days. `type` is `character`, `persona`, `lore` or `prompt`, but **only characters and personas are ever put in it** — `restoreFromTrash` understands all four, nothing sends the other two |
 | `img:<id>` / `th:<id>` | original image / thumbnail (data URLs) |
 | `sz:<id>` | byte size of that image, written once by `saveImage` so stats need not re-read it |
 | `buckets:meta`, `pbuckets:meta` | bucket covers + empty buckets |
@@ -206,11 +206,11 @@ root**. They are not interchangeable.
 
 ## Versioning
 
-The displayed version is a flat number — **1.192** — not semver. It lived in five
+The displayed version is a flat number — **1.224** — not semver. It lived in five
 places that had drifted to three different values, so it now has one owner:
 
 ```bash
-npm run set-version 1.192    # rewrites all six display sites at once
+npm run set-version 1.224    # rewrites all six display sites at once
 ```
 
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
@@ -220,17 +220,39 @@ those by hand. `npm run sign` refuses to sign when the version does not match
 `FACTORY_BUILD`.
 
 The Android `versionCode` has to be a plain increasing integer, so it is derived
-by flattening the display version: 1.192 becomes 1192. It was added late — the
+by flattening the display version: 1.224 becomes 1224. It was added late — the
 Android project sat at `versionName "1.0"` / `versionCode 1` for every release up
 to and including 1.158, which is exactly the drift this script exists to stop.
 
 The **root `package.json` keeps its own semver** (`1.9.3`) and is intentionally
-left alone: npm requires valid semver there, and `1.156` is not. Nothing
+left alone: npm requires valid semver there, and `1.224` is not. Nothing
 user-facing reads it — it only names the npm scripts.
 
 Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
 for a user rather than a developer. Entries before 1.092 are reconstructed from the
 code, not a real record — the UI says so, and that label should stay.
+
+## Settings opens two windows of its own
+
+`TrashModal` (Recently deleted) and `ChangelogModal` (Version history) are
+separate windows, not folds inside Settings. Both were folds until 1.223, and
+with fifty in the bin or a hundred and forty releases listed, opening either
+pushed the rest of Settings out of reach.
+
+- They are **state on the root**, not on `SettingsModal`, and render as its
+  siblings. Nested inside it they would inherit its stacking context and its
+  backdrop click. Settings stays open behind them.
+- Escape is taken in the **capture phase** and stopped there, like every other
+  modal here, so it closes the window without Settings acting on the same
+  press. `test-modal-escape.js` exists because that went wrong once.
+- The bin is grouped by kind (`TRASH_GROUPS`): Characters, Personas, Lorebook
+  entries, Prompts. The last two can never fill, so they are shown disabled
+  with a line saying why rather than sitting there empty. Groups start open
+  when the whole bin is 15 or fewer and folded above that, and a search opens
+  whichever groups it found something in — a match hidden inside a fold would
+  make the search worse than useless.
+- Both windows search. The changelog searches the note bodies as well as the
+  headings, because what you remember is the thing that changed.
 
 ## The bin owns the pictures of what is in it
 
@@ -278,7 +300,7 @@ sections in one slot — the same shape of bug as rule 2.
 
 ## The in-app guide
 
-`GUIDE` in `app/app.js` is a 15-section contents page. It is plain JSON, so it can
+`GUIDE` in `app/app.js` is a 17-section contents page. It is plain JSON, so it can
 be parsed, edited and re-serialised with `JSON.stringify(G, null, 2)` rather than
 patched by hand.
 
@@ -290,11 +312,11 @@ patched by hand.
 ## Ship procedure
 
 ```bash
-npm run set-version 1.156           # keep every version site in step first
+npm run set-version 1.224           # keep every version site in step first
 npm test                            # every check in scripts/, exits non-zero if any fail
 npm start                           # launch and actually click the thing
 npm run build:web                   # regenerate the web bundle from app/app.js
-npm run sign 1.156 "what changed"   # -> dist/Rolecraft-update-1.156.rcvup
+npm run sign 1.224 "what changed"   # -> dist/Rolecraft-update-1.224.rcvup
 npm run build:installer             # always, even when a patch would do
 cd mobile && npm run sync           # copies the web bundle just built into android/
 cd android && ./gradlew assembleRelease   # -> app/build/outputs/apk/release/
@@ -519,6 +541,19 @@ check is picked up without being registered anywhere. Run one on its own with
 | Script | What it catches |
 |---|---|
 | `test-shell-detect.js` | a release routed to the wrong artifact — a patch that needed the installer, or the reverse. Covers `app/vendor/` (rule 4) |
+| `test-hardening.js` | the security posture of both shells and the Android manifest, asserted from the source rather than assumed |
+| `test-modal-escape.js` | Escape dismissing what is on top and only that. Needs Electron |
+| `test-native-drag.js` | reordering by drag, driven with real mouse events. Synthetic DragEvents pass against broken code. Needs Electron |
+| `test-grid-drag-paths.js` | every drop target accepting on `dragenter` as well as `dragover` |
+| `test-grid-edge-scroll.js` | the grid scrolling while a picture is carried to its edge |
+| `test-grid-view.js` | the gallery's layout, measured rather than eyeballed. Needs Electron |
+| `test-image-gates.js` | the rules deciding when a full-size original may be read |
+| `test-add-image.js` | adding pictures from the phone's gallery, including the ones Android cannot decode |
+| `test-file-save.js` | exports actually writing a file on Android, where a browser download does nothing |
+| `test-qr-scanner.js` | the scanner's framing staying square on any screen |
+| `test-touch-targets.js` | controls staying big enough to hit with a finger |
+| `test-perf-mode.js` | what performance mode turns off |
+| `test-window-restore.js` | a window restoring onto a display that is still attached |
 | `scan-js.js` | assignment to a `const` binding — a runtime TypeError `node --check` cannot see. One of these killed every phone copy in 1.173. Takes file paths; scope-aware, and skips strings, templates, comments and regex |
 | `test-update-assets.js` | the crest failing to load under an active patch (rule 6). Needs Electron; `NO_BASE=1` simulates a shell older than 1.192 |
 | `test-warm-pass.js` | the background warm asking for more originals than it can keep |

@@ -109,17 +109,44 @@ app.whenReady().then(async () => {
   // already opened by the press above
   const openBin = `(async () => {
     const d = ${dlg("Recently deleted")};
+    const heads = d ? [...d.querySelectorAll("button[aria-expanded]")] : [];
     return { backs: document.querySelectorAll(".modal-back").length, found: !!d,
+      groups: heads.map(b => b.textContent.replace(/[\\u25b8\\s]+/g, " ").trim()),
+      disabled: heads.filter(b => b.disabled).map(b => b.textContent.replace(/[\\u25b8\\s]+/g, " ").trim()),
       restores: d ? [...d.querySelectorAll("button")].filter(b => /^Restore$/.test(b.textContent.trim())).length : 0,
-      hasSearch: d ? !!d.querySelector("input") : false };
+      hasSearch: d ? !!d.querySelector("input") : false,
+      explains: d ? [...d.querySelectorAll("div")]
+        .filter(x => /removed outright/.test(x.textContent||"") && x.children.length === 0).length : 0 };
   })()`;
 
   const b1 = await js(openBin);
   console.log("\nthe bin, in its own window");
   check("it opens as its own window", b1.found);
   check("over Settings rather than instead of it", b1.backs === 2, b1.backs + " layer(s)");
-  check("everything in the bin is there", b1.restores === 60, b1.restores + " restorable");
   check("and it can be searched", b1.hasSearch);
+
+  console.log("\nkept apart by kind");
+  check("all four kinds are listed", b1.groups.length === 4, JSON.stringify(b1.groups));
+  // the label and the count are separate spans, so there is no space between them
+  check("characters and personas are counted", /Characters\s*30 items/.test(b1.groups[0] || "") &&
+    /Personas\s*30 items/.test(b1.groups[1] || ""), (b1.groups[0] || "") + " / " + (b1.groups[1] || ""));
+  /* Only characters and personas are ever put in the bin. The other two are
+     shown so the four kinds are all accounted for, but they say why they are
+     empty rather than sitting there looking broken. */
+  check("the two that never arrive say so", b1.explains === 2, b1.explains + " explained");
+  check("and cannot be opened onto nothing", b1.disabled.length === 2, JSON.stringify(b1.disabled));
+  check("sixty stays folded until you ask for it", b1.restores === 0,
+    b1.restores + " listed before opening anything");
+
+  const opened = await js(`(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const d = ${dlg("Recently deleted")};
+    const ch = [...d.querySelectorAll("button[aria-expanded]")].find(b => /Characters/.test(b.textContent));
+    ch.click(); await sleep(800);
+    return { restores: [...d.querySelectorAll("button")].filter(b => /^Restore$/.test(b.textContent.trim())).length };
+  })()`);
+  check("opening one kind lists just that kind", opened.restores === 30,
+    opened.restores + " listed");
 
   const searched = await js(`(async () => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -127,16 +154,23 @@ app.whenReady().then(async () => {
     const box = d.querySelector("input");
     const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
     set.call(box, "Findable"); box.dispatchEvent(new Event("input", { bubbles: true }));
-    await sleep(700);
+    await sleep(800);
     const rows = [...d.querySelectorAll("button")].filter(b => /^Restore$/.test(b.textContent.trim())).length;
     const shows = /Findable One/.test(d.textContent);
-    // put it back, then restore that one for real
+    const openHeads = [...d.querySelectorAll("button[aria-expanded]")]
+      .filter(b => b.getAttribute("aria-expanded") === "true")
+      .map(b => b.textContent.replace(/[\\u25b8\\s]+/g, " ").trim());
+    // put it back for the Escape check below
     set.call(box, ""); box.dispatchEvent(new Event("input", { bubbles: true }));
     await sleep(600);
-    return { rows, shows };
+    return { rows, shows, openHeads };
   })()`);
   check("searching sixty down to the one you meant", searched.rows === 1 && searched.shows,
     searched.rows + " row(s)");
+  /* A match inside a folded group would be invisible, which would make the
+     search worse than useless. */
+  check("and it opens the kind the match is in", (searched.openHeads || []).length === 1 &&
+    /Personas/.test(searched.openHeads[0] || ""), JSON.stringify(searched.openHeads));
 
   /* Escape has to take the window off and leave Settings standing. A modal
      listening in the bubble phase would let Settings act on the same press. */

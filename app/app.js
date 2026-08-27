@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.224";
+const APP_VERSION = "1.225";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.224";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.224 — current",
+  heading: "1.225 — current",
+  notes: ["Recently deleted is now kept apart by kind. Characters, personas, lorebook entries and prompts each have their own heading with a count, and you open the one you want instead of reading past everything else. A small bin opens itself; a big one stays folded so you can see what is in it at a glance. Searching still works across all of them, and opens whichever heading it found something under.", "The two kinds that never arrive there say so. Lorebook and prompt entries are removed outright rather than kept for thirty days, and the guide has been saying otherwise, which is corrected. The guide now also mentions that importing a file over a character counts as deleting it, so the version you replaced is in the bin."]
+}, {
+  heading: "1.224",
   notes: ["Overwriting a character with an imported file now keeps the old one. Choosing “Overwrite existing” replaced it where it stood and threw its pictures away on the spot, which made it the one kind of deleting that could not be undone. The version you replaced now goes to Recently deleted for 30 days like anything else you delete, pictures and all, so you can put it back if the file was not what you expected. Personas work the same way.", "Emptying the bin no longer takes a picture that something else is still using. If a record in the bin and one in your library both pointed at the same picture, removing the one in the bin deleted that picture out from under the live record. Only pictures nothing else is holding are removed now."]
 }, {
   heading: "1.223",
@@ -2780,7 +2783,9 @@ const GUIDE = [
     "body": [
       "Every character keeps up to twenty snapshots of its writing. Open History in the editor to look through them and restore one.",
       "A snapshot holds words only. Restoring an old draft never changes, removes or brings back a picture. Your artwork is left exactly as it is, on purpose.",
-      "Deleting a character, persona, lorebook or prompt moves it to Recently deleted in Settings, where it waits for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
+      "Deleting a character or persona moves it to Recently deleted, which opens from Settings in a window of its own. It waits there for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
+      "What is in the bin is kept apart by kind, so characters and personas do not run together in one long list, and you can search it by name. Lorebook and prompt entries are the exception to all of this: those are removed outright and do not go to the bin at all.",
+      "Importing a file over a character or persona counts as deleting it. The version you replaced goes to the bin like anything else, so you can put it back if the file was not what you expected.",
       "Pictures are the exception: removing one is immediate and permanent, which is why those buttons ask twice."
     ]
   },
@@ -10392,6 +10397,24 @@ function TransferQr(props) {
    went out of reach behind a list you had to read through a letterbox. Here it
    has the room, and a search, because picking one thing out of fifty by eye is
    the actual problem rather than the scrolling. */
+/* What the bin can hold. Only characters and personas are ever put in it —
+   lore and prompt entries are removed outright — but restoreFromTrash has
+   always understood all four, so the groups are listed in full and the two
+   that never arrive say why rather than sitting there empty and unexplained. */
+const TRASH_GROUPS = [
+  { type: "character", label: "Characters" },
+  { type: "persona", label: "Personas" },
+  { type: "lore", label: "Lorebook entries", note: "Lorebook entries are removed outright rather than kept here." },
+  { type: "prompt", label: "Prompts", note: "Prompts are removed outright rather than kept here." }
+];
+
+/* Recently deleted, in a window of its own.
+
+   This was a fold inside Settings with a 220px scroller in it. A month of
+   deleting leaves fifty or more waiting, and everything below it in Settings
+   went out of reach behind a list you had to read through a letterbox. Here it
+   has the room, a search, and the four kinds kept apart, because fifty things
+   of two kinds in one column is still a column of fifty things. */
 function TrashModal({
   trash,
   onRestore,
@@ -10399,6 +10422,14 @@ function TrashModal({
   onClose
 }) {
   const [q, setQ] = useState("");
+  const all = trash || [];
+  /* A small bin reads better as a list than as an index, so it opens itself;
+     a big one stays folded, which is the whole point of grouping it. */
+  const [open, setOpen] = useState(() => {
+    const start = {};
+    TRASH_GROUPS.forEach(g => { start[g.type] = all.length <= 15; });
+    return start;
+  });
   useEffect(() => {
     const h = ev => {
       if (ev.key !== "Escape") return;
@@ -10408,10 +10439,88 @@ function TrashModal({
     window.addEventListener("keydown", h, true);
     return () => window.removeEventListener("keydown", h, true);
   }, [onClose]);
-  const all = trash || [];
-  const kindOf = t => t.type === "character" ? "Character" : t.type === "persona" ? "Persona" : t.type === "lore" ? "Lore" : t.type === "prompt" ? "Prompt" : t.type;
   const needle = q.trim().toLowerCase();
-  const shown = needle ? all.filter(t => ((t.record && t.record.name) || "").toLowerCase().includes(needle) || kindOf(t).toLowerCase().includes(needle)) : all;
+  const matches = t => !needle || ((t.record && t.record.name) || "").toLowerCase().includes(needle);
+  const shown = all.filter(matches);
+
+  const row = t => {
+    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.tid,
+      style: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "8px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { flex: 1, minWidth: 150 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 600 }
+    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: "var(--dim)" }
+      // the group heading says what kind it is, so the line under the name does not
+    }, days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left")),
+    /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: { padding: "5px 10px", fontSize: 12.5 },
+      onClick: () => onRestore && onRestore(t)
+    }, "Restore"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: { padding: "5px 10px", fontSize: 12.5, color: "var(--danger)", borderColor: "var(--danger-line)" },
+      onClick: () => onDelete && onDelete(t)
+    }, "Delete now"));
+  };
+
+  const group = g => {
+    const mine = shown.filter(t => t.type === g.type);
+    const total = all.filter(t => t.type === g.type).length;
+    // a search opens whatever it found, so results are never hidden in a fold
+    const opened = needle ? mine.length > 0 : !!open[g.type];
+    const count = needle
+      ? (mine.length ? mine.length + (mine.length === 1 ? " match" : " matches") : "no matches")
+      : (total === 0 ? "none" : total === 1 ? "1 item" : total + " items");
+    return /*#__PURE__*/React.createElement("div", {
+      key: g.type,
+      style: { marginTop: 12 }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setOpen(o => ({ ...o, [g.type]: !o[g.type] })),
+      "aria-expanded": opened,
+      disabled: total === 0,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        background: "none",
+        border: 0,
+        padding: 0,
+        cursor: total === 0 ? "default" : "pointer",
+        font: "inherit",
+        fontWeight: 700,
+        color: total === 0 ? "var(--dim)" : "var(--text)",
+        textAlign: "left"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-block",
+        width: 9,
+        color: "var(--mut)",
+        opacity: total === 0 ? .35 : 1,
+        transform: opened ? "rotate(90deg)" : "none",
+        transition: "transform .12s"
+      }
+    }, "\u25b8"), /*#__PURE__*/React.createElement("span", null, g.label), /*#__PURE__*/React.createElement("span", {
+      style: { fontWeight: 400, fontSize: 12, color: "var(--dim)" }
+    }, count)), total === 0 && g.note && !needle && /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, margin: "4px 0 0 17px" }
+    }, g.note), opened && /*#__PURE__*/React.createElement("div", {
+      style: { marginTop: 4 }
+    }, mine.map(row)));
+  };
+
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
     style: { zIndex: 80 },
@@ -10442,42 +10551,17 @@ function TrashModal({
   all.length > 8 && /*#__PURE__*/React.createElement("input", {
     value: q,
     onChange: e => setQ(e.target.value),
-    placeholder: "Search what is in the bin…",
+    placeholder: "Search what is in the bin\u2026",
     "aria-label": "Search recently deleted",
-    style: { width: "100%", marginBottom: 14 }
+    style: { width: "100%", marginBottom: 4 }
   }),
   all.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13.5, color: "var(--dim)", padding: "18px 0" }
-  }, "Nothing is waiting in here.") : shown.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 13.5, color: "var(--dim)", padding: "18px 0" }
-  }, "Nothing in the bin matches “" + q.trim() + "”.") : shown.map(t => {
-    const days = Math.max(0, 30 - Math.floor((Date.now() - (t.deletedAt || 0)) / 864e5));
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.tid,
-      style: {
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        flexWrap: "wrap",
-        padding: "8px 0",
-        borderBottom: "1px solid var(--line)"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: { flex: 1, minWidth: 150 }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: { fontWeight: 600 }
-    }, t.record.name || "Untitled"), /*#__PURE__*/React.createElement("div", {
-      style: { fontSize: 12, color: "var(--dim)" }
-    }, kindOf(t) + " · " + (days === 0 ? "goes today" : days === 1 ? "1 day left" : days + " days left"))), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      style: { padding: "5px 10px", fontSize: 12.5 },
-      onClick: () => onRestore && onRestore(t)
-    }, "Restore"), /*#__PURE__*/React.createElement("button", {
-      className: "btn btn-ghost",
-      style: { padding: "5px 10px", fontSize: 12.5, color: "var(--danger)", borderColor: "var(--danger-line)" },
-      onClick: () => onDelete && onDelete(t)
-    }, "Delete now"));
-  })));
+  }, "Nothing is waiting in here.") : /*#__PURE__*/React.createElement(React.Fragment, null,
+    needle && shown.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 13.5, color: "var(--dim)", padding: "14px 0 0" }
+    }, "Nothing in the bin matches \u201c" + q.trim() + "\u201d."),
+    TRASH_GROUPS.map(group))));
 }
 
 /* Version history, in a window of its own, for the same reason: there are well
