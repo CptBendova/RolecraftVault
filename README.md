@@ -1,165 +1,152 @@
 # Rolecraft Vault
 
-A private library for the writing behind your roleplay — characters, personas,
-lorebooks and prompts. It lives entirely on your own computer. No account, no
-sign-up, and no internet connection needed.
+Rolecraft Vault is a private, offline-first library for the writing behind your
+roleplay: characters, personas, lorebooks, prompts, and their pictures. It runs
+on Windows and Android without an account, sign-up, subscription, or cloud
+service.
 
 ## Download
 
 ### **[Get the latest release →](https://github.com/CptBendova/RolecraftVault/releases/latest)**
 
-**Installing on Windows for the first time? You want `Rolecraft-Vault-Setup-<version>.exe`.**
-Download it, run it, and that is the whole job.
+Every release provides three files:
 
-**On an Android phone or tablet, take `RolecraftVault-<version>.apk`.** Install it
-by hand; your browser or file manager will ask permission the first time. It needs
-Android 8 or newer. Each APK installs over the last one, so do not uninstall first:
-uninstalling erases that device's vault. The phone can receive a copy of your vault
-from the computer over your own Wi-Fi, but it cannot send one.
+- **Windows installer:** `Rolecraft-Vault-Setup-<version>.exe`
+- **Android app:** `Rolecraft-Vault-<version>.apk`
+- **Signed Windows interface update:** `Rolecraft-update-<version>.rcvup`
 
-The third file, `Rolecraft-update-<version>.rcvup`, updates a Windows copy you
-already have: open the app, go to **Settings → App updates**, and pick the file.
-Most releases change the interface only, so that small file is all you need. When a
-release changes more than the interface, the release notes say so, and the app will
-refuse the patch and name the installer rather than half-applying it.
+For a first Windows installation, use the full installer. For later updates,
+follow the release notes: interface-only releases can be installed by
+double-clicking the `.rcvup` file or through **Settings → App updates**. When a
+release changes the Windows shell, the app refuses the smaller update and names
+the full installer required instead of leaving an incomplete installation.
 
-Updates are cumulative, so only the newest file ever matters. The app never checks
-for updates on its own and never downloads anything by itself.
+On Android 8 or newer, install the APK over the existing app. **Do not uninstall
+first:** Android removes that device's private vault when the app is uninstalled.
+The APK keeps the same signing identity so normal releases upgrade in place.
 
-Free to download and use.
+Updates are cumulative, so only the newest release matters. Rolecraft Vault does
+not check for or download updates on its own.
 
-## What it holds
+Rolecraft Vault is free to download and use under the [licence](LICENSE).
 
-- **Characters**, with as many versions of each as you like: the same character at
-  a different age, in another setting, or written a different way.
-- **Personas** — who you are playing as, rather than who you are talking to.
-- **Lorebooks**, whose entries appear only when one of their trigger words comes up.
-- **Prompts**, kept in collections to copy out whenever you want them.
-- Pictures, galleries and albums, with per-picture blurring.
-- Buckets, tags and searchable terms for finding things again.
-- A token counter on every field, showing what costs you on every reply and what
-  does not, using CharSnap's own accounting.
-- A guide inside the app covering all of it.
+## What it does
 
-## It moves between tools
+- Keeps **characters** with any number of alternate versions.
+- Separates **personas**, **lorebooks**, and reusable **prompt collections**.
+- Stores portraits, banners, galleries, albums, tags, buckets, and per-picture
+  blur choices.
+- Provides built-in and private templates, plus safe text-only duplication that
+  never makes two records compete for ownership of the same picture.
+- Protects in-progress writing with recoverable encrypted drafts and a visible
+  protection status in every editor.
+- Gives deletions an immediate Undo action and keeps all four record types in an
+  encrypted 30-day bin.
+- Counts tokens using CharSnap-compatible accounting.
+- Includes search, favourites, command search, large text, high contrast, and
+  Quality and Performance modes.
+- Uses phone-sized navigation and Android system Back behavior in the APK.
 
-Reads and writes **CharSnap** characters and lorebooks, and imports **Chub**
-lorebooks and **Tavern** v1/v2 character cards, so your writing is not stuck in one
-place. Exports for CharSnap can optionally hide the guts, matching what their own
-toggle does.
+Rolecraft Vault reads and writes **CharSnap** characters and lorebooks, and
+imports **Chub** lorebooks and **Tavern** v1/v2 character cards. Text, JSON,
+pictures, and complete encrypted backups can be exported so the library is not
+locked to one application.
 
-## Your writing stays on your computer
+## Privacy and security
 
-Everything is stored encrypted on disk with AES-256-GCM, optionally behind a master
-password, and on Windows tied to your account as well.
+Vault records and pictures are encrypted at rest with AES-256-GCM. A master
+password is optional; when enabled, its key is derived with PBKDF2 rather than
+storing the password. Supported Android devices can use a strong fingerprint or
+face after one-time setup, and supported Windows devices can use Windows Hello.
+The operating system protects the sealed vault key and Rolecraft Vault never
+stores biometric data or the master password.
 
-The interface genuinely cannot reach the network. That is checked rather than
-claimed: the build fails if a single `fetch`, `XMLHttpRequest`, `WebSocket` or
-`http://` finds its way into it. Nothing you write is uploaded, synced or analysed,
-because there is no code that could do it.
+The renderer cannot initiate network traffic. Release builds fail their checks
+if the interface gains `fetch`, `XMLHttpRequest`, `WebSocket`, remote scripts, or
+remote assets. Nothing in a vault is uploaded, synced, analysed, or available to
+the copyright holder.
 
-The one exception is a device transfer you start yourself, which copies your vault
-to another computer over your own Wi-Fi. It is off unless you open that panel, both
-machines have to be on the same network, and what is sent is encrypted with a key
-made from a one-time code you read off the other screen.
+The only data connection is a transfer the user starts over their own local
+network. A Windows PC can share an encrypted copy with another PC or an Android
+device using a one-time pairing code. The sharing device is not modified, and
+the transfer never passes through a third-party server. Android currently
+receives from Windows; it does not act as the sender.
+
+Keep independent backups of anything important. Offline storage protects
+privacy, but it also means nobody else can retrieve a forgotten password or
+restore a lost device.
 
 ## Licence
 
-**Free to use, but not open source.** The source is published so it can be read and
-audited, not reused. See [LICENSE](LICENSE). If you want to do something it does not
-cover, ask.
+**Free to use, but not open source.** The repository is published for inspection
+and auditing; that does not grant permission to copy, modify, redistribute, or
+rebrand the software. User-created characters, personas, lorebooks, prompts, and
+images remain the user's property. Read the full [LICENSE](LICENSE) before using
+the source for anything beyond inspection.
 
 ---
 
 ## Working on the code
 
-> Read [`CLAUDE.md`](CLAUDE.md) first. It records the decisions that are easy to
-> break by accident, especially: do not regenerate `app/app.js`.
+Read [`AGENTS.md`](AGENTS.md) first, then the relevant section of
+[`CLAUDE.md`](CLAUDE.md). Together they document the data-safety, offline,
+transfer, signing, line-ending, Android, installer, and release rules that are
+easy to break accidentally.
 
-Needs **Node.js 22+** and **git**.
-
-```bash
-npm install          # pulls Electron, about 200 MB, once
-npm start            # launches the app
-```
-
-Your real vault is not in this folder. It lives in `%APPDATA%\Rolecraft Vault\`
-— Electron names it after `productName`, not the package name — and the development
-build reads the same place, so you will see your own characters when it opens.
-**Back that folder up before experimenting.**
-
-Worse than it sounds: if the source tree's `FACTORY_BUILD` differs from the version
-of the installed copy, starting the development build treats any `.rcvup` you have
-installed as stale and **deletes it**, silently putting your real app back to
-whatever the last installer gave it. Pass a throwaway folder to keep well clear:
+Development needs **Node.js 22+** and **git**:
 
 ```bash
-npx electron app --user-data-dir=./tmp-vault
+npm install
+npm test
+npx electron app --user-data-dir=./tmp-rolecraft-vault
 ```
 
-To sign updates you also need `private_key.pem` from the update kit, copied into
-`keys/`. Without it everything else still works. It is gitignored; keep it offline.
+Always launch development builds with a disposable profile. The installed vault
+lives under `%APPDATA%\Rolecraft Vault\`; launching a mismatched source build
+against it can invalidate an installed interface patch.
 
-### Commands
+Private update and Android signing material belongs in `keys/`. It is ignored by
+Git and must never be printed, committed, or shared.
+
+### Common commands
 
 ```bash
-npm run set-version 1.192            # rewrites every place the version appears
-npm run check                        # syntax, and proves the interface makes no network calls
-npm start                            # run it and actually click the thing you changed
-npm run build:web                    # regenerate the web edition from app/app.js
-npm run sign 1.192 "what changed"    # -> dist/Rolecraft-update-1.192.rcvup
-npm run build:installer              # full Windows installer (needs NSIS and a staged dist/)
+npm run check
+npm test
+npm run build:web
+npm run set-version -- 1.233
+npm run sign -- 1.233 "what changed"
+npm run build:installer
 ```
 
-`npm run sign` works out for itself whether a release needs the installer, by
-comparing `main.js`, `preload.js` and `index.html` against the last release tag and
-ignoring the version stamp. It marks the package accordingly, so a patch that cannot
-work on its own is refused by the app rather than silently misbehaving. Pass
-`--shell` or `--no-shell` to override it.
+For Android:
 
-### Shipping
-
-- **Interface only** (`app/app.js`): check, run it, sign, share the `.rcvup`.
-- **Shell** (`app/main.js`, `preload.js`, `index.html`): a patch cannot carry these.
-  Build the installer, and say so in the release notes.
-
-**Android** (anything in `app/app.js`, since the APK bundles the web build): rebuild
-it, because a `.rcvup` cannot reach a phone. `cd mobile && npm run sync`, then
-`cd android && ./gradlew.bat assembleRelease`.
-
-Either way, say in the notes which file people actually need.
-
-One thing the shell check cannot see: artwork and other files under `app/vendor/`
-are not carried by a patch either, because a `.rcvup` contains `app.js` alone. If
-you change those, ship the installer and say so, even though `npm run sign` will
-report no shell change.
-
-### Building the installer
-
-The window people see is a custom Electron app in `installer/` (full-HD backdrop,
-not the NSIS wizard). NSIS is only a silent wrapper so there is one file to run.
-
-1. `winget install NSIS.NSIS`
-2. Unzip the portable build into `dist/Rolecraft Vault/` — it supplies the Electron runtime
-3. `npm run build:installer`, which syncs `app/` into that copy, stages the HD setup UI around it, and runs makensis
-
-### Layout
-
-```
-app/        the Electron app — main.js, preload.js, index.html, app.js, vendor/
-web/        embeddable web edition (see web/INTEGRATION.md)
-mobile/     the Android app: the web edition in a WebView (see mobile/README.md)
-installer/  the setup window people actually see; NSIS only wraps it
-build/      installer.nsi and the setup artwork
-scripts/    check-integrity, build-web, build-installer, sign-update, set-version,
-            scan-js, and the test-* checks (run with node, no npm test yet)
-keys/       signing keys, gitignored: private_key.pem for updates,
-            rolecraft-release.jks for the APK
-dist/       build output (gitignored)
+```powershell
+Set-Location mobile
+npm run sync
+Set-Location android
+.\gradlew.bat assembleRelease
 ```
 
-### Worth doing
+`npm run sign` compares shell files with the latest release tag. A `.rcvup`
+contains the renderer bundle only, so changes to `app/main.js`, `app/preload.js`,
+`app/index.html`, or `app/vendor/` require the full Windows installer. Changes to
+the interface also require rebuilding the web edition and Android APK.
 
-- Wire the checks in `scripts/` up to a single `npm test` and move them to `tests/`.
-- Split `app/app.js` into modules **incrementally**, launching the app after each
-  step. See the warning in `CLAUDE.md`.
+### Repository layout
+
+```text
+app/        Electron app and the interface source of truth
+web/        generated embeddable browser edition
+mobile/     Capacitor Android wrapper and transfer bridge
+installer/  custom Windows setup application
+build/      NSIS wrapper and setup artwork
+scripts/    builds, signing, integrity checks, and regression tests
+keys/       private release material, always ignored
+dist/       generated release artifacts, always ignored
+```
+
+A change is ready only after the focused regression, `npm test`, affected
+cross-platform builds, and relevant real UI checks pass. A release is ready only
+after the public GitHub Release contains the updater, installer, and APK and the
+published hashes match the locally verified artifacts.

@@ -1,77 +1,97 @@
-Rolecraft Vault — Licence
+Rolecraft Vault - Proprietary Source-Available Licence
 
 Copyright (c) 2026 ABN 52 730 063 821. All rights reserved.
 
-The source code in this repository is published so that it can be read and
-audited — this application handles private writing and stores it encrypted, and
-that claim is worth being able to check. Publishing it is not a grant of any
-right to reuse it. This is not open source.
+This licence applies to Rolecraft Vault's original source code, official release
+binaries, installers, update packages, artwork, and documentation (together, the
+"Software"). The source is published so the Software's privacy and security
+claims can be inspected and audited. Publishing the source is not a grant of
+open-source rights.
 
 
 YOU MAY
 
-  - Download, install and run the released application, for any purpose,
-    personal or commercial, on as many of your own devices as you like.
-  - Read this source code, and quote short excerpts from it when discussing it,
-    reporting a problem, or reviewing it.
+  - Download, install, and run official releases of the Software for personal or
+    commercial activity, on as many devices under your control as you like.
+  - Read the source code and quote short excerpts when discussing or reviewing
+    the Software, teaching about it, or reporting a problem or vulnerability.
+
+Permission to use the Software in commercial activity does not include permission
+to sell, sublicense, rent, distribute, or offer the Software itself as a product
+or service.
 
 
-YOU MAY NOT, without prior written permission from the copyright holder
+YOU MAY NOT, WITHOUT PRIOR WRITTEN PERMISSION FROM THE COPYRIGHT HOLDER
 
-  - Copy, modify, translate or build upon this source code.
-  - Redistribute this source code, or the released application, in whole or in
-    part, modified or unmodified — including under a different name.
-  - Publish a derivative, rebranded or competing work based on it.
-  - Sell, sublicense or rent the application or its source code.
+  - Copy, modify, translate, adapt, compile, or create derivative works from the
+    original source code.
+  - Redistribute the original source code or official release files, in whole or
+    in part, modified or unmodified, including under another name.
+  - Publish a derivative, rebranded, repackaged, or competing work based on the
+    Software.
+  - Sell, sublicense, rent, host, or commercially provide the Software or its
+    source code to others.
+  - Remove or misrepresent copyright, licence, authorship, signature, or security
+    notices belonging to the Software.
+
+No rights are granted by implication. The copyright holder may grant additional
+permission in writing.
 
 
-YOUR OWN DATA
+THIRD-PARTY COMPONENTS
 
-Nothing in this licence affects ownership of the characters, personas,
-lorebooks, prompts or images you create with the application. Those are yours.
+The Software may include or depend on third-party components. Those components
+remain subject to their own copyright notices and licence terms. Nothing in this
+licence limits a right granted directly by a third-party component's licence.
 
 
-YOUR CONTENT IS YOUR RESPONSIBILITY
+YOUR DATA AND CONTENT
 
-The application runs entirely on your own computer. Anything you write, import or
-store in it stays on your device. It is not uploaded, hosted, transmitted,
-collected or backed up to the copyright holder or to anyone else, and the
-copyright holder has no access to it whatsoever — no ability to read it, moderate
-it, retrieve it or restore it. The interface has no network access at all, and
-the build checks enforce this. The optional transfer feature sends data directly
-between two devices you control, over your own local network, at your
-instruction, and never through any third party.
+This licence claims no ownership of the characters, personas, lorebooks, prompts,
+images, exports, or other content you create or store with the Software. That
+content remains yours or its existing owner's. You are responsible for ensuring
+that you have the rights needed for material you import from elsewhere.
 
-You are therefore solely responsible for whatever you create, import or store
-with the application: for its content, for its lawfulness where you are, for any
-rights in material you import from elsewhere, for keeping it secure, and for
-keeping your own backups. The copyright holder is not a host, publisher,
-distributor or custodian of that material, receives none of it, and accepts no
-liability for it or for anything arising from it.
+
+PRIVACY, STORAGE, AND YOUR RESPONSIBILITY
+
+The Software stores vault content locally on devices under your control. It does
+not upload, host, collect, analyse, moderate, back up, or provide the copyright
+holder access to that content. An optional transfer initiated by the user sends
+an encrypted copy directly between devices on the user's local network and does
+not pass through the copyright holder or a third-party service.
+
+Because the copyright holder does not possess your vault, password, encryption
+key, or backup, the copyright holder cannot retrieve lost content, recover a
+forgotten password, restore an uninstalled mobile vault, or moderate what a user
+stores. You are solely responsible for your content, its lawfulness, the rights
+in imported material, device security, credentials, and independent backups.
 
 
 NO WARRANTY
 
-The software is provided "as is", without warranty of any kind, express or
-implied, including but not limited to the implied warranties of merchantability,
-fitness for a particular purpose and non-infringement. To the fullest extent
-permitted by law, the copyright holder is not liable for any claim, damage or
-other liability, whether in an action of contract, tort or otherwise, arising
-from or in connection with the software or its use.
+The Software is provided "as is", without warranty of any kind, express or
+implied, including but not limited to warranties of merchantability, fitness for
+a particular purpose, title, and non-infringement. To the fullest extent
+permitted by law, the copyright holder is not liable for any claim, damage, loss,
+or other liability arising from or connected with the Software or its use.
 
-Keep your own backups of anything you would not want to lose.
+Keep independent backups of anything you would not want to lose.
 
 
 CONSUMER RIGHTS
 
-Nothing in this licence excludes, restricts or modifies any right or remedy, or
-any guarantee, warranty or other term or condition, that applies to you under
-law and cannot lawfully be excluded — including the consumer guarantees under
-the Australian Consumer Law. Where such a guarantee applies and cannot be
-excluded, the copyright holder's liability is limited, at its option, to
-resupplying the software or paying the cost of having it resupplied.
+Nothing in this licence excludes, restricts, or modifies any right, remedy,
+guarantee, warranty, or other term or condition that applies under law and cannot
+lawfully be excluded, restricted, or modified, including applicable consumer
+guarantees under the Australian Consumer Law.
+
+Where a guarantee applies and liability may lawfully be limited, the copyright
+holder's liability is limited, at its option, to resupplying the Software or
+paying the cost of having it resupplied.
 
 
 PERMISSION
 
-For any use not permitted above, ask. Requests are welcome.
+For any use not permitted above, contact the copyright holder and request written
+permission.
