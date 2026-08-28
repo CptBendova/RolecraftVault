@@ -552,6 +552,49 @@ kept out of the receive result because an older sender has no such route.
 `test-delta-slices.js` lifts the real mode, writer, key cache, slice downloader,
 and cleanup functions and exercises this compatibility matrix.
 
+## Streamed binary Android transfers (1.239)
+
+The 1.229 fast path still had a lifecycle ceiling: the Windows server stopped on
+a fixed ten-minute timer, it prepared every batch before the phone received the
+first one, and pictures remained base64 data URLs inside JSON. Capacitor then
+base64-encoded each encrypted HTTP response again to cross the native bridge.
+A large vault could therefore spend its whole lifetime packing, create several
+full copies in memory, or have the sender disappear while the phone was saving.
+
+Current Android requests `mode=stream-batches` with a random idempotent session
+id. The Windows sender must keep these properties together:
+
+- every session owns `delta-<session>-N.bin`, never the legacy global names;
+- the first finished batch is published through `/progress?id=...` immediately;
+- no more than three unacknowledged batches are retained on disk;
+- `/delta-ack` deletes a batch only after Android authenticated and processed it;
+- any authenticated activity renews the ten-minute idle lease; and
+- `/delta-complete` cleans only that session, not another phone's active files.
+
+`RCVX3` is still AES-256-GCM with the shared per-session key and a unique IV per
+file. Its plaintext is a sequence of length-prefixed metadata plus bytes. Data
+URLs are decoded on Windows and image bytes travel directly; text remains UTF-8.
+Old receivers keep `RCVX2`, and old senders that ignore the new mode still fall
+back to the old batch path.
+
+Android's `TransferTransport` plugin streams each GET into a private cache file.
+Only bounded 512 KB reads cross back to JavaScript, so CapacitorHttp never builds
+a whole-response byte array and base64 string. Each slice retries four times.
+The foreground service holds both a partial CPU wake lock and a high-performance
+Wi-Fi lock. Do not replace this with a WebView-only keepalive.
+
+Transferred pictures are stored under the `bin2:` pointer format. It contains a
+private encrypted binary file plus the original data-URL prefix; `get` rebuilds
+the data URL only when the interface needs it. The IDB pointer is the commit:
+write a unique new file, change the pointer, then remove the previous file.
+Never delete the old file before the replacement is complete. A known transfer
+fingerprint is stored directly instead of hashing the picture again.
+
+A partial mirror must perform no deletions. New records that saved are retained
+for a retry, but `removable` is applied only when every requested record saved.
+`test-large-transfer.js` covers framing, retry, leasing, acknowledgements,
+atomic pointer order, mirror safety, native streaming and both wake locks.
+
 ## Android: the two things that broke transfers (1.160)
 
 Both were found by reading Capacitor's own Android source in

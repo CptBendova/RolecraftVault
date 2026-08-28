@@ -60,6 +60,9 @@ async function run() {
   check("an old receiver still gets both representations",
     JSON.stringify(deltaPackTargets(deltaPackMode("/delta-start")))
       === JSON.stringify({ combined: true, batches: true }));
+  check("the new Android path is isolated and binary framed",
+    JSON.stringify(deltaPackTargets(deltaPackMode("/delta-start?mode=stream-batches")))
+      === JSON.stringify({ combined: false, batches: true, framed: true }));
 
   const sizes = {
     "txt:a": 100,
@@ -134,9 +137,9 @@ async function run() {
     const n = Number(url.searchParams.get("n") || payload.length);
     return payload.slice(off, Math.min(payload.length, off + n));
   };
-  const downloadFactory = new Function("SLICE_BYTES", "Uint8Array", "Error", "ask",
-    lift(MOBILE, "downloadSliced") + "\nreturn downloadSliced;");
-  const downloadSliced = downloadFactory(sliceBytes, Uint8Array, Error, ask);
+  const downloadFactory = new Function("SLICE_BYTES", "Uint8Array", "Error", "askDownload", "setTimeout",
+    lift(MOBILE, "retryDownload") + "\n" + lift(MOBILE, "downloadSliced") + "\nreturn downloadSliced;");
+  const downloadSliced = downloadFactory(sliceBytes, Uint8Array, Error, ask, setTimeout);
   const downloaded = await downloadSliced({}, "/delta-file?i=0", payload.length, 1000);
   check("a little over 24 MB needs only three native requests", requestPaths.length === 3,
     "requests=" + requestPaths.length);
@@ -149,8 +152,9 @@ async function run() {
     "requests=" + requestPaths.length);
 
   let cleared = 0, published = null;
-  const completeFactory = new Function("clearDeltaFiles", "publishShareProgress",
-    "let transferState = { deltaPath: 'combined', deltaBatches: [1, 2] };\n"
+  const completeFactory = new Function("clearLegacyDeltaFiles", "publishShareProgress",
+    "let transferState = { deltaPath: 'combined', deltaBatches: [1, 2], timer: null };\n"
+      + "function cleanTransferSessionId(){ return null; }\nfunction touchTransferLease(){}\n"
       + lift(MAIN, "completeDeltaTransfer")
       + "\nreturn { completeDeltaTransfer, state: () => transferState };");
   const completion = completeFactory(() => { cleared++; }, p => { published = p; });
@@ -161,8 +165,8 @@ async function run() {
   check("completion tells the sender only after the receiver acknowledges",
     published && published.phase === "done");
 
-  check("Android requests the batch-only fast path",
-    /ask\(target, "\/delta-start\?mode=batches"/.test(MOBILE));
+  check("Android requests the streamed framed fast path",
+    /ask\(target, "\/delta-start\?mode=stream-batches&id="/.test(MOBILE));
   check("desktop requests the combined-only fast path",
     /path: "\/delta-start\?mode=combined"/.test(MAIN));
   check("both receivers acknowledge a successfully saved copy",

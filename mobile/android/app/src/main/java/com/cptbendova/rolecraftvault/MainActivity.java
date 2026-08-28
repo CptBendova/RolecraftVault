@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(TransferKeepAlivePlugin.class);
+        registerPlugin(TransferTransportPlugin.class);
         registerPlugin(DeviceUnlockPlugin.class);
         SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);

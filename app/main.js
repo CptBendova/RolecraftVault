@@ -22,7 +22,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.238";
+const FACTORY_BUILD = "1.239";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -222,7 +222,23 @@ function askThisDevice(detail, timeoutMs) {
     } catch (e) { finish("unavailable"); }
   });
 }
-let transferState = null; // { secret, code, expiresAt, timer, pack }
+let transferState = null; // { secret, code, expiresAt, timer, pack, sessions }
+const TRANSFER_IDLE_MS = 10 * 60 * 1000;
+
+/* The pairing code is allowed to go idle, but an authenticated copy that is
+   still packing, downloading or saving must never have the PC disappear under
+   it. Every request and every packing step renews the idle lease. */
+function touchTransferLease() {
+  if (!transferState) return;
+  if (transferState.timer) clearTimeout(transferState.timer);
+  transferState.expiresAt = Date.now() + TRANSFER_IDLE_MS;
+  transferState.timer = setTimeout(stopTransferServer, TRANSFER_IDLE_MS);
+}
+
+function cleanTransferSessionId(value) {
+  const id = String(value || "").toLowerCase();
+  return /^[a-f0-9]{16,64}$/.test(id) ? id : null;
+}
 
 function lanAddress() {
   const nets = os.networkInterfaces();
@@ -241,6 +257,9 @@ function lanAddress() {
 
 function stopTransferServer() {
   if (transferState && transferState.timer) clearTimeout(transferState.timer);
+  if (transferState && transferState.sessions) {
+    for (const session of transferState.sessions.values()) session.cancelled = true;
+  }
   transferState = null;
   try { if (updatesDir) fs.unlinkSync(transferFilePath()); } catch (e) {}
   clearDeltaFiles();
@@ -252,7 +271,8 @@ function stopTransferServer() {
 
 const transferFilePath = () => path.join(updatesDir, "transfer.bin");
 const deltaFilePath = () => path.join(updatesDir, "delta.bin");
-const deltaBatchPath = i => path.join(updatesDir, "delta-" + i + ".bin");
+const deltaBatchPath = (i, sessionId) => path.join(updatesDir,
+  sessionId ? "delta-" + sessionId + "-" + i + ".bin" : "delta-" + i + ".bin");
 /* Everything a transfer can leave behind. transfer.plain is the one that
    matters: it is the decrypted stream of every record that arrived, written
    to disk so it can be applied a line at a time. The receive path removes it
@@ -271,18 +291,47 @@ function clearDeltaFiles() {
   try { fs.unlinkSync(deltaFilePath()); } catch (e) {}
   try {
     for (const name of fs.readdirSync(updatesDir)) {
+      if (/^delta-(?:[a-f0-9]{16,64}-)?\d+\.bin$/.test(name)) {
+        try { fs.unlinkSync(path.join(updatesDir, name)); } catch (e2) {}
+      }
+    }
+  } catch (e) {}
+}
+function clearDeltaSession(session) {
+  if (!session) return;
+  for (const item of session.batches || []) {
+    try { if (item && item.path) fs.unlinkSync(item.path); } catch (e) {}
+  }
+  session.batches = [];
+}
+function clearLegacyDeltaFiles() {
+  if (!updatesDir) return;
+  try { fs.unlinkSync(deltaFilePath()); } catch (e) {}
+  try {
+    for (const name of fs.readdirSync(updatesDir)) {
       if (/^delta-\d+\.bin$/.test(name)) {
         try { fs.unlinkSync(path.join(updatesDir, name)); } catch (e2) {}
       }
     }
   } catch (e) {}
 }
-function completeDeltaTransfer() {
-  clearDeltaFiles();
-  if (transferState) {
-    delete transferState.deltaPath;
-    delete transferState.deltaBatches;
+function completeDeltaTransfer(sessionId) {
+  const id = cleanTransferSessionId(sessionId);
+  if (id && transferState && transferState.sessions) {
+    const session = transferState.sessions.get(id);
+    if (session) {
+      session.cancelled = true;
+      clearDeltaSession(session);
+      transferState.sessions.delete(id);
+    }
+  } else {
+    clearLegacyDeltaFiles();
+    if (transferState) {
+      delete transferState.deltaPath;
+      delete transferState.deltaBatches;
+    }
   }
+  touchTransferLease();
   publishShareProgress({ phase: "done", done: 1, total: 1, pct: 1 });
 }
 /* A phone cannot hold a whole vault in one Capacitor HTTP response: around
@@ -291,18 +340,24 @@ function completeDeltaTransfer() {
    slices it. 8 MB lets an ordinary batch cross the native bridge in one call
    without going near that cliff. */
 const BATCH_PLAIN_MAX = 8 * 1024 * 1024;
+const BATCH_BINARY_MAX = 6 * 1024 * 1024;
 
 /* New receivers say which representation they consume. An older receiver sends
    no mode and still gets both, so this is compatible in both directions. */
 function deltaPackMode(requestUrl) {
   try {
     const mode = new URL(requestUrl || "", "http://127.0.0.1").searchParams.get("mode");
-    if (mode === "batches" || mode === "combined") return mode;
+    if (mode === "batches" || mode === "combined" || mode === "stream-batches") return mode;
   } catch (e) {}
   return "compat";
 }
 function deltaPackTargets(mode) {
-  return { combined: mode !== "batches", batches: mode !== "combined" };
+  const targets = {
+    combined: mode !== "batches" && mode !== "stream-batches",
+    batches: mode !== "combined"
+  };
+  if (mode === "stream-batches") targets.framed = true;
+  return targets;
 }
 
 /* A short fingerprint per record lets the two devices work out exactly which
@@ -501,12 +556,14 @@ function estimateKeyBytes(k) {
   } catch (e) { return 0; }
 }
 
-function splitKeysIntoBatches(keys) {
+function splitKeysIntoBatches(keys, estimate) {
+  const sizeOf = estimate || estimateKeyBytes;
   const batches = [];
   let cur = [], size = 0;
   for (const k of keys) {
-    const n = estimateKeyBytes(k);
-    if (cur.length && size + n > BATCH_PLAIN_MAX) {
+    const n = sizeOf(k);
+    const limit = estimate ? BATCH_BINARY_MAX : BATCH_PLAIN_MAX;
+    if (cur.length && size + n > limit) {
       batches.push(cur);
       cur = [];
       size = 0;
@@ -516,6 +573,51 @@ function splitKeysIntoBatches(keys) {
   }
   if (cur.length) batches.push(cur);
   return batches;
+}
+
+function framedRecord(k, value) {
+  const text = String(value);
+  const match = /^(data:[^,]*;base64,)([\s\S]*)$/i.exec(text);
+  const data = match ? Buffer.from(match[2].replace(/\s/g, ""), "base64") : Buffer.from(text, "utf8");
+  const meta = Buffer.from(JSON.stringify({
+    k: k,
+    n: data.length,
+    binary: !!match,
+    prefix: match ? match[1] : undefined
+  }), "utf8");
+  const head = Buffer.allocUnsafe(4);
+  head.writeUInt32BE(meta.length, 0);
+  return { head, meta, data };
+}
+
+function estimateFramedKeyBytes(k) {
+  const image = /^(?:img|th):(.+)$/.exec(k);
+  if (image) {
+    try {
+      const n = Number(readValue("sz:" + image[1]));
+      if (k.startsWith("img:") && Number.isFinite(n) && n > 0) return n + 256;
+    } catch (e) {}
+  }
+  try {
+    const v = readValue(k);
+    if (v === null || v === undefined) return 0;
+    const match = /^(?:data:[^,]*;base64,)([\s\S]*)$/i.exec(String(v));
+    return (match ? Math.floor(match[1].replace(/\s/g, "").length * 3 / 4) : Buffer.byteLength(String(v), "utf8")) + 256;
+  } catch (e) { return 0; }
+}
+
+function ensureTransferDiskSpace(expectedBytes) {
+  if (!fs.statfsSync || !updatesDir) return;
+  try {
+    const stat = fs.statfsSync(updatesDir);
+    const free = Number(stat.bavail) * Number(stat.bsize);
+    const need = Math.max(64 * 1024 * 1024, Number(expectedBytes || 0) + 64 * 1024 * 1024);
+    if (Number.isFinite(free) && free > 0 && free < need) {
+      throw new Error("The computer needs about " + Math.ceil(need / 1048576) + " MB free to prepare the next part of the vault.");
+    }
+  } catch (e) {
+    if (/needs about/.test(String(e && e.message || e))) throw e;
+  }
 }
 
 function createRecordCrypto(secret) {
@@ -548,6 +650,45 @@ function openRecordWriter(outPath, secret, sharedCrypto) {
     path: outPath,
     writeRecord(k, v) {
       putPlain(Buffer.from(JSON.stringify({ k: k, v: String(v) }) + "\n", "utf8"));
+    },
+    finish() {
+      const last = cipher.final();
+      if (last && last.length) fs.writeSync(fd, last);
+      fs.writeSync(fd, cipher.getAuthTag());
+      fs.closeSync(fd);
+      return { path: outPath, bytes: fs.statSync(outPath).size };
+    },
+    abort() {
+      try { fs.closeSync(fd); } catch (e) {}
+      try { fs.unlinkSync(outPath); } catch (e) {}
+    }
+  };
+}
+
+/* RCVX3 frames binary pictures directly instead of wrapping their base64 data
+   URLs in JSON. Text values are UTF-8 frames. The envelope remains AES-GCM and
+   shares the same per-transfer derived key and unique per-file IV contract. */
+function openFramedWriter(outPath, secret, sharedCrypto) {
+  const recordCrypto = sharedCrypto || createRecordCrypto(secret);
+  const salt = recordCrypto.salt;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", recordCrypto.key, iv);
+  try { fs.unlinkSync(outPath); } catch (e) {}
+  const fd = fs.openSync(outPath, "w");
+  const put = buf => {
+    const out = cipher.update(buf);
+    if (out && out.length) fs.writeSync(fd, out);
+  };
+  fs.writeSync(fd, Buffer.from("RCVX3"));
+  fs.writeSync(fd, salt);
+  fs.writeSync(fd, iv);
+  return {
+    path: outPath,
+    writeRecord(k, v) {
+      const frame = framedRecord(k, v);
+      put(frame.head);
+      put(frame.meta);
+      put(frame.data);
     },
     finish() {
       const last = cipher.final();
@@ -696,7 +837,11 @@ function startTransferServer() {
       return;
     }
     if (req.method === "GET" && route === "/progress") {
-      writeEncryptedJson(res, transferState && transferState.pack || { phase: "idle", done: 0, total: 0 });
+      let id = null;
+      try { id = cleanTransferSessionId(new URL(req.url, "http://127.0.0.1").searchParams.get("id")); } catch (e) {}
+      const session = id && transferState && transferState.sessions && transferState.sessions.get(id);
+      if (session) touchTransferLease();
+      writeEncryptedJson(res, session && session.progress || transferState && transferState.pack || { phase: "idle", done: 0, total: 0 });
       return;
     }
     const readEncryptedJson = (maxBody, onValue) => {
@@ -722,12 +867,25 @@ function startTransferServer() {
       if (!Array.isArray(wanted)) throw new Error("bad request");
       onKeys(wanted);
     });
-    const packWanted = async (wanted, mode) => {
-      publishShareProgress({ phase: "packing", done: 0, total: wanted.length, pct: 0 });
+    const packWanted = async (wanted, mode, session) => {
+      const report = p => {
+        if (session) session.progress = p;
+        touchTransferLease();
+        publishShareProgress(p);
+      };
+      report({ phase: "packing", done: 0, total: wanted.length, pct: 0,
+        stream: !!session, id: session && session.id, sizes: [] });
       const targets = deltaPackTargets(mode);
-      const batches = targets.batches ? splitKeysIntoBatches(wanted) : [wanted];
-      clearDeltaFiles();
-      if (transferState) {
+      const batches = targets.batches
+        ? splitKeysIntoBatches(wanted, targets.framed ? estimateFramedKeyBytes : null)
+        : [wanted];
+      if (session) {
+        clearDeltaSession(session);
+        session.totalBatches = batches.length;
+      } else {
+        clearLegacyDeltaFiles();
+      }
+      if (transferState && !session) {
         delete transferState.deltaPath;
         delete transferState.deltaBatches;
       }
@@ -739,9 +897,16 @@ function startTransferServer() {
       let keysDone = 0, lastYield = Date.now();
       try {
         for (let b = 0; b < batches.length; b++) {
-          const w = targets.batches ? openRecordWriter(deltaBatchPath(b), secret, sharedCrypto) : null;
+          if (!transferState || (session && session.cancelled)) throw new Error("Sharing was stopped.");
+          ensureTransferDiskSpace(batches[b].reduce((sum, k) => sum +
+            (targets.framed ? estimateFramedKeyBytes(k) : estimateKeyBytes(k)), 0));
+          const batchPath = deltaBatchPath(b, session && session.id);
+          const w = targets.batches
+            ? (targets.framed ? openFramedWriter(batchPath, secret, sharedCrypto) : openRecordWriter(batchPath, secret, sharedCrypto))
+            : null;
           try {
             for (let i = 0; i < batches[b].length; i++) {
+              if (!transferState || (session && session.cancelled)) throw new Error("Sharing was stopped.");
               const k = batches[b][i];
               let v;
               try { v = readValue(k); } catch (e) { v = null; }
@@ -751,13 +916,32 @@ function startTransferServer() {
                 if (combined) combined.writeRecord(k, s);
               }
               keysDone++;
-              publishShareProgress({ phase: "packing", done: keysDone, total: wanted.length, pct: wanted.length > 0 ? keysDone / wanted.length : 0 });
+              report({ phase: "packing", done: keysDone, total: wanted.length,
+                pct: wanted.length > 0 ? keysDone / wanted.length : 0,
+                stream: !!session, id: session && session.id, sizes: sizes.slice(),
+                totalBatches: batches.length, format: targets.framed ? "framed" : "records" });
               if (Date.now() - lastYield > 40) {
                 await new Promise(r => setImmediate(r));
                 lastYield = Date.now();
               }
             }
-            if (w) sizes.push(w.finish().bytes);
+            if (w) {
+              const finished = w.finish();
+              sizes.push(finished.bytes);
+              if (session) session.batches[b] = { path: finished.path, bytes: finished.bytes };
+              report({ phase: "packing", done: keysDone, total: wanted.length,
+                pct: wanted.length > 0 ? keysDone / wanted.length : 0,
+                stream: !!session, id: session && session.id, sizes: sizes.slice(),
+                totalBatches: batches.length, format: targets.framed ? "framed" : "records" });
+              /* Keep only a few completed batches on disk. The receiver
+                 authenticates and acknowledges each one, letting the PC delete
+                 it while the next batches are still being prepared. */
+              while (session && !session.cancelled && b + 1 < batches.length &&
+                  session.batches.filter(item => item && item.path).length >= 3) {
+                touchTransferLease();
+                await new Promise(r => setTimeout(r, 50));
+              }
+            }
           } catch (e) {
             if (w) w.abort();
             throw e;
@@ -766,20 +950,22 @@ function startTransferServer() {
         const built = combined
           ? combined.finish()
           : { path: null, bytes: sizes.reduce((sum, n) => sum + n, 0) };
-        if (transferState) {
+        if (transferState && !session) {
           if (built.path) transferState.deltaPath = built.path;
           if (targets.batches) transferState.deltaBatches = sizes.map((bytes, i) => ({ path: deltaBatchPath(i), bytes: bytes }));
         }
-        publishShareProgress({
+        report({
           phase: "ready", done: wanted.length, total: wanted.length, pct: 1,
           bytes: 0, byteTotal: built.bytes, batches: sizes.length,
-          sizes: targets.batches ? sizes : undefined
+          sizes: targets.batches ? sizes : undefined, stream: !!session,
+          id: session && session.id, totalBatches: batches.length,
+          format: targets.framed ? "framed" : "records"
         });
         return built;
       } catch (e) {
         if (combined) combined.abort();
-        clearDeltaFiles();
-        if (transferState) {
+        if (session) clearDeltaSession(session); else clearLegacyDeltaFiles();
+        if (transferState && !session) {
           delete transferState.deltaPath;
           delete transferState.deltaBatches;
         }
@@ -788,17 +974,56 @@ function startTransferServer() {
     };
     if (req.method === "POST" && route === "/delta-start") {
       readWantedKeys(wanted => {
-        writeEncryptedJson(res, { ok: true, total: wanted.length });
-        packWanted(wanted, deltaPackMode(req.url)).catch(e => {
-          publishShareProgress({ phase: "error", done: 0, total: 0, error: String(e && e.message || e) });
-        });
+        const mode = deltaPackMode(req.url);
+        let q = null;
+        try { q = new URL(req.url, "http://127.0.0.1"); } catch (e) {}
+        const requestedId = q && cleanTransferSessionId(q.searchParams.get("id"));
+        if (mode === "stream-batches" && requestedId && transferState && transferState.sessions) {
+          let session = transferState.sessions.get(requestedId);
+          if (!session) {
+            session = { id: requestedId, batches: [], cancelled: false,
+              progress: { phase: "packing", done: 0, total: wanted.length, pct: 0,
+                stream: true, id: requestedId, sizes: [], format: "framed" } };
+            transferState.sessions.set(requestedId, session);
+            setImmediate(() => packWanted(wanted, mode, session).catch(e => {
+                if (session.cancelled) return;
+                session.progress = { phase: "error", done: 0, total: 0, id: session.id,
+                  stream: true, error: String(e && e.message || e) };
+                publishShareProgress(session.progress);
+              }));
+          }
+          writeEncryptedJson(res, { ok: true, total: wanted.length, stream: true,
+            id: requestedId, format: "framed" });
+        } else {
+          writeEncryptedJson(res, { ok: true, total: wanted.length });
+          packWanted(wanted, mode).catch(e => {
+            publishShareProgress({ phase: "error", done: 0, total: 0, error: String(e && e.message || e) });
+          });
+        }
       });
       return;
     }
     if (req.method === "POST" && route === "/delta-complete") {
       readEncryptedJson(64 << 10, message => {
         if (!message || message.ok !== true) throw new Error("bad request");
-        completeDeltaTransfer();
+        completeDeltaTransfer(message.id);
+        writeEncryptedJson(res, { ok: true });
+      });
+      return;
+    }
+    if (req.method === "POST" && route === "/delta-ack") {
+      readEncryptedJson(64 << 10, message => {
+        const id = cleanTransferSessionId(message && message.id);
+        const i = Number(message && message.i);
+        const session = id && transferState && transferState.sessions && transferState.sessions.get(id);
+        if (!session || !Number.isInteger(i) || i < 0 || i >= session.batches.length) throw new Error("bad request");
+        const item = session.batches[i];
+        if (item && item.path) {
+          try { fs.unlinkSync(item.path); } catch (e) {}
+          item.path = null;
+          item.acked = true;
+        }
+        touchTransferLease();
         writeEncryptedJson(res, { ok: true });
       });
       return;
@@ -807,10 +1032,12 @@ function startTransferServer() {
       let filePath = null;
       let q = null;
       try { q = new URL(req.url, "http://127.0.0.1"); } catch (e) { q = null; }
+      const sessionId = q && cleanTransferSessionId(q.searchParams.get("id"));
       const iRaw = q && q.searchParams.get("i");
       if (iRaw != null && iRaw !== "") {
         const i = Number(iRaw);
-        const batches = transferState && transferState.deltaBatches;
+        const session = sessionId && transferState && transferState.sessions && transferState.sessions.get(sessionId);
+        const batches = session ? session.batches : transferState && transferState.deltaBatches;
         if (!batches || !Number.isInteger(i) || i < 0 || i >= batches.length || !fs.existsSync(batches[i].path)) {
           res.writeHead(409); res.end("not ready");
           return;
@@ -825,6 +1052,7 @@ function startTransferServer() {
       const nRaw = q && q.searchParams.get("n");
       const range = offRaw != null && offRaw !== "" ? { off: Number(offRaw), n: nRaw != null && nRaw !== "" ? Number(nRaw) : null } : null;
       sendFile(res, filePath, (sent, total) => {
+        touchTransferLease();
         publishShareProgress({ phase: "sending", done: sent, total, pct: total > 0 ? sent / total : 0, bytes: sent, byteTotal: total });
       }, range);
       return;
@@ -911,8 +1139,8 @@ function startTransferServer() {
         /* Ready is not the same as a completed copy. The receiver sends an
            authenticated /delta-complete only after its records are saved. */
         sendToWindow("transfer-progress", { phase: "ready", done: 1, total: 1, pct: 1 });
-        transferState = { secret, code, expiresAt: Date.now() + 10 * 60 * 1000 };
-        transferState.timer = setTimeout(stopTransferServer, 10 * 60 * 1000);
+        transferState = { secret, code, expiresAt: 0, timer: null, sessions: new Map() };
+        touchTransferLease();
         resolve({ ok: true, code, ip, port, expiresInMinutes: 10, device: deviceName() });
       });
     });

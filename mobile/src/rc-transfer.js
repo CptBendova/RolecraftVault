@@ -44,10 +44,13 @@
   function nativeRequest(opts) {
     const C = window.Capacitor;
     if (!C) throw new Error("This is not running inside the app, so it cannot reach the other device.");
-    const plugin = C.Plugins && C.Plugins.CapacitorHttp;
-    if (plugin && typeof plugin.request === "function") return plugin.request(opts);
     if (typeof C.nativePromise === "function") return C.nativePromise("CapacitorHttp", "request", opts);
     throw new Error("The native network bridge did not load, so this device cannot reach the other one.");
+  }
+  function nativeTransport(method, opts) {
+    const C = window.Capacitor;
+    if (!C || typeof C.nativePromise !== "function") return null;
+    return C.nativePromise("TransferTransport", method, opts || {});
   }
 
   /* ---------- the pairing code ---------- */
@@ -171,6 +174,38 @@
     }
   }
 
+  /* RCVX3 is the fast path: image bytes are framed directly rather than sent as
+     base64 inside JSON. Text records remain UTF-8, and the whole frame stream is
+     authenticated before the first record is committed. */
+  async function decryptAndSaveFramed(bytes, secret, saveOne, saveBinary, keyCache) {
+    if (!sameBytes(bytes.slice(0, 5), ascii("RCVX3"))) throw new Error("Not a Rolecraft framed record file");
+    const salt = bytes.slice(5, 21), iv = bytes.slice(21, 33);
+    const key = await recordKey(secret, salt, keyCache);
+    const plain = new Uint8Array(await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv, tagLength: 128 }, key, bytes.slice(33)));
+    const view = new DataView(plain.buffer, plain.byteOffset, plain.byteLength);
+    const decoder = new TextDecoder();
+    let off = 0;
+    while (off < plain.length) {
+      if (plain.length - off < 4) throw new Error("A framed transfer ended between records.");
+      const metaBytes = view.getUint32(off, false);
+      off += 4;
+      if (!metaBytes || metaBytes > 1024 * 1024 || off + metaBytes > plain.length) {
+        throw new Error("A framed transfer contains an invalid record header.");
+      }
+      const meta = JSON.parse(decoder.decode(plain.subarray(off, off + metaBytes)));
+      off += metaBytes;
+      const n = Number(meta && meta.n);
+      if (!meta || typeof meta.k !== "string" || !Number.isSafeInteger(n) || n < 0 || off + n > plain.length) {
+        throw new Error("A framed transfer contains an invalid record.");
+      }
+      const payload = plain.subarray(off, off + n);
+      off += n;
+      if (meta.binary) await saveBinary(meta.k, payload, String(meta.prefix || "data:application/octet-stream;base64,"));
+      else await saveOne(meta.k, decoder.decode(payload));
+    }
+  }
+
   /* ---------- talking to the other device ---------- */
   const b64ToBytes = b64 => {
     const bin = atob(String(b64).replace(/\s/g, ""));
@@ -205,13 +240,43 @@
     return typeof res.data === "string" ? b64ToBytes(res.data) : new Uint8Array(res.data);
   }
 
-  async function notifyTransferComplete(target) {
+  async function notifyTransferComplete(target, sessionId) {
     try {
-      const body = await encryptPayload(new TextEncoder().encode(JSON.stringify({ ok: true })), target.secret);
+      const body = await encryptPayload(new TextEncoder().encode(JSON.stringify({ ok: true, id: sessionId || undefined })), target.secret);
       const reply = await ask(target, "/delta-complete", "POST", body, 15000);
       const message = JSON.parse(new TextDecoder().decode(await decryptPayload(reply, target.secret)));
       return !!(message && message.ok);
     } catch (e) { return false; }
+  }
+
+  async function acknowledgeBatch(target, sessionId, index) {
+    const body = await encryptPayload(new TextEncoder().encode(JSON.stringify({
+      id: sessionId,
+      i: index
+    })), target.secret);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const reply = await ask(target, "/delta-ack", "POST", body, 15000);
+        const message = JSON.parse(new TextDecoder().decode(await decryptPayload(reply, target.secret)));
+        if (message && message.ok) return true;
+      } catch (e) {}
+      if (attempt < 3) await new Promise(r => setTimeout(r, 350 * Math.pow(2, attempt)));
+    }
+    throw new Error("The computer did not confirm the saved part. What already arrived is kept; reconnect and try again.");
+  }
+
+  async function ensureTransferSpace(bytes) {
+    const native = nativeTransport("freeSpace", {});
+    if (!native) return;
+    try {
+      const free = Number((await native).bytes);
+      const need = Math.max(32 * 1024 * 1024, (Number(bytes) || 0) + 32 * 1024 * 1024);
+      if (Number.isFinite(free) && free > 0 && free < need) {
+        throw new Error("This phone needs about " + Math.ceil(need / 1048576) + " MB free before the next part can be saved.");
+      }
+    } catch (e) {
+      if (/needs about/.test(String(e && e.message || e))) throw e;
+    }
   }
 
   /* CapacitorHttp loads a whole response into JS as base64. Around 130 MB the
@@ -221,9 +286,57 @@
      response. The WebView already allocates the complete encrypted batch below,
      so smaller slices only added round trips without reducing peak JS memory. */
   const SLICE_BYTES = 12 * 1024 * 1024;
+  const NATIVE_READ_BYTES = 512 * 1024;
+
+  async function askDownload(target, path, timeoutMs) {
+    const native = nativeTransport("download", {
+      url: "http://" + target.ip + ":" + target.port + path,
+      connectTimeout: timeoutMs || 30000,
+      readTimeout: timeoutMs || 30000
+    });
+    if (!native) return ask(target, path, "GET", null, timeoutMs);
+    const file = await native;
+    if (!file || !file.token || !Number.isSafeInteger(Number(file.size)) || Number(file.size) < 0) {
+      throw new Error("The Android transfer service returned an invalid download.");
+    }
+    const size = Number(file.size);
+    const out = new Uint8Array(size);
+    let off = 0;
+    try {
+      while (off < size) {
+        const got = await nativeTransport("read", {
+          token: file.token,
+          offset: off,
+          length: Math.min(NATIVE_READ_BYTES, size - off)
+        });
+        const piece = b64ToBytes(got && got.data || "");
+        if (!piece.length || off + piece.length > size) throw new Error("Android returned an incomplete download.");
+        out.set(piece, off);
+        off += piece.length;
+      }
+      return out;
+    } finally {
+      try { await nativeTransport("remove", { token: file.token }); } catch (e) {}
+    }
+  }
+
+  async function retryDownload(work, attempts) {
+    let error = null;
+    for (let i = 0; i < attempts; i++) {
+      try { return await work(); } catch (e) {
+        error = e;
+        if (i + 1 < attempts) await new Promise(r => setTimeout(r, 350 * Math.pow(2, i)));
+      }
+    }
+    throw error || new Error("The download stopped.");
+  }
   async function downloadSliced(target, path, totalBytes, timeoutMs, onBytes) {
     if (!totalBytes || totalBytes <= SLICE_BYTES) {
-      const blob = await ask(target, path, "GET", null, timeoutMs);
+      const blob = await retryDownload(async () => {
+        const got = await askDownload(target, path, timeoutMs);
+        if (totalBytes && got.length !== totalBytes) throw new Error("The downloaded part was incomplete.");
+        return got;
+      }, 4);
       if (onBytes) onBytes(blob.length, totalBytes || blob.length);
       return blob;
     }
@@ -232,7 +345,11 @@
     while (got < totalBytes) {
       const n = Math.min(SLICE_BYTES, totalBytes - got);
       const sep = path.indexOf("?") >= 0 ? "&" : "?";
-      const piece = await ask(target, path + sep + "off=" + got + "&n=" + n, "GET", null, timeoutMs);
+      const piece = await retryDownload(async () => {
+        const next = await askDownload(target, path + sep + "off=" + got + "&n=" + n, timeoutMs);
+        if (next.length !== n) throw new Error("The downloaded slice was incomplete.");
+        return next;
+      }, 4);
       if (!piece || !piece.length) throw new Error("The other device sent an empty piece of the vault.");
       if (got + piece.length > totalBytes) throw new Error("The other device sent more than it said it would.");
       out.set(piece, got);
@@ -321,6 +438,11 @@
   const countRecords = manifest =>
     Object.keys(manifest).filter(k => !/^(img:|th:|sz:|ui:)/.test(k)).length;
 
+  function newTransferId() {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  }
+
   async function receive(code, mirror, preview, onProgress) {
     const phase = (name, done, total) => {
       if (onProgress) onProgress({ phase: name, done, total, pct: total > 0 ? done / total : 0 });
@@ -392,7 +514,7 @@
       }
     }
 
-    let bytes = 0, records = [], saved = 0, saveFailed = 0;
+    let bytes = 0, records = [], saved = 0, saveFailed = 0, sessionId = null, leaseTimer = null;
     const wait = ms => new Promise(r => setTimeout(r, ms));
     const saveError = e => {
       const m = String((e && e.message) || e);
@@ -427,7 +549,21 @@
     if (!preview) await keepAlive(true);
     const persistOne = async (k, v) => {
       try {
-        await window.storage.set(k, v);
+        if (window.storage.setWithHash && remote[k]) await window.storage.setWithHash(k, v, remote[k]);
+        else await window.storage.set(k, v);
+        saved++;
+      } catch (e) {
+        const msg = saveError(e);
+        if (/ran out of room|blocked the app from saving/.test(msg)) throw new Error(msg);
+        saveFailed++;
+      }
+      phase("saving", saved + saveFailed, needed.length);
+      if ((saved + saveFailed) % 8 === 0) await wait(0);
+    };
+    const persistBinary = async (k, payload, prefix) => {
+      try {
+        if (!window.storage.setBinary) throw new Error("This Android storage build cannot save binary transfer records.");
+        await window.storage.setBinary(k, payload, prefix, remote[k]);
         saved++;
       } catch (e) {
         const msg = saveError(e);
@@ -445,10 +581,10 @@
     };
     try {
     if (needed.length) {
-      const readProgress = async () => {
+      const readProgress = async id => {
         try {
           return JSON.parse(new TextDecoder().decode(
-            await decryptPayload(await ask(target, "/progress", "GET", null, 8000), target.secret)));
+            await decryptPayload(await ask(target, "/progress" + (id ? "?id=" + encodeURIComponent(id) : ""), "GET", null, 8000), target.secret)));
         } catch (e) { return null; }
       };
       const applyProgress = st => {
@@ -460,15 +596,64 @@
       let blob = null;
       let started = false;
       let batchSizes = null;
+      let streamMode = false;
       const batchKeyCache = {};
+      const requestedId = newTransferId();
       try {
         const msg = JSON.parse(new TextDecoder().decode(
-          await decryptPayload(await ask(target, "/delta-start?mode=batches", "POST", body, 30000), target.secret)));
+          await decryptPayload(await ask(target, "/delta-start?mode=stream-batches&id=" + requestedId, "POST", body, 30000), target.secret)));
         started = !!(msg && msg.ok);
+        streamMode = !!(msg && msg.stream && msg.id === requestedId && msg.format === "framed");
+        sessionId = streamMode ? requestedId : null;
+        if (sessionId) leaseTimer = setInterval(() => { readProgress(sessionId); }, 20000);
         if (started) phase("packing", 0, msg.total || needed.length);
-      } catch (e) { started = false; }
+      } catch (e) {
+        /* The request may have reached the PC even if its small reply was lost.
+           Check the idempotent session before falling back, otherwise both the
+           modern and legacy packers can race over the same temporary files. */
+        const uncertain = await readProgress(requestedId);
+        if (uncertain && uncertain.stream && uncertain.id === requestedId) {
+          started = true;
+          streamMode = true;
+          sessionId = requestedId;
+          leaseTimer = setInterval(() => { readProgress(sessionId); }, 20000);
+        } else started = false;
+      }
       if (started) {
-        const ready = await waitForDeltaReady(readProgress, applyProgress, wait);
+        if (streamMode) {
+          let nextBatch = 0, misses = 0, complete = false;
+          for (;;) {
+            const st = await readProgress(sessionId);
+            if (!st) {
+              misses++;
+              if (misses >= 5) throw new Error("Lost contact with the computer while it was gathering records.");
+              await wait(400);
+              continue;
+            }
+            misses = 0;
+            applyProgress(st);
+            if (st.phase === "error") throw new Error(st.error || "The computer failed while gathering records.");
+            const sizes = Array.isArray(st.sizes) ? st.sizes : [];
+            while (nextBatch < sizes.length) {
+              const want = Number(sizes[nextBatch]) || 0;
+              await ensureTransferSpace(want);
+              const totalKnown = Number(st.byteTotal) || sizes.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+              let piece = await downloadSliced(target,
+                "/delta-file?id=" + encodeURIComponent(sessionId) + "&i=" + nextBatch,
+                want, 600000, got => phase("receiving", bytes + got, Math.max(totalKnown, bytes + want)));
+              bytes += piece.length;
+              phase("unpacking", nextBatch + 1, Number(st.totalBatches) || sizes.length);
+              await decryptAndSaveFramed(piece, target.secret, persistOne, persistBinary, batchKeyCache);
+              piece = null;
+              await acknowledgeBatch(target, sessionId, nextBatch);
+              nextBatch++;
+            }
+            complete = st.phase === "ready";
+            if (complete && nextBatch >= sizes.length) break;
+            await wait(200);
+          }
+        } else {
+        const ready = await waitForDeltaReady(() => readProgress(null), applyProgress, wait);
         if (Array.isArray(ready.sizes) && ready.sizes.length) batchSizes = ready.sizes;
         if (batchSizes) {
           const totalBytes = batchSizes.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
@@ -492,6 +677,7 @@
           phase("receiving", 0, 1);
           blob = await ask(target, "/delta-file", "GET", null, 600000);
         }
+        }
       } else {
         phase("packing", 0, 0);
         const download = ask(target, "/delta", "POST", body, 600000);
@@ -502,7 +688,7 @@
           ]);
           if (winner.t === "data") { blob = winner.b; break; }
           if (winner.t === "err") throw winner.e;
-          applyProgress(await readProgress());
+           applyProgress(await readProgress(null));
         }
       }
       if (blob) {
@@ -516,23 +702,29 @@
        file still waits until the whole payload has decrypted, so a truncated
        download cannot leave the vault half updated. */
     if (records.length) await saveRecords(records);
-    for (let i = 0; i < removable.length; i++) {
-      await window.storage.delete(removable[i]);
-      phase("removing", i + 1, removable.length);
+    /* A partial mirror must never delete the receiver's local-only records. It
+       is no longer an exact copy once any incoming save failed, so deletion is
+       both misleading and destructive. */
+    if (saveFailed === 0) {
+      for (let i = 0; i < removable.length; i++) {
+        await window.storage.delete(removable[i]);
+        phase("removing", i + 1, removable.length);
+      }
     }
-    if (saveFailed === 0) await notifyTransferComplete(target);
+    if (saveFailed === 0) await notifyTransferComplete(target, sessionId);
     cachedLocal = null;
     phase("done", 1, 1);
     return Object.assign({
       ok: true,
       partial: saveFailed > 0,
       failed: saveFailed,
-      added, updated, removed: removable.length, unchanged, bytes
+      added, updated, removed: saveFailed === 0 ? removable.length : 0, unchanged, bytes
     }, who);
     } catch (e) {
       cachedLocal = null;
       return Object.assign({ ok: false, error: e && e.message ? e.message : String(e) }, who);
     } finally {
+      if (leaseTimer) clearInterval(leaseTimer);
       if (!preview) await keepAlive(false);
     }
   }

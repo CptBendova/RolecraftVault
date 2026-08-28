@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.net.wifi.WifiManager;
 import androidx.core.app.NotificationCompat;
 
 /** Keeps a vault copy running when the screen is off. */
@@ -18,6 +19,7 @@ public class TransferService extends Service {
     public static final String CHANNEL_ID = "vault-copy";
     private static final int NOTIF_ID = 17;
     private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
 
     @Override
     public void onCreate() {
@@ -39,6 +41,14 @@ public class TransferService extends Service {
             wakeLock.setReferenceCounted(false);
             wakeLock.acquire(4 * 60 * 60 * 1000L);
         }
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wm != null) {
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "rolecraft:copy-wifi");
+                wifiLock.setReferenceCounted(false);
+                wifiLock.acquire();
+            }
+        } catch (RuntimeException ignored) {}
     }
 
     @Override
@@ -71,6 +81,8 @@ public class TransferService extends Service {
     public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
+        if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+        wifiLock = null;
         super.onDestroy();
     }
 

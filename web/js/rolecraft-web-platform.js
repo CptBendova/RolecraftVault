@@ -90,6 +90,7 @@
      on IndexedDB. */
   var FILE_MARK = "file:";
   var BIN_MARK = "bin:";
+  var BIN2_MARK = "bin2:";
   var FS_DIR = "DATA";
   var FS_CHUNK = 512 * 1024;
   var BIN_CHUNK = 512 * 1024;
@@ -124,6 +125,9 @@
   }
   function filePointerPath(stored) {
     if (typeof stored !== "string") return null;
+    if (stored.indexOf(BIN2_MARK) === 0) {
+      try { return JSON.parse(stored.slice(BIN2_MARK.length)).path || null; } catch (e) { return null; }
+    }
     if (stored.indexOf(BIN_MARK) === 0) return stored.slice(BIN_MARK.length);
     if (stored.indexOf(FILE_MARK) === 0) return stored.slice(FILE_MARK.length);
     return null;
@@ -181,6 +185,11 @@
   }
   function sha16plain(text) {
     return crypto.subtle.digest("SHA-256", te.encode(String(text))).then(function (d) {
+      return hex(new Uint8Array(d)).slice(0, 16);
+    });
+  }
+  function sha16bytes(bytes) {
+    return crypto.subtle.digest("SHA-256", bytes).then(function (d) {
       return hex(new Uint8Array(d)).slice(0, 16);
     });
   }
@@ -371,6 +380,21 @@
   }
   function plainFromStored(stored, aesKey) {
     if (stored == null) return Promise.resolve(null);
+    if (typeof stored === "string" && stored.indexOf(BIN2_MARK) === 0) {
+      var pointer;
+      try { pointer = JSON.parse(stored.slice(BIN2_MARK.length)); } catch (e) { return Promise.reject(e); }
+      return readBin(pointer.path).then(function (bin) {
+        var first = wrapKey || aesKey;
+        var alt = first === wrapKey ? aesKey : wrapKey;
+        function tryDec(k) {
+          if (!k) return Promise.reject(new Error("locked"));
+          return decryptBytes(bin, k);
+        }
+        return tryDec(first).catch(function () { return tryDec(alt); });
+      }).then(function (pt) {
+        return String(pointer.prefix || "data:application/octet-stream;base64,") + b64encode(pt);
+      });
+    }
     if (typeof stored === "string" && stored.indexOf(BIN_MARK) === 0) {
       return readBin(stored.slice(BIN_MARK.length)).then(function (bin) {
         var first = wrapKey || aesKey;
@@ -389,31 +413,63 @@
   /* Remember the fingerprint, then write. Large values on Android become one
      encrypted file under vault/; IDB only stores the pointer. Small values stay
      in IDB as pwd:/raw: the way the browser edition always has. */
-  function putPlain(key, plain, aesKey) {
+  function putPlain(key, plain, aesKey, knownHash) {
     var text = String(plain);
-    var hashP = sha16plain(text);
+    var largeBytes = nativeFs() && text.length > FS_LARGE ? te.encode(text) : null;
+    var hashP = typeof knownHash === "string" && knownHash.length === 16
+      ? Promise.resolve(knownHash)
+      : (largeBytes ? sha16bytes(largeBytes) : sha16plain(text));
     function remember() {
       return hashP.then(function (h) { return idbSet("h:" + key, h); });
     }
     return idbGet("v:" + key).then(function (stored) {
-      var cleared = stored ? dropPayloadFile(stored) : Promise.resolve();
-      return cleared.then(function () {
-        if (nativeFs() && text.length > FS_LARGE) {
+      if (largeBytes) {
           var k = wrapKey;
           if (!k) return Promise.reject(new Error("locked"));
-          return encryptBytes(te.encode(text), k).then(function (bin) {
-            var path = vaultPath(key);
+          return encryptBytes(largeBytes, k).then(function (bin) {
+            /* A unique destination makes the IndexedDB pointer the commit. The
+               previous file remains readable until the new encrypted file has
+               finished and the pointer has changed. */
+            var path = vaultPath(key) + "." + randomHex(8);
             return writeBin(path, bin).then(function () {
               return idbSet("v:" + key, BIN_MARK + path);
+            }).then(function () {
+              return stored ? dropPayloadFile(stored) : null;
             });
           });
-        }
-        var payloadP = aesKey
-          ? aesEncrypt(text, aesKey).then(function (b) { return "pwd:" + b; })
-          : Promise.resolve("raw:" + text);
-        return payloadP.then(function (payload) { return idbSet("v:" + key, payload); });
+      }
+      var payloadP = aesKey
+        ? aesEncrypt(text, aesKey).then(function (b) { return "pwd:" + b; })
+        : Promise.resolve("raw:" + text);
+      return payloadP.then(function (payload) {
+        return idbSet("v:" + key, payload);
+      }).then(function () {
+        return stored ? dropPayloadFile(stored) : null;
       });
     }).then(remember);
+  }
+
+  function putBinary(key, bytes, prefix, knownHash) {
+    if (!nativeFs()) return putPlain(key, String(prefix || "data:application/octet-stream;base64,") + b64encode(bytes), masterKey, knownHash);
+    var hashP = typeof knownHash === "string" && knownHash.length === 16
+      ? Promise.resolve(knownHash)
+      : sha16plain(String(prefix || "data:application/octet-stream;base64,") + b64encode(bytes));
+    return idbGet("v:" + key).then(function (stored) {
+      if (!wrapKey) throw new Error("locked");
+      return encryptBytes(bytes, wrapKey).then(function (sealed) {
+        var path = vaultPath(key) + "." + randomHex(8);
+        return writeBin(path, sealed).then(function () {
+          return idbSet("v:" + key, BIN2_MARK + JSON.stringify({
+            path: path,
+            prefix: String(prefix || "data:application/octet-stream;base64,")
+          }));
+        }).then(function () {
+          return stored ? dropPayloadFile(stored) : null;
+        });
+      });
+    }).then(function () {
+      return hashP.then(function (h) { return idbSet("h:" + key, h); });
+    });
   }
   function hashUtf8File(path) {
     /* Old 1.168–1.171 files are UTF-8 of "raw:"+dataURL. Read as bytes so we
@@ -430,7 +486,7 @@
     }).catch(function () { return null; });
   }
   function hashStored(stored) {
-    if (typeof stored === "string" && stored.indexOf(BIN_MARK) === 0) {
+    if (typeof stored === "string" && (stored.indexOf(BIN_MARK) === 0 || stored.indexOf(BIN2_MARK) === 0)) {
       return ensureWrapKey().then(function () {
         return plainFromStored(stored, masterKey);
       }).then(function (v) {
@@ -454,7 +510,7 @@
         chain = chain.then(function () {
           return idbGet("v:" + k).then(function (stored) {
             if (stored == null) return null;
-            if (typeof stored === "string" && (stored.indexOf(BIN_MARK) === 0 || stored.indexOf(FILE_MARK) === 0)) {
+            if (typeof stored === "string" && (stored.indexOf(BIN_MARK) === 0 || stored.indexOf(BIN2_MARK) === 0 || stored.indexOf(FILE_MARK) === 0)) {
               return null;
             }
             return plainFromStored(stored, oldKey).then(function (plain) {
@@ -498,6 +554,26 @@
       }).then(function () {
         return putPlain(key, value, masterKey);
       }).then(function () { return { key: key, value: value }; });
+    },
+    setWithHash: function (key, value, hash) {
+      return loadSecurity().then(function (s) {
+        if (s && !masterKey) throw new Error("locked");
+        return ensureWrapKey();
+      }).then(function () {
+        return ensureVaultDir();
+      }).then(function () {
+        return putPlain(key, value, masterKey, hash);
+      }).then(function () { return { key: key, value: value }; });
+    },
+    setBinary: function (key, bytes, prefix, hash) {
+      return loadSecurity().then(function (s) {
+        if (s && !masterKey) throw new Error("locked");
+        return ensureWrapKey();
+      }).then(function () {
+        return ensureVaultDir();
+      }).then(function () {
+        return putBinary(key, bytes, prefix, hash);
+      }).then(function () { return { key: key }; });
     },
     delete: function (key) {
       // gated like set: a locked vault that can still lose records is not locked

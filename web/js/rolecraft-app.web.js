@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.238";
+const APP_VERSION = "1.239";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.238";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.238 — current",
+  heading: "1.239 — current",
+  notes: ["Large Windows-to-Android vault copies now stream while the computer is still preparing them instead of waiting for the whole vault to be packed first. Each copy has its own isolated session, active traffic renews the sender automatically, and saved batches are acknowledged and removed from the computer as the copy proceeds, so a ten-minute cutoff or a full temporary folder can no longer end a healthy transfer.", "Pictures use a new authenticated binary frame between current Windows and Android builds. They no longer travel as base64 text inside JSON, reducing picture traffic by about a quarter before encryption. Android downloads through a native temporary file instead of asking the WebView bridge to hold and base64-copy a complete network response, retries brief Wi-Fi failures in place, checks free space before each batch and keeps both CPU and high-performance Wi-Fi awake while copying.", "Android now commits a replacement file before removing the previous encrypted copy. A failed save in Mirror mode also prevents all deletions, so an incomplete incoming copy cannot remove local-only records. Completed batches remain resumable by record if a device disconnects. Older versions can still merge through the compatible transfer path, but both devices need 1.239 for the streamed binary path. Windows needs the full installer and Android needs the new APK; the guide and changelog are included in both."]
+}, {
+  heading: "1.238",
   notes: ["Gallery Grid view is usable again on phones and tablets. Its editing controls now scroll out of the way instead of covering the pictures, every control fits the device width, and Small, Medium and Large use deliberate grids: 3, 2 and 1 pictures per row on phones; 4, 3 and 2 on tablets. Tapping a tile still opens the full picture, and selection, blur, albums, versions and reordering remain available.", "The Dashboard now draws at least eight gallery pictures when the vault has enough, completing rows for the current phone, tablet or Windows width and stopping at twelve. On Android, Start from anywhere and Recent work can be collapsed from their headings, and the choice is remembered on that device.", "Character and persona card size is back where it belongs in Settings instead of being repeated in each library toolbar. On phones Small now means exactly 3 cards per row, Medium 2, and Large 1. The in-app guide has been brought up to date for the current Windows, Android and web layouts, Dashboard behavior, gallery grids, transfers and biometric unlock, and it is now directly available from Android Settings. Android users need the 1.238 APK; Windows carries the same interface, guide and changelog in both the update file and full installer."]
 }, {
   heading: "1.237",
@@ -3181,7 +3184,7 @@ const GUIDE = [
         "On the other device, scan the QR that appears with the code, or type the code. What is sent is encrypted with a key made from it.",
         "Before anything is written you get a summary: which device is sending, which is receiving, and how many records will be added, overwritten or removed. Nothing happens until you confirm."
       ],
-      "Both devices show the same panel, and that is the thing worth knowing. Each one has a Share this vault button at the top and a Receive onto box underneath it, so each one also has its own mirror tick box. The tick box you are looking at belongs to the machine you are looking at, and decides what happens to that machine and nothing else. The other device's tick box has no bearing on it.",
+      "Windows can share or receive. Android receives from Windows, so its guided panel goes straight to the code scanner and preview. The mirror tick box always belongs to the receiving machine you are looking at, and decides what happens to that machine and nothing else.",
       "Mirroring is not something you start on its own, which is why there seems to be no button for it. It is a setting on a copy you are about to receive, so it does nothing until you type the other device's code into the box above it and press the button underneath, on that same machine.",
       [
         "On the device that has the writing, press Share this vault. It shows a one-time code and a QR and then waits. Nothing leaves it unless the other device asks, and nothing on it is changed by any of this.",
@@ -3190,7 +3193,8 @@ const GUIDE = [
       ],
       "A mirror then asks the other device as well, because it is the only thing that can delete anything. A box appears over there naming both machines and saying how many records would be copied, overwritten and deleted, and whoever is sitting at it can allow it, refuse it, or turn it around. Nothing is written anywhere until that is answered, and a question nobody answers counts as a refusal.",
       "Turning it around is there for the case you are worried about: you set it up the wrong way and notice on the other screen. Choosing it makes the machine that was sharing the one that gets overwritten instead, and it then shows its own summary and its own red confirm button before anything happens. You do not have to start again.",
-      "Both devices need this version for that. If the other one is older it cannot be asked, so mirroring stops and says so rather than going ahead without it. Merging is unaffected and works with any version, because it only ever adds and updates.",
+      "Current Windows and Android builds stream large copies in small authenticated batches. The phone can start saving while the computer prepares what comes next, brief Wi-Fi interruptions are retried, and active traffic keeps the one-time code alive. Pictures use a compact binary path rather than travelling as base64 text inside JSON. Keep the Windows sharing panel open until both devices say Complete.",
+      "Both devices need the current version for the faster streamed path and for mirror approval. If the other one is older it cannot be asked, so mirroring stops and says so rather than going ahead without it. Merging remains compatible with older versions, because it only ever adds and updates.",
       "The first press only compares the two vaults. It writes nothing and reports how many records would be added, overwritten and removed, naming both devices. If anything at all would be removed the confirm button turns red and says which device it is about to mirror onto. Press it again to go ahead, or close the panel and nothing has changed.",
       "A transfer is for making two machines hold the same library. There is no way to share only part of a vault: the device that shares offers all of it, and the other one takes whatever it is missing. To move a single character, persona, lorebook or prompt instead, export that one record to a file and import it on the other machine. That adds the one thing and touches nothing else."
     ]
@@ -3202,7 +3206,7 @@ const GUIDE = [
     "body": [
       "The Android app is the same library, on a device you can carry. It is a separate download from the releases page, a file ending in .apk, and it needs Android 8 or newer.",
       "Install a new one straight over the old one. Do not uninstall first: uninstalling takes that device's vault with it, because the vault lives inside the app.",
-      "A phone or tablet can receive a copy of your vault, but it cannot send one, so the computer is always the one that shares. Start on the Windows app, press Share this vault, and scan the QR with the phone. The rest works exactly as described in Moving to another device.",
+      "A phone or tablet can receive a copy of your vault, but it cannot send one, so the computer is always the one that shares. Start on the Windows app, press Share this vault, and scan the QR with the phone. During a large copy Android shows an ongoing notification and keeps Wi-Fi awake, so the screen may be turned off. Do not force-stop either app until both devices say Complete.",
       "Moving pictures around uses your finger rather than a mouse:",
       [
         "One finger on a picture moves it. Touch it and it answers, and it goes with your finger from the moment you move.",
@@ -12450,7 +12454,7 @@ function SettingsModal({
     style: { fontSize: 22, letterSpacing: 2, margin: "6px 0", wordBreak: "break-all" }
   }, xfer.code), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12.5, color: "var(--dim)", marginBottom: 10, lineHeight: 1.5 }
-  }, "On a phone: Settings, Transfer, Scan the code. Or type it. It pulls from ", thisDevice || "this device", "; nothing here is altered. Expires in about ", xfer.minutesLeft != null ? xfer.minutesLeft : 10, " minutes.")),
+  }, "On a phone: Settings, Transfer, Scan the code. Or type it. It pulls from ", thisDevice || "this device", "; nothing here is altered. The code closes after about ten quiet minutes, but an active copy keeps it open.")),
   /*#__PURE__*/React.createElement("div", { style: { flex: "0 0 auto" } },
     /*#__PURE__*/React.createElement(TransferQr, { text: xfer.code, size: 168 }),
     /*#__PURE__*/React.createElement("div", {

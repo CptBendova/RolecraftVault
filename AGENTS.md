@@ -138,11 +138,14 @@ Android transfer behavior must follow Capacitor's actual bridge contract:
 - receiver polling must eventually stop when the sender disappears.
 
 Modern receivers declare what the PC should pack: Android uses
-`/delta-start?mode=batches`, desktop uses `?mode=combined`, and no mode must keep
-building both for older clients. Batches in one pack may share the derived key
-only while every file keeps a unique AES-GCM IV. Do not report completion or
-remove the packed files until the authenticated `/delta-complete` arrives after
-the receiver has saved its records.
+`/delta-start?mode=stream-batches&id=<random>` with binary `RCVX3` frames,
+desktop uses `?mode=combined`, and no mode must keep building both legacy
+representations for older clients. Stream sessions own unique pack filenames,
+publish batches as they finish, retain no more than three unacknowledged files,
+and renew the sender's idle lease while active. Batches in one pack may share the
+derived key only while every file keeps a unique AES-GCM IV. Android acknowledges
+each processed batch with `/delta-ack`; do not report completion until the
+authenticated `/delta-complete` arrives after every record has saved.
 
 Read the transfer sections in `CLAUDE.md` and Capacitor's Android source before
 changing this protocol.
