@@ -687,10 +687,17 @@ panels, or Graphics setting.
   off-screen card reads. Android tablets carry a `.tablet` root class derived
   from their physical shortest screen edge; keep their Spotlight side by side
   even when WebView scaling puts the CSS viewport under the phone breakpoint.
+- A picture at or below 1000px can still exceed the phone's one-megabyte preview
+  guard and legitimately has no `th:` value because `makeThumb` does not rescale
+  it. Performance may fall back to the original for the one bounded Spotlight,
+  but do not weaken the guard for ordinary library cards or galleries.
 - Do not use `overflow-wrap: anywhere` on mobile modal buttons. It breaks even
   short words into vertical fragments when a segmented row gets narrow. Settings
   choice groups use explicit phone grids and `.settings-choice` keeps each label
   whole; longer ordinary actions may still wrap at spaces.
+- Responsive Electron checks use `useContentSize: true`; otherwise a framed
+  320px window has only 304px of renderer space and the test is not measuring the
+  width it names. Keep the exact 320px phone and 600px tablet-threshold cases.
 
 ## Testing notes
 
@@ -714,7 +721,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-qr-scanner.js` | the scanner's framing staying square on any screen |
 | `test-touch-targets.js` | controls staying big enough to hit with a finger |
 | `test-perf-mode.js` | what performance mode turns off |
-| `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Needs Electron |
+| `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Read the canvas `fillStyle`, not random anti-aliased pixels. Needs Electron |
 | `test-ui-layout-audit.js` | all primary screens, records and editors fitting phone/tablet/desktop/wide viewports; Dashboard hierarchy and picture count; working library card sizes; and five centred Android navigation cells. Needs Electron |
 | `test-device-unlock-screen.js` | a real locked Android render with biometric enrollment, including the unlock action. It catches component-scoped platform flags that only fail for protected vaults. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |

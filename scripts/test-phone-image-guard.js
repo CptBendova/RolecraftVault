@@ -5,7 +5,7 @@ const fs = require("fs");
 
 const SRC = fs.readFileSync(require("path").join(__dirname, "..", "app", "app.js"), "utf8").split("\n");
 /* find the block by its first and last lines rather than by number */
-const start = SRC.findIndex(l => l.trim() === "let allowFull = !ON_PHONE;");
+const start = SRC.findIndex(l => l.trim() === "const allowPriorityOriginal = priorityOriginals.current.has(imgId);");
 if (start < 0) throw new Error("could not find the guard");
 let end = start;
 while (end < SRC.length && SRC[end].trim() !== "imgLoading.current.delete(imgId);") end++;
@@ -22,7 +22,7 @@ const dataUrlSizeSrc = (() => {
   return SRC.slice(i, j + 1).join("\n");
 })();
 
-async function run({ onPhone, szValue, szThrows, actualBytes }) {
+async function run({ onPhone, priorityOriginal, szValue, szThrows, actualBytes }) {
   const reads = [];
   const writes = [];
   let cached = null;
@@ -36,8 +36,9 @@ async function run({ onPhone, szValue, szThrows, actualBytes }) {
   const sSet = async (k, v) => { writes.push(k + "=" + v); };
   const queueImg = (id, v) => { cached = v.length; };
   const body = dataUrlSizeSrc + "\nreturn (async () => {\n" + block + "\n return 'fellthrough'; })();";
-  const fn = new Function("ON_PHONE", "PHONE_CARD_MAX", "imgId", "sGet", "sSet", "queueImg", body);
-  await fn(onPhone, 1000000, "abc", sGet, sSet, queueImg);
+  const priorityOriginals = { current: new Set(priorityOriginal ? ["abc"] : []) };
+  const fn = new Function("ON_PHONE", "PHONE_CARD_MAX", "imgId", "sGet", "sSet", "queueImg", "priorityOriginals", body);
+  await fn(onPhone, 1000000, "abc", sGet, sSet, queueImg, priorityOriginals);
   return {
     readFull: reads.some(r => r.startsWith("img:")),
     cachedBytes: cached,
@@ -49,6 +50,7 @@ const MB = 1000000;
 const cases = [
   { name: "phone, size known small",    onPhone: true,  szValue: "500000",  actualBytes: 500000,  expect: { readFull: true,  cached: true,  learns: false } },
   { name: "phone, size known large",    onPhone: true,  szValue: "5000000", actualBytes: 5000000, expect: { readFull: false, cached: false, learns: false } },
+  { name: "phone, priority large",      onPhone: true,  priorityOriginal: true, szValue: "5000000", actualBytes: 5000000, expect: { readFull: true, cached: true, learns: false } },
   { name: "phone, size missing, small", onPhone: true,  szValue: null,      actualBytes: 400000,  expect: { readFull: true,  cached: true,  learns: true  } },
   { name: "phone, size missing, LARGE", onPhone: true,  szValue: null,      actualBytes: 9000000, expect: { readFull: true,  cached: false, learns: true  } },
   { name: "phone, size read throws",    onPhone: true,  szThrows: true,     actualBytes: 9000000, expect: { readFull: false, cached: false, learns: false } },

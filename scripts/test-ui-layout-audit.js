@@ -5,7 +5,7 @@
    Dashboard can still push a library control off a 360px phone, and a gallery
    that feels balanced there can turn into two dominant rows on a desktop.
 
-   This drives the real web bundle at the two layout extremes and checks:
+   This drives the real web bundle at phone, tablet and desktop boundaries and checks:
 
    - every primary destination and Settings stays inside the viewport;
    - record sheets stay inside their own scroller;
@@ -256,7 +256,7 @@ const AUDIT = `(async () => {
 })()`;
 
 async function at(width, height, android, performance) {
-  const win = new BrowserWindow({ show: false, width, height,
+  const win = new BrowserWindow({ show: false, width, height, useContentSize: true,
     webPreferences: android ? { preload: capPreload, contextIsolation: false,
       additionalArguments: [`--rcv-screen-width=${width}`, `--rcv-screen-height=${height}`] } : {} });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
@@ -272,7 +272,9 @@ async function at(width, height, android, performance) {
 
 app.whenReady().then(async () => {
   for (const size of [
+    { name: "320px Android Performance", w: 320, h: 568, android: true, performance: true },
     { name: "360px Android Performance", w: 360, h: 740, android: true, performance: true },
+    { name: "600px Android tablet threshold", w: 600, h: 960, android: true, performance: false },
     { name: "820px Android tablet", w: 820, h: 1050, android: true, performance: false },
     { name: "1280px desktop", w: 1280, h: 800, android: false },
     { name: "1920px wide desktop", w: 1920, h: 1080, android: false }
@@ -287,10 +289,10 @@ app.whenReady().then(async () => {
     }
     check("Settings opens and fits", r.settings.present && r.settings.overflow <= 1,
       "overflow=" + r.settings.overflow + "px");
-    if (size.w <= 760) {
+    if (size.android && !r.dashboard.tabletClass) {
       check("Settings choices keep whole horizontal labels", r.settings.choices.length === 13 &&
         r.settings.choices.every(item => item.lines === 1 && item.overflow <= 1 && item.wrap !== "anywhere"),
-        r.settings.choices.map(item => item.id + "=" + item.lines + " line(s)").join(", "));
+        r.settings.choices.map(item => item.id + "=" + item.lines + " line(s)/" + item.overflow + "px/" + item.wrap).join(", "));
       const widths = r.bottomNav.map(item => item.width);
       check("the Android bar has five equal destinations", r.bottomNav.length === 5 &&
         Math.max(...widths) - Math.min(...widths) <= 1 && r.bottomNav[0].left >= -1 &&

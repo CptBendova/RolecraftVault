@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.236";
+const APP_VERSION = "1.237";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.236";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.236 — current",
+  heading: "1.237 — current",
+  notes: ["Performance mode no longer leaves Dashboard Spotlight blank when a picture has no separate preview. This can happen legitimately with a detailed image that is under 1000 pixels but still larger than a megabyte. Only the visible Spotlight is allowed to fall back to that original; off-screen Android cards keep the same strict memory guard.", "The interface now fits an exact 320-pixel Android screen as well as modern wider phones. The Character editor and lorebook cards no longer run past the right edge, and the CharSnap theme and Maximum contrast choices stay readable instead of clipping or breaking into odd labels. Tablet and Windows layouts are unchanged.", "Quality mode's theme-animation check is now deterministic. It was sampling translucent anti-aliased dust pixels, so the same correct animation could randomly pass or fail a release build. The check now reads the colour the canvas actually drew. Android users need the 1.237 APK; Windows can use the smaller update file, and the full installer is also provided."]
+}, {
+  heading: "1.236",
   notes: ["Performance mode now loads the Dashboard Spotlight picture on Android. It used to skip the large original to save memory but forgot to request the lightweight preview instead, leaving the frame blank forever. Dashboard previews now jump ahead of queued off-screen library cards, with Spotlight first and the visible gallery following in order.", "The Android Dashboard now scales to the device instead of treating every screen alike. Phones show exactly two smaller gallery pictures side by side in one compact row. Tablets show more pictures across their wider canvas and keep Spotlight's artwork beside the character details, even when Android display scaling reports a narrower browser viewport. Android users need the 1.236 APK; Windows carries the same loading priority and changelog."]
 }, {
   heading: "1.235",
@@ -2558,6 +2561,13 @@ const CSS = `
        own lower edge and keep the device safe area entirely with the bar. */
     .rcv.phone .scrollbody.sheet { height: auto; bottom: calc(62px + env(safe-area-inset-bottom)) !important; padding-bottom: 24px !important; }
     .rcv.phone .toast { bottom: calc(74px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
+  }
+  @media (max-width: 330px) {
+    .rcv.phone .settings-theme-choices,
+    .rcv.phone .settings-contrast-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rcv.phone .character-editor-content { padding-left: 0 !important; padding-right: 0 !important; }
+    .rcv.phone .character-editor-actions { flex-wrap: wrap; max-width: 100%; min-width: 0; }
+    .rcv.phone .character-editor-columns > .card { width: 100% !important; min-width: 0 !important; }
   }
 `;
 
@@ -6774,7 +6784,7 @@ function LorebookPage({
   }, needle ? "No " + entriesNoun + " match that search." : "This " + bookNoun + " is empty — add your first " + entryNoun + "."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+      gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
       gap: 14
     }
   }, shown.map(e => /*#__PURE__*/React.createElement("div", {
@@ -9269,6 +9279,7 @@ function CharacterEditor({
     "aria-modal": "true",
     "aria-label": initial.createdAt ? "Edit character" : "New character"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "character-editor-content",
     style: {
       maxWidth: 1080,
       margin: "0 auto",
@@ -9293,6 +9304,7 @@ function CharacterEditor({
       fontWeight: 600
     }
   }, c.name || "Untitled character")), /*#__PURE__*/React.createElement("div", {
+    className: "character-editor-actions",
     style: {
       display: "flex",
       gap: 10
@@ -9356,6 +9368,7 @@ function CharacterEditor({
     className: "btn btn-ghost",
     onClick: () => { draft.clear(); onClose(); }
   }, "Discard changes"))), /*#__PURE__*/React.createElement("div", {
+    className: "character-editor-columns",
     style: {
       display: "flex",
       gap: 20,
@@ -14057,6 +14070,11 @@ function RolecraftVault() {
      so a burst asked for the same file repeatedly. A read that fails or finds
      nothing is taken back out, so it can still be retried later. */
   const imgLoading = useRef(new Set());
+  /* Performance normally refuses a large original when a preview is missing.
+     The bounded, visible Dashboard Spotlight is the exception: a sub-1000px
+     image can legitimately have no separate thumbnail while still exceeding
+     the byte guard, and leaving the first screen blank is not a useful saving. */
+  const priorityOriginals = useRef(new Set());
   const imgBuf = useRef({});
   const imgFlush = useRef(null);
   const imgOrder = useRef([]);
@@ -14144,9 +14162,10 @@ function RolecraftVault() {
           /* Full originals stay on disk on a phone unless there is no
              thumbnail and the original is small enough for a card. Loading
              every gallery original is what closed the app. */
-          let allowFull = !ON_PHONE;
+          const allowPriorityOriginal = priorityOriginals.current.has(imgId);
+          let allowFull = allowPriorityOriginal || !ON_PHONE;
           let sizeKnown = true;
-          if (ON_PHONE) {
+          if (ON_PHONE && !allowPriorityOriginal) {
             try {
               const n = Number(await sGet("sz:" + imgId));
               sizeKnown = Number.isFinite(n) && n > 0;
@@ -14161,7 +14180,7 @@ function RolecraftVault() {
             if (full) {
               const size = dataUrlSize(full);
               if (ON_PHONE && !sizeKnown) sSet("sz:" + imgId, String(size)).catch(() => {});
-              if (!ON_PHONE || size < PHONE_CARD_MAX) {
+              if (!ON_PHONE || allowPriorityOriginal || size < PHONE_CARD_MAX) {
                 queueImg(imgId, full);
                 return;
               }
@@ -14183,7 +14202,10 @@ function RolecraftVault() {
     imgQueue.current.push(imgId);
     pumpImg();
   }, [pumpImg]);
-  const loadImagesFirst = useCallback(ids => {
+  const loadImagesFirst = useCallback((ids, originalFallbacks) => {
+    /* Replace rather than accumulate: when Spotlight rotates, former Spotlight
+       pictures must go back behind the ordinary phone memory guard. */
+    priorityOriginals.current = new Set((originalFallbacks || []).filter(Boolean));
     const pending = [];
     (ids || []).forEach(imgId => {
       if (!imgId) return;
@@ -15840,7 +15862,8 @@ function RolecraftVault() {
     /* Even Performance must request the Spotlight preview. Queue every visible
        Dashboard picture as one priority batch so returning from a large library
        cannot leave the first screen waiting behind off-screen card thumbnails. */
-    loadImagesFirst(dashboardImagePriority(spotlight, wallVisible));
+    const dashboardImages = dashboardImagePriority(spotlight, wallVisible);
+    loadImagesFirst(dashboardImages, spotlight && spotlight.profileImg ? [spotlight.profileImg] : []);
     if (!PERF && spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
     const quick = [{

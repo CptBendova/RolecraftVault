@@ -57,18 +57,16 @@ const qualityProbe = `(async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const button = re => [...document.querySelectorAll("button")]
     .find(b => re.test((b.getAttribute("aria-label") || b.textContent || "").trim()));
-  const dominantDust = () => {
+  const drawnDust = () => {
     const canvas = document.querySelector(".dust-field");
     if (!canvas || !canvas.width || !canvas.height) return null;
-    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
-    const counts = new Map();
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 10) continue;
-      const key = data[i] + "," + data[i + 1] + "," + data[i + 2];
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    const best = [...counts].sort((a, b) => b[1] - a[1])[0];
-    return best ? best[0] : null;
+    /* Reading rasterised translucent edge pixels made this random: premultiplied
+       alpha rounding can shift a channel by more than the tolerance depending on
+       the last set of random mote radii. fillStyle is the exact colour used by
+       the real draw loop and still proves that a live theme switch rebuilt it. */
+    const fill = String(canvas.getContext("2d").fillStyle || "");
+    const rgb = fill.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
+    return rgb ? rgb.slice(1, 4).join(",") : null;
   };
   const snap = () => {
     const root = document.querySelector(".rcv");
@@ -76,7 +74,7 @@ const qualityProbe = `(async () => {
     const crest = document.querySelector(".crest-mark");
     return {
       theme: root.classList.contains("light") ? "light" : root.classList.contains("charsnap") ? "charsnap" : "dark",
-      dust: dominantDust(),
+      dust: drawnDust(),
       brass: getComputedStyle(root).getPropertyValue("--brass").trim(),
       ambientAnimation: glow ? getComputedStyle(glow).animationName : "missing",
       crestBefore: crest ? getComputedStyle(crest, "::before").animationName : "missing",

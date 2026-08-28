@@ -58,7 +58,8 @@ const gates = [
   ["fewer originals held", /FULL_CACHE_MAX = PERF \? 6/],
   ["previews budgeted", /IMG_CACHE_BYTES = PERF/],
   ["no reading ahead", /if \(!ready \|\| PERF\) return;/],
-  ["Dashboard previews are prioritised in every mode", /loadImagesFirst\(dashboardImagePriority\(spotlight, wallVisible\)\)/],
+  ["Dashboard previews are prioritised in every mode", /const dashboardImages = dashboardImagePriority\(spotlight, wallVisible\);[\s\S]{0,160}loadImagesFirst\(dashboardImages,/],
+  ["only visible Spotlight may bypass a missing preview", /loadImagesFirst\(dashboardImages, spotlight && spotlight\.profileImg/],
   ["Performance skips only the full Spotlight original", /if \(!PERF && spotlight/],
   ["the setting is offered", /\[\["quality", "Quality"\], \["performance", "Performance"\]\]/]
 ];

@@ -52,7 +52,12 @@ const scheduleStart = SRC.indexOf("const wallVisible = wallShow.slice");
 const scheduleEnd = SRC.indexOf("const reshuffle", scheduleStart);
 const schedule = SRC.slice(scheduleStart, scheduleEnd);
 check("the real Dashboard submits the priority batch in every graphics mode",
-  /loadImagesFirst\(dashboardImagePriority\(spotlight, wallVisible\)\)/.test(schedule));
+  /const dashboardImages = dashboardImagePriority\(spotlight, wallVisible\)/.test(schedule) &&
+  /loadImagesFirst\(dashboardImages,/.test(schedule));
+check("Spotlight alone may fall back to its original when no preview exists",
+  /spotlight && spotlight\.profileImg \? \[spotlight\.profileImg\] : \[\]/.test(schedule));
+check("a rotated Spotlight does not leave old originals exempt from the phone guard",
+  /priorityOriginals\.current = new Set\(\(originalFallbacks \|\| \[\]\)\.filter\(Boolean\)\)/.test(SRC));
 check("only the full original remains Quality-only",
   /if \(!PERF && spotlight && spotlight\.profileImg\) requestFull/.test(schedule));
 
