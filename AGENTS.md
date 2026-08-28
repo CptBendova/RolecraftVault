@@ -159,11 +159,18 @@ changing this protocol.
 - `GUIDE` is shared by all editions. Mark Windows-only features clearly, and do
   not use em dashes anywhere inside the guide text.
 - Runtime asset paths in `app.js` use `ASSET_BASE`, never bare relative paths.
+- Keep routine backup actions in Settings and urgent recovery on the Dashboard.
+  Character and persona libraries both use `.grid-cards`, with the size control
+  visible in each toolbar. The Android bar is exactly five equal cells; desktop
+  branding and side tools must be forcibly hidden there despite inline styles.
 - CharSnap export and import formats differ. Import variants use snake_case and a
   bare variant object; do not reuse the export shape.
 - The Android release package may rename and recompress resources. Verify icons
   by decoded image dimensions and visual inspection, not archive path or source
   PNG hash.
+- Exercise the locked Android screen with `deviceUnlockSet: true`. `LockScreen`
+  cannot read platform constants local to `RolecraftVault`; a clean unprotected
+  profile never renders that branch and will miss a release-blocking crash.
 
 ## Editing and test strategy
 

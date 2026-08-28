@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.233";
+const APP_VERSION = "1.234";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.233";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.233 — current",
+  heading: "1.234 — current",
+  notes: ["A password-protected Android vault with biometric unlock enrolled opens normally again. Its lock screen referred to an Android flag that existed only inside a different component, so precisely that real-device state fell into the safety screen with ‘ON_PHONE is not defined’ before the password or fingerprint buttons could be used. The vault was never changed by the failure.", "The Dashboard now keeps routine backup controls where they belong, in Settings under Backup & transfer. Only work that needs immediate recovery, such as a protected draft, appears at the top of the Dashboard.", "Dashboard art now supports the content instead of taking over the page: phones show two gallery pictures, wider layouts keep them to one responsive row capped at six, and picture labels remain readable on touch screens. The phone Spotlight, overview counts and every primary library, record and editor were audited for horizontal clipping from 360-pixel Android screens through wide Windows displays.", "Character and persona card size can now be changed directly in their library toolbars. The old option was buried in Settings, and persona cards did not respond to it at all; Small, Medium and Large now change both real grids consistently.", "Android's bottom navigation now uses five equal cells with every icon and label centred. The hidden desktop Rolecraft brand block no longer sits underneath the phone bar and pushes its destinations out of place. Windows and Android share the updated interface; Android users need the 1.234 APK."]
+}, {
+  heading: "1.233",
   notes: ["Opening a character on Android no longer lets the record sheet draw six pixels into the fixed bottom navigation. Character and persona pages, editors, lorebooks, prompts and the full picture grid now stop exactly above the complete bar and its device safe area, while the end of every page remains reachable.", "Fingerprint and face unlock now opens Android's system biometric prompt on the required UI thread. The first version called the main-thread-only prompt from Capacitor's background plugin worker, so a real phone could refuse it before anything appeared.", "Biometric setup no longer disappears without explanation when Android cannot provide a secure Class 3 fingerprint or face. Settings says whether enrollment, stronger hardware, a security update or a retry is needed, and vendor devices whose capability is reported as unknown are allowed to try the system prompt while all failed authentication still stays closed.", "Android users need the 1.233 APK for both fixes. The Windows and Android apps carry this same changelog entry; no Windows behavior changed in this release."]
 }, {
   heading: "1.232",
@@ -1866,6 +1869,15 @@ const timeAgo = ts => {
   if (days < 30) return days + "d ago";
   return new Date(ts).toLocaleDateString();
 };
+/* Gallery art is atmosphere, not the Dashboard's main job. A one-column phone
+   gets two pictures so the section still feels like a gallery; every wider
+   layout gets one row, capped at six so art cannot take over an ultrawide
+   screen. Kept as a named rule so the renderer audit can measure it. */
+function dashboardPictureLimit(columns, total) {
+  const cols = Math.max(1, Number(columns) || 1);
+  const available = Math.max(0, Number(total) || 0);
+  return Math.min(available, cols === 1 ? 2 : Math.min(cols, 6));
+}
 
 /* ---------- shared styles ---------- */
 const CSS = `
@@ -1990,6 +2002,7 @@ const CSS = `
   .rcv > .scrollbody.sheet { max-width: none; margin-left: 0; margin-right: 0; }
   /* Driven by a variable so the size can be chosen in Settings. */
   .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 180px), 1fr)); gap: 16px; }
+  .rcv .card-size-select { width: 156px; flex: 0 0 156px; }
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
   .rcv .char-card:hover { transform: translateY(-3px); border-color: var(--brass-line); }
@@ -2116,6 +2129,12 @@ const CSS = `
   .rcv .wtile { position: relative; border-radius: 13px; overflow: hidden; border: 1px solid var(--line);
     background: var(--placeholder); aspect-ratio: 3/4; }
   .rcv .wtile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rcv .wtile .tlab { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
+    padding: 28px 10px 9px; color: #eef1fb; font-size: 12px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: linear-gradient(180deg, rgba(5,8,17,0), rgba(5,8,17,.9));
+    opacity: 0; transition: opacity .15s; }
+  .rcv .wtile:hover .tlab, .rcv .wtile:focus-visible .tlab { opacity: 1; }
   .rcv .wtile .wacts { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 9px; align-items: center;
     justify-content: center; background: rgba(5,7,14,.58); opacity: 0; transition: opacity .15s; z-index: 1; }
   .rcv .wtile:hover .wacts, .rcv .wtile:focus-within .wacts { opacity: 1; }
@@ -2457,12 +2476,24 @@ const CSS = `
     .rcv .recovery-banner { align-items: flex-start; flex-direction: column; }
     .rcv .modal { padding: 20px 21px; max-height: calc(100vh - 20px); }
     .rcv .modal-title-row { align-items: center; }
-    .rcv.phone .sidebar { position: fixed !important; inset: auto 0 0 0; z-index: 12; width: 100% !important; height: calc(62px + env(safe-area-inset-bottom)); max-height: none !important; overflow: hidden; padding: 4px 4px env(safe-area-inset-bottom) !important; border: 0 !important; border-top: 1px solid var(--line) !important; background: color-mix(in srgb, var(--sidebg) 94%, transparent); backdrop-filter: blur(16px); }
-    .rcv.phone .sidebar .brand, .rcv.phone .sidebar .side-tools { display: none; }
-    .rcv.phone .sidebar .primary-nav { flex: 1 1 20%; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 10px; line-height: 1.05; }
-    .rcv.phone .sidebar .primary-nav .navlabel { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rcv.phone .sidebar { position: fixed !important; inset: auto 0 0 0; z-index: 12; width: 100% !important; height: calc(62px + env(safe-area-inset-bottom)); max-height: none !important; overflow: hidden; display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 !important; align-items: stretch; padding: 4px 4px env(safe-area-inset-bottom) !important; border: 0 !important; border-top: 1px solid var(--line) !important; background: color-mix(in srgb, var(--sidebg) 94%, transparent); backdrop-filter: blur(16px); }
+    /* Both blocks declare display inline for the desktop layout. The important
+       mobile override prevents them from occupying grid cells underneath the
+       five-destination Android bar. */
+    .rcv.phone .sidebar .brand, .rcv.phone .sidebar .side-tools { display: none !important; }
+    .rcv.phone .sidebar .primary-nav { width: auto; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 10px; line-height: 1.05; }
+    .rcv.phone .sidebar .primary-nav svg { display: block; flex: 0 0 auto; margin-left: auto; margin-right: auto; }
+    .rcv.phone .sidebar .primary-nav .navlabel { display: block; width: 100%; max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
     .rcv.phone .sidebar .primary-nav.active { box-shadow: inset 0 2px 0 var(--brass); }
     .rcv.phone .phone-topbar { display: flex; }
+    .rcv.phone .dashboard-counts { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .rcv.phone .dashboard-spotlight { height: auto !important; flex-direction: column; }
+    .rcv.phone .dashboard-spotlight .spotlight-image { width: 100% !important; min-width: 0 !important; height: min(72vw, 260px) !important; flex: 0 0 auto; }
+    .rcv.phone .dashboard-spotlight .spotlight-copy { min-width: 0 !important; padding: 18px !important; display: block !important; }
+    .rcv.phone .dashboard-spotlight .spotlight-prose { max-height: 180px; margin-top: 10px; }
+    .rcv.phone .wtile .tlab { opacity: 1; }
+    .rcv.phone .wtile .wacts { display: none; }
+    .rcv.phone .card-size-select { width: 100%; flex: 1 1 156px; }
     .rcv.phone .modal { max-width: calc(100vw - 42px); }
     .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
     .rcv.phone .qr-stage { width: 100vw; height: 100vh; }
@@ -3202,6 +3233,11 @@ function LockScreen({
   tone
 }) {
   const view = useViewSize();
+  /* LockScreen is outside RolecraftVault, so it cannot read that component's
+     local ON_PHONE flag. This branch only rendered after a real Android vault
+     reported an enrolled biometric, which is why clean startup tests missed
+     the ReferenceError and the password screen itself could not be drawn. */
+  const onPhone = typeof window !== "undefined" && !!window.Capacitor;
   const pinMode = authState.pinSet;
   const [mode, setMode] = useState(pinMode ? "pin" : "password");
   const pin = mode === "pin";
@@ -3341,7 +3377,7 @@ function LockScreen({
     style: { width: "100%", marginTop: 10 },
     disabled: busy,
     onClick: unlockDevice
-  }, ON_PHONE ? "Unlock with fingerprint or face" : "Unlock with Windows Hello"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
+  }, onPhone ? "Unlock with fingerprint or face" : "Unlock with Windows Hello"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
       background: "none",
@@ -11297,6 +11333,22 @@ function TransferWizard({ onClose, onVaultReplaced, onAdvanced }) {
   }, body);
 }
 
+function CardSizeSelect({ value, onChange, noun }) {
+  return /*#__PURE__*/React.createElement("select", {
+    className: "card-size-select",
+    value: value,
+    onChange: e => onChange(e.target.value),
+    "aria-label": noun + " card size",
+    title: "Change how many cards fit in each row"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "small"
+  }, "Small cards"), /*#__PURE__*/React.createElement("option", {
+    value: "medium"
+  }, "Medium cards"), /*#__PURE__*/React.createElement("option", {
+    value: "large"
+  }, "Large cards"));
+}
+
 function SettingsModal({
   onOpenTrash,
   onOpenHistory,
@@ -13467,7 +13519,7 @@ function RolecraftVault() {
   const [wallTick, setWallTick] = useState(0);
   const wallHoverRef = useRef(false);
   const wallRef = useRef(null);
-  const [wallCols, setWallCols] = useState(4);
+  const [wallCols, setWallCols] = useState(6);
   useEffect(() => {
     const measure = () => {
       const el = wallRef.current;
@@ -13494,7 +13546,7 @@ function RolecraftVault() {
       window.removeEventListener("resize", measure);
       if (ro) ro.disconnect();
     };
-  }, [view]);
+  }, [view, ready]);
   const DASH_KEYS = ["quick", "spotlight", "favorites", "recent", "wall"];
   const [dashOrder, setDashOrderRaw] = useState(DASH_KEYS);
   useEffect(() => {
@@ -15569,6 +15621,7 @@ function RolecraftVault() {
        reader to read out but eight identical buttons. */
     title: n.label,
     "aria-label": n.label,
+    "data-nav-id": n.id,
     onClick: () => setView(n.id)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: n.icon,
@@ -15706,7 +15759,7 @@ function RolecraftVault() {
     }
     const off = wall.length > 1 ? wallTick % wall.length : 0;
     const wallShow = wall.slice(off).concat(wall.slice(0, off)).slice(0, 18);
-    const wallVisible = wallShow.slice(0, Math.max(1, wallCols) * 2);
+    const wallVisible = wallShow.slice(0, dashboardPictureLimit(wallCols, wallShow.length));
     wallVisible.forEach(w => w.imgId && loadImage(w.imgId));
     if (!PERF && spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
@@ -15866,7 +15919,7 @@ function RolecraftVault() {
     }, dashHead(id, label), children);
     const dashSections = {
       spotlight: spotlight ? dashSection("spotlight", "Spotlight", /*#__PURE__*/React.createElement(React.Fragment, null, spotlight && /*#__PURE__*/React.createElement("div", {
-        className: "card",
+        className: "card dashboard-spotlight",
         style: {
           display: "flex",
           overflow: "hidden",
@@ -15874,7 +15927,7 @@ function RolecraftVault() {
           height: 460
         }
       }, /*#__PURE__*/React.createElement("div", {
-        className: "tile",
+        className: "tile spotlight-image",
         style: {
           width: "min(280px, 34%)",
           minWidth: 210,
@@ -15901,6 +15954,7 @@ function RolecraftVault() {
           display: "block"
         }
       })), /*#__PURE__*/React.createElement("div", {
+        className: "spotlight-copy",
         style: {
           flex: 3,
           padding: "22px 26px",
@@ -15931,7 +15985,7 @@ function RolecraftVault() {
         key: t,
         className: "chip"
       }, t))), /*#__PURE__*/React.createElement("div", {
-        className: "scrollbody",
+        className: "scrollbody spotlight-prose",
         style: {
           flex: 1,
           minHeight: 0,
@@ -16104,7 +16158,7 @@ function RolecraftVault() {
         className: "card favorite-card",
         onClick: () => openLibraryItem(x)
       }, /*#__PURE__*/React.createElement("span", { className: "eyebrow" }, x.type), /*#__PURE__*/React.createElement("strong", null, x.label), x.group && /*#__PURE__*/React.createElement("small", null, x.group))))) : null,
-      wall: wallShow.length > 0 ? dashSection("wall", "From your galleries", /*#__PURE__*/React.createElement(React.Fragment, null, wallShow.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      wall: wallShow.length > 0 ? dashSection("wall", "From your galleries · " + wallVisible.length + (wallVisible.length === 1 ? " picture" : " pictures"), /*#__PURE__*/React.createElement(React.Fragment, null, wallShow.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
         onMouseEnter: () => {
           wallHoverRef.current = true;
         },
@@ -16112,9 +16166,10 @@ function RolecraftVault() {
           wallHoverRef.current = false;
         },
         ref: wallRef,
+        "data-dashboard-gallery": "true",
         style: {
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(clamp(200px, 16vw, 280px), 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(clamp(200px, 16vw, 280px), 1fr))",
           gap: 14,
           rowGap: 14,
           overflow: "hidden"
@@ -16209,6 +16264,7 @@ function RolecraftVault() {
         fontSize: 14
       }
     }, "Build, organise and refine your roleplay library.")), /*#__PURE__*/React.createElement("div", {
+      className: "dashboard-counts",
       style: {
         display: "grid",
         gridTemplateColumns: "repeat(4, auto)",
@@ -16235,12 +16291,9 @@ function RolecraftVault() {
         color: "var(--mut)",
         marginTop: 1
       }
-    }, label))))), (backupDue || drafts.length > 0) && /*#__PURE__*/React.createElement("div", {
+    }, label))))), drafts.length > 0 && /*#__PURE__*/React.createElement("div", {
       className: "dashboard-health"
-    }, backupDue && /*#__PURE__*/React.createElement("button", {
-      className: "card health-action",
-      onClick: () => askExport("a full vault backup", exportAll)
-    }, /*#__PURE__*/React.createElement("strong", null, "Back up your latest work"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Your vault changed since the last verified backup." : "No verified backup is recorded yet.")), drafts.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
       className: "card health-action drafts-action"
     }, /*#__PURE__*/React.createElement("strong", null, drafts.length + " recoverable draft" + (drafts.length === 1 ? "" : "s")), drafts.slice(0, 3).map(d => /*#__PURE__*/React.createElement("button", { key: d.key, className: "btn btn-ghost", onClick: () => openDraft(d) }, (d.label || "Untitled") + " · " + (d.type || "record"))))), dashOrderChanged && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -16329,7 +16382,11 @@ function RolecraftVault() {
     value: "updated"
   }, "Recently updated"), /*#__PURE__*/React.createElement("option", {
     value: "name"
-  }, "Name A–Z")), /*#__PURE__*/React.createElement("button", {
+  }, "Name A–Z")), /*#__PURE__*/React.createElement(CardSizeSelect, {
+    value: cardSize,
+    onChange: applyCardSize,
+    noun: "Character"
+  }), /*#__PURE__*/React.createElement("button", {
     className: "btn " + (selectMode ? "btn-brass" : "btn-ghost"),
     style: {
       flexShrink: 0
@@ -16928,8 +16985,11 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement("option", { value: "newest" }, "Newest first"),
     /*#__PURE__*/React.createElement("option", { value: "oldest" }, "Oldest first"),
     /*#__PURE__*/React.createElement("option", { value: "updated" }, "Recently updated"),
-    /*#__PURE__*/React.createElement("option", { value: "name" }, "Name A\u2013Z")),
-    /*#__PURE__*/React.createElement("button", {
+    /*#__PURE__*/React.createElement("option", { value: "name" }, "Name A\u2013Z")), /*#__PURE__*/React.createElement(CardSizeSelect, {
+      value: cardSize,
+      onChange: applyCardSize,
+      noun: "Persona"
+    }), /*#__PURE__*/React.createElement("button", {
       className: "btn " + (pSelMode ? "btn-brass" : "btn-ghost"),
       onClick: () => {
         if (pSelMode) {
@@ -17272,11 +17332,7 @@ function RolecraftVault() {
         fontSize: 14
       }
     }, needle ? "No personas match that search." : pBucketFilter !== null ? "No personas in this bucket." : "No personas yet. Add one to describe who you play as.")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-        gap: 16
-      }
+      className: "grid-cards"
     }, shown.map(p => /*#__PURE__*/React.createElement("div", {
       key: p.id,
       className: "char-card",

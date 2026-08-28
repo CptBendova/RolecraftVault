@@ -657,6 +657,27 @@ Performance and reduced-motion remove it through the same global gates. Run the
 real renderer check below whenever changing the theme root, ambient layer, crest,
 panels, or Graphics setting.
 
+### Responsive dashboard and library hierarchy (1.234)
+
+- A routine backup is a Settings concern. Keep export, restore, transfer and
+  backup health together under **Backup & transfer**; reserve the Dashboard's
+  health area for something the user can recover immediately, such as a draft.
+- Dashboard gallery art is deliberately bounded by `dashboardPictureLimit`:
+  two pictures in a one-column phone layout, otherwise one measured row capped
+  at six. The ResizeObserver must attach after `ready`, because the Dashboard
+  ref does not exist during the loading render.
+- Character and persona card size controls live in both library toolbars. Both
+  libraries must use `.grid-cards`; a local hard-coded persona grid silently
+  ignored the shared `--card-min` preference.
+- The phone sidebar is exactly five equal grid cells. Its desktop `.brand` and
+  `.side-tools` children have inline display styles, so the phone override must
+  win explicitly or the Rolecraft crest and name occupy cells under the Android
+  bar and push navigation off centre.
+- At 360px, Spotlight stacks image above prose, Dashboard counts use two columns,
+  and gallery labels remain visible without hover. Audit every primary screen,
+  record, editor and Settings for page overflow as a set; they do not share all
+  their layout rules.
+
 ## Testing notes
 
 `npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits
@@ -680,6 +701,8 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-touch-targets.js` | controls staying big enough to hit with a finger |
 | `test-perf-mode.js` | what performance mode turns off |
 | `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Needs Electron |
+| `test-ui-layout-audit.js` | all primary screens, records and editors fitting phone/tablet/desktop/wide viewports; Dashboard hierarchy and picture count; working library card sizes; and five centred Android navigation cells. Needs Electron |
+| `test-device-unlock-screen.js` | a real locked Android render with biometric enrollment, including the unlock action. It catches component-scoped platform flags that only fail for protected vaults. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |
 | `scan-js.js` | assignment to a `const` binding — a runtime TypeError `node --check` cannot see. One of these killed every phone copy in 1.173. Takes file paths; scope-aware, and skips strings, templates, comments and regex |
 | `test-update-assets.js` | the crest failing to load under an active patch (rule 6). Needs Electron; `NO_BASE=1` simulates a shell older than 1.192 |
@@ -793,6 +816,10 @@ Still worth doing: moving them into `tests/`.
   `BiometricPrompt` through `getBridge().executeOnMainThread`; its API is
   main-thread-only. Treat `BIOMETRIC_STATUS_UNKNOWN` as worth trying, and return
   the exact unavailable reason to Settings instead of silently hiding the feature.
+- `LockScreen` is a separate component from `RolecraftVault`. It must derive its
+  Android label from its own prop or platform check, never the `ON_PHONE` const
+  local to `RolecraftVault`; that crashes only after native status reports an
+  enrolled biometric, before either unlock path can be used.
 - Windows Hello gates a DPAPI-protected copy of that same derived vault key.
   Every non-`Verified` OS result fails closed. Do not replace the fixed WinRT
   script with renderer-controlled PowerShell input.
