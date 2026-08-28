@@ -629,6 +629,30 @@ section, run it, and screenshot with PowerShell `CopyFromScreen`. Call
 `SetProcessDPIAware()` first or the window rectangle comes back in the wrong
 coordinate space and the capture is cropped.
 
+## Graphics modes and theme motion (1.230)
+
+Quality and Performance are resource contracts, not only CSS choices. Four
+details are easy to miss because the screen can look correct while the browser
+keeps doing unnecessary work:
+
+- Do not preload the crest film into a detached video. `CrestMark` creates the
+  real video only when a large live crest is visible in Quality; Performance
+  must not download or initialise a decoder for it.
+- Canvas dust takes its colour from the current theme. Pass the theme through as
+  a dependency so switching Dark, Light and CharSnap rebuilds the motes with the
+  new `--brass` value immediately, without a reload.
+- Pausing dust means cancelling its pending animation frame. A loop that keeps
+  requesting a frame and merely skips drawing still wakes the renderer sixty
+  times a second under every panel. Resume it when the library is visible again.
+- Reduced motion includes pseudo-elements. The crest breathes and gleams through
+  `::before` and `::after`, so the media rule must still those as well as ordinary
+  elements.
+
+Short entrance motion for panels belongs to Quality and is theme-neutral.
+Performance and reduced-motion remove it through the same global gates. Run the
+real renderer check below whenever changing the theme root, ambient layer, crest,
+panels, or Graphics setting.
+
 ## Testing notes
 
 `npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits
@@ -651,6 +675,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-qr-scanner.js` | the scanner's framing staying square on any screen |
 | `test-touch-targets.js` | controls staying big enough to hit with a finger |
 | `test-perf-mode.js` | what performance mode turns off |
+| `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |
 | `scan-js.js` | assignment to a `const` binding — a runtime TypeError `node --check` cannot see. One of these killed every phone copy in 1.173. Takes file paths; scope-aware, and skips strings, templates, comments and regex |
 | `test-update-assets.js` | the crest failing to load under an active patch (rule 6). Needs Electron; `NO_BASE=1` simulates a shell older than 1.192 |

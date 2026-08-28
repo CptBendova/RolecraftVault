@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.229";
+const APP_VERSION = "1.230";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.229";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.229 — current",
+  heading: "1.230 — current",
+  notes: ["Quality mode has had a full visual pass on Windows and Android in Dark, Light and CharSnap. The drifting dust now changes colour immediately with the theme instead of keeping the colour from the theme the app opened with. Panels also arrive with a short, restrained fade and lift so opening Settings, the guide or an editor feels less abrupt.", "Performance mode now does no hidden crest-film work. A detached video used to be loaded even though Performance never showed it; that unused download, memory and decoder work are gone. The dust animation also stops scheduling frames while a panel or record covers it, then resumes cleanly when the library is visible again.", "Reduced motion now covers the crest's breathing glow and travelling gleam as well as ordinary elements. Quality keeps its full motion when motion is welcome; Performance and the system reduced-motion setting leave every decorative animation still.", "The shipped Windows interface and Android-sized layout were checked across all themes and both graphics modes, including the Settings controls at a 360-pixel phone width. The APK and Windows app carry this same changelog entry."]
+}, {
+  heading: "1.229",
   notes: ["Copying a vault from a computer to Android is faster, especially when there are many pictures. The computer used to build and encrypt both a phone-sized set of batches and a second whole-vault file even though the phone only used the batches. It now prepares only what the receiving device needs.", "Large copies spend much less time repeating security work. The pairing key is derived once for the transfer instead of again for every small batch, while every batch still has its own fresh encryption IV and authentication. Ordinary batches also cross Android's native bridge in one request instead of several smaller requests.", "The sending computer now says Complete only after the receiving device confirms that its records were saved, rather than when the vault merely became ready to share. Its temporary packed files are removed immediately after that confirmation instead of waiting for the sharing screen to close or expire.", "Windows needs the full installer because the sending code is part of the app itself. Android needs the new APK to use the faster receiving path. Older versions remain compatible and can still copy in either pairing."]
 }, {
   heading: "1.228",
@@ -2134,8 +2137,17 @@ const CSS = `
     .rcv .cpage-aside .tile.full { grid-column: auto; aspect-ratio: 1; }
   }
   .rcv .modal-back { position: fixed; inset: 0; background: var(--overlay); backdrop-filter: blur(4px);
-    display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
-  .rcv .modal { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; padding: 26px; }
+    display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px;
+    animation: rcv-backdrop-in .16s ease-out; }
+  .rcv .modal { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; padding: 26px;
+    /* Do not retain the final transform after the entrance: fixed overlays such
+       as the QR scanner must stay relative to the viewport, not this panel. */
+    animation: rcv-modal-in .2s cubic-bezier(.2,.8,.2,1); }
+  @keyframes rcv-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes rcv-modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
   .rcv .lbl { display: block; font-size: 12px; color: var(--mut); margin: 0 0 6px 2px; font-weight: 600; }
   .rcv .row { display: flex; gap: 12px; }
   .rcv .row > * { flex: 1; }
@@ -2268,7 +2280,9 @@ const CSS = `
   @keyframes kb1 { from { transform: scale(1.13) translate(1.2%, -0.8%); } to { transform: scale(1.04) translate(-0.5%, 0.8%); } }
   @keyframes kb2 { from { transform: scale(1.05) translate(-1.4%, -0.5%); } to { transform: scale(1.14) translate(1%, 0.7%); } }
   @keyframes kb3 { from { transform: scale(1.15) translate(0, 0.8%); } to { transform: scale(1.05) translate(0, -0.6%); } }
-  @media (prefers-reduced-motion: reduce) { .rcv * { transition: none !important; animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) {
+    .rcv *, .rcv *::before, .rcv *::after { transition: none !important; animation: none !important; }
+  }
   /* Performance mode. Everything here is either motion or a compositing effect
      that costs a full-screen pass to draw. The colours, spacing and type are
      untouched: it should look like the same app sitting still, not a plainer
@@ -2396,16 +2410,11 @@ function preloadBrandMedia() {
   const b = new Image();
   b.src = CREST_1024;
   if (b.decode) b.decode().catch(function () {});
-  window.__rcvBrand = { a, b, v: null };
-  const v = document.createElement("video");
-  v.muted = true;
-  v.defaultMuted = true;
-  v.playsInline = true;
-  v.setAttribute("playsinline", "");
-  v.preload = "auto";
-  v.src = CREST_LOOP;
-  try { v.load(); } catch (e) {}
-  window.__rcvBrand.v = v;
+  /* The film used to be preloaded into a detached video that CrestMark never
+     reused. That spent bandwidth, memory and decoder work even in Performance
+     mode. The real video element now loads only when a large live crest is
+     actually rendered in Quality mode. */
+  window.__rcvBrand = { a, b };
 }
 if (typeof window !== "undefined") preloadBrandMedia();
 function useViewSize() {
@@ -2473,10 +2482,12 @@ function CrestMark({
 }
 function DustField({
   count = 55,
-  paused = false
+  paused = false,
+  tone = ""
 }) {
   const ref = useRef(null);
   const pausedRef = useRef(paused);
+  const controlRef = useRef(null);
   pausedRef.current = paused;
   useEffect(() => {
     const c = ref.current;
@@ -2514,13 +2525,10 @@ function DustField({
         d: Math.random() * 0.5
       });
     }
-    let on = true;
-    let hidden = document.hidden;
-    const vis = () => { hidden = document.hidden; };
-    const tick = () => {
-      if (!on) return;
-      requestAnimationFrame(tick);
-      if (hidden || pausedRef.current) return;
+    let on = true, hidden = document.hidden, reduced = false, raf = 0;
+    const motion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduced = !!(motion && motion.matches);
+    const draw = () => {
       ctx.clearRect(0, 0, w(), h());
       for (const m of motes) {
         m.y -= m.s;
@@ -2535,15 +2543,52 @@ function DustField({
         ctx.fill();
       }
     };
-    tick();
-    window.addEventListener("resize", size);
+    const pause = () => {
+      if (!raf) return;
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    const wake = () => {
+      if (!on || hidden || reduced || pausedRef.current || raf) return;
+      raf = requestAnimationFrame(tick);
+    };
+    function tick() {
+      raf = 0;
+      if (!on || hidden || reduced || pausedRef.current) return;
+      draw();
+      wake();
+    }
+    const resize = () => { size(); draw(); };
+    const vis = () => {
+      hidden = document.hidden;
+      if (hidden) pause(); else wake();
+    };
+    const motionChanged = () => {
+      reduced = !!motion.matches;
+      if (reduced) pause(); else wake();
+    };
+    draw();
+    controlRef.current = { pause, wake };
+    wake();
+    window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", vis);
+    if (motion && motion.addEventListener) motion.addEventListener("change", motionChanged);
+    else if (motion && motion.addListener) motion.addListener(motionChanged);
     return () => {
       on = false;
-      window.removeEventListener("resize", size);
+      pause();
+      if (controlRef.current && controlRef.current.pause === pause) controlRef.current = null;
+      window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", vis);
+      if (motion && motion.removeEventListener) motion.removeEventListener("change", motionChanged);
+      else if (motion && motion.removeListener) motion.removeListener(motionChanged);
     };
-  }, [count]);
+  }, [count, tone]);
+  useEffect(() => {
+    const control = controlRef.current;
+    if (!control) return;
+    if (paused) control.pause(); else control.wake();
+  }, [paused]);
   return /*#__PURE__*/React.createElement("canvas", {
     ref: ref,
     className: "dust-field",
@@ -2552,7 +2597,8 @@ function DustField({
 }
 function AmbientLayer({
   dust = 36,
-  paused = false
+  paused = false,
+  tone = ""
 }) {
   const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   /* Not merely stilled: the canvas and its animation frame are never created. */
@@ -2564,7 +2610,8 @@ function AmbientLayer({
     className: "amb-glow"
   }), /*#__PURE__*/React.createElement(DustField, {
     count: dust,
-    paused: paused
+    paused: paused,
+    tone: tone
   }));
 }
 /* What a field costs, and when it is sent. The class matters more than the
@@ -3003,7 +3050,8 @@ function PinPad({
 }
 function LockScreen({
   authState,
-  onUnlocked
+  onUnlocked,
+  tone
 }) {
   const view = useViewSize();
   const pinMode = authState.pinSet;
@@ -3050,7 +3098,8 @@ function LockScreen({
       zIndex: 90
     }
   }, !PERF && /*#__PURE__*/React.createElement(DustField, {
-    count: 70
+    count: 70,
+    tone: tone
   }), /*#__PURE__*/React.createElement("div", {
     className: "lock-glow",
     "aria-hidden": "true"
@@ -14455,6 +14504,7 @@ function RolecraftVault() {
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(LockScreen, {
     authState: authState,
+    tone: theme,
     onUnlocked: () => setAuthState(a => ({
       ...a,
       locked: false
@@ -14539,7 +14589,8 @@ function RolecraftVault() {
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(AmbientLayer, {
     dust: 40,
-    paused: overlayOpen || sheetOpen
+    paused: overlayOpen || sheetOpen,
+    tone: theme
   }), /*#__PURE__*/React.createElement("div", {
     className: "sidebar",
     style: {
