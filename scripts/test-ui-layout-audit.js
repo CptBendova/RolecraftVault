@@ -11,12 +11,14 @@
    - record sheets stay inside their own scroller;
    - backup remains in Settings instead of impersonating an urgent Dashboard
      warning;
-   - the Dashboard gallery shows two compact pictures in one phone row, gives a
-     tablet more pictures, and stays capped on wider screens;
+   - the Dashboard gallery shows at least eight pictures when available and
+     fills complete rows for phone, tablet and desktop widths;
    - Performance mode still loads Spotlight first, and tablet Spotlight keeps
      its picture beside the writing; and
-   - character-card sizing is visible where character and persona cards live,
-     and really changes the grid.
+   - character-card sizing lives only in Settings and gives a phone exactly
+     three, two or one card per row; and
+   - the real gallery Grid fits, scrolls, opens a picture, and uses distinct
+     phone and tablet column counts.
 
    Needs Electron: npx electron scripts/test-ui-layout-audit.js */
 const { app, BrowserWindow } = require("electron");
@@ -63,7 +65,7 @@ const SEED = `(async () => {
     const portrait = "portrait-" + i, gallery = [];
     await s.set("img:" + portrait, ${JSON.stringify(pixel)});
     await s.set("th:" + portrait, ${JSON.stringify(pixel)});
-    for (let g = 0; g < 2; g++) {
+    for (let g = 0; g < 8; g++) {
       const id = "gallery-" + i + "-" + g;
       await s.set("img:" + id, ${JSON.stringify(pixel)});
       await s.set("th:" + id, ${JSON.stringify(pixel)});
@@ -96,7 +98,7 @@ const SEED = `(async () => {
   ]));
   await s.set("ui:cardsize", "medium");
   await s.set("ui:onboarded", "1");
-  await s.set("ui:lastseenversion", ${JSON.stringify("1.236")});
+  await s.set("ui:lastseenversion", ${JSON.stringify("1.238")});
   await s.delete("ui:lastbackup");
 })()`;
 
@@ -131,12 +133,6 @@ const AUDIT = `(async () => {
   const layer = el => ({ present: visible(el),
     overflow: el ? Math.max(0, el.scrollWidth - el.clientWidth) : 999,
     outside: el ? (() => { const r = el.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1; })() : true });
-  const choose = async (select, value) => {
-    if (!select) return;
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await sleep(250);
-  };
   const out = { screens: [] };
   await sleep(1700);
 
@@ -158,13 +154,24 @@ const AUDIT = `(async () => {
     galleryColumns: columns(gallery),
     galleryRows,
     largestGalleryTile: galleryTiles.length ? Math.max(...galleryTiles.map(el => el.getBoundingClientRect().width)) : 0,
-    galleryTotal: 24,
+    galleryTotal: 18,
     spotlightObjectFit: spotlightImage ? getComputedStyle(spotlightImage).objectFit : "missing",
     spotlightLoaded: !!(spotlightImage && spotlightImage.complete && spotlightImage.naturalWidth > 0),
     spotlightDirection: spotlight ? getComputedStyle(spotlight).flexDirection : "missing",
     spotlightPictureBesideCopy: !!(pictureRect && copyRect && pictureRect.right <= copyRect.left + 1),
     tabletClass: !!(root && root.classList.contains("tablet"))
   };
+  const collapseButtons = [...document.querySelectorAll("[data-dashboard-collapse]")];
+  out.dashboardCollapse = { buttons: collapseButtons.map(el => el.getAttribute("data-dashboard-collapse")) };
+  for (const id of ["quick", "recent"]) {
+    const control = document.querySelector('[data-dashboard-collapse="' + id + '"]');
+    if (!control) continue;
+    control.click(); await sleep(120);
+    const section = document.querySelector('[data-dashboard-section="' + id + '"]');
+    out.dashboardCollapse[id] = !!(section && section.getAttribute("data-dashboard-collapsed") === "true" &&
+      control.getAttribute("aria-expanded") === "false" && section.children.length === 1);
+    control.click(); await sleep(120);
+  }
   const navItems = [...document.querySelectorAll(".sidebar .primary-nav")];
   const sidebarBrand = document.querySelector(".sidebar .brand");
   const sidebarTools = document.querySelector(".sidebar .side-tools");
@@ -191,19 +198,41 @@ const AUDIT = `(async () => {
     return new Set(tops).size;
   };
   out.settings = { present: visible(modal), overflow: modal ? Math.max(0, modal.scrollWidth - modal.clientWidth) : 999,
+    cardChoices: [...document.querySelectorAll('[data-settings-choice^="card-"]')].filter(visible).length,
+    guideAvailable: !!button(/^Guide$/),
     choices: [...document.querySelectorAll('[data-settings-choice]')].map(el => ({
       id: el.getAttribute('data-settings-choice'), lines: choiceTextLines(el),
       overflow: Math.max(0, el.scrollWidth - el.clientWidth), wrap: getComputedStyle(el).overflowWrap
     })) };
-  button(/^Close$/).click(); await sleep(250);
+  const closeSettings = () => {
+    const back = document.querySelector('.modal-back');
+    if (back) back.click();
+  };
+  closeSettings();
+  await sleep(250);
 
-  button(/^Characters$/).click(); await sleep(500);
+  const setLibraryCards = async value => {
+    const open = button(/^Settings$/); if (open) open.click();
+    await sleep(220);
+    const choice = document.querySelector('[data-settings-choice="card-' + value + '"]');
+    if (choice) choice.click();
+    await sleep(180);
+    closeSettings();
+    await sleep(220);
+  };
+
+  const charactersNav = button(/^Characters$/);
+  if (!charactersNav) throw new Error("Characters navigation unavailable after Settings; modals=" +
+    [...document.querySelectorAll('.modal-back')].map(el => (el.textContent || '').trim().slice(0, 80)).join(' | ') +
+    "; body=" + (document.body.innerText || '').trim().slice(0, 500) +
+    "; buttons=" + [...document.querySelectorAll('button')].filter(visible).map(el => (el.getAttribute('aria-label') || el.textContent || '').trim()).slice(0, 20).join(', '));
+  charactersNav.click(); await sleep(500);
   out.screens.push(fit("Characters"));
   const cselect = document.querySelector('select[aria-label="Character card size"]');
-  const cgrid = document.querySelector(".grid-cards");
-  out.characterSize = { present: visible(cselect), medium: columns(cgrid) };
-  await choose(cselect, "small"); out.characterSize.small = columns(cgrid);
-  await choose(cselect, "large"); out.characterSize.large = columns(cgrid);
+  out.characterSize = { toolbarControl: visible(cselect) };
+  await setLibraryCards("medium"); out.characterSize.medium = columns(document.querySelector(".grid-cards"));
+  await setLibraryCards("small"); out.characterSize.small = columns(document.querySelector(".grid-cards"));
+  await setLibraryCards("large"); out.characterSize.large = columns(document.querySelector(".grid-cards"));
   button(/^New character$/).click(); await sleep(350);
   out.characterEditor = layer(document.querySelector(".scrollbody.sheet"));
   button(/^Cancel$/).click(); await sleep(250);
@@ -212,16 +241,50 @@ const AUDIT = `(async () => {
   await sleep(450);
   const charSheet = document.querySelector('.scrollbody.sheet[aria-label^="Character "]');
   out.characterSheet = { present: visible(charSheet), overflow: charSheet ? Math.max(0, charSheet.scrollWidth - charSheet.clientWidth) : 999 };
+  const openGrid = button(/^Grid$/); if (openGrid) openGrid.click();
+  await sleep(500);
+  const gridView = document.querySelector('.image-grid-view');
+  const gridHeader = document.querySelector('.image-grid-header');
+  out.imageGrid = {
+    present: visible(gridView),
+    overflow: gridView ? Math.max(0, gridView.scrollWidth - gridView.clientWidth) : 999,
+    outside: gridView ? (() => { const r = gridView.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1; })() : true,
+    headerPosition: gridHeader ? getComputedStyle(gridHeader).position : "missing",
+    columns: {}
+  };
+  for (const size of ["small", "medium", "large"]) {
+    const sizeButton = [...document.querySelectorAll('.image-grid-size-controls button')]
+      .find(el => (el.textContent || "").trim().toLowerCase() === size);
+    if (sizeButton) sizeButton.click();
+    await sleep(150);
+    out.imageGrid.columns[size] = columns(document.querySelector('.image-grid-view .imggrid'));
+  }
+  if (gridView && gridHeader) {
+    gridView.scrollTop = gridHeader.offsetHeight;
+    await sleep(120);
+    const firstTile = gridView.querySelector('.imggrid .tile');
+    const tr = firstTile && firstTile.getBoundingClientRect();
+    out.imageGrid.tileVisibleAfterScroll = !!(tr && tr.bottom > 0 && tr.top < innerHeight);
+    if (firstTile) firstTile.click();
+    await sleep(180);
+    out.imageGrid.opensPicture = visible(document.querySelector('.lb-root'));
+    const closeLightbox = document.querySelector('.lb-root [aria-label="Close"]');
+    if (closeLightbox) closeLightbox.click();
+    await sleep(120);
+    const closeGrid = document.querySelector('.image-grid-close');
+    if (closeGrid) closeGrid.click();
+    await sleep(180);
+  }
   const closeCharacter = button(/^Close character$/); if (closeCharacter) closeCharacter.click();
   await sleep(250);
 
   button(/^Personas$/).click(); await sleep(500);
   out.screens.push(fit("Personas"));
   const pselect = document.querySelector('select[aria-label="Persona card size"]');
-  const pgrid = document.querySelector(".grid-cards");
-  out.personaSize = { present: visible(pselect), medium: columns(pgrid) };
-  await choose(pselect, "small"); out.personaSize.small = columns(pgrid);
-  await choose(pselect, "large"); out.personaSize.large = columns(pgrid);
+  out.personaSize = { toolbarControl: visible(pselect) };
+  await setLibraryCards("medium"); out.personaSize.medium = columns(document.querySelector(".grid-cards"));
+  await setLibraryCards("small"); out.personaSize.small = columns(document.querySelector(".grid-cards"));
+  await setLibraryCards("large"); out.personaSize.large = columns(document.querySelector(".grid-cards"));
   button(/^New persona$/).click(); await sleep(350);
   out.personaEditor = layer(document.querySelector('.modal[aria-label="New persona"]'));
   button(/^Cancel$/).click(); await sleep(250);
@@ -289,6 +352,8 @@ app.whenReady().then(async () => {
     }
     check("Settings opens and fits", r.settings.present && r.settings.overflow <= 1,
       "overflow=" + r.settings.overflow + "px");
+    check("card size lives in Settings with all three choices", r.settings.cardChoices === 3);
+    check("the current guide is reachable from Settings", r.settings.guideAvailable);
     if (size.android && !r.dashboard.tabletClass) {
       check("Settings choices keep whole horizontal labels", r.settings.choices.length === 13 &&
         r.settings.choices.every(item => item.lines === 1 && item.overflow <= 1 && item.wrap !== "anywhere"),
@@ -306,35 +371,57 @@ app.whenReady().then(async () => {
         "object-fit=" + r.dashboard.spotlightObjectFit);
       check("Performance mode loads the Spotlight picture", r.dashboard.spotlightLoaded,
         "loaded=" + r.dashboard.spotlightLoaded);
-      check("the phone gallery is one compact two-picture row",
-        r.dashboard.galleryPictures === 2 && r.dashboard.galleryColumns === 2 && r.dashboard.galleryRows === 1 && r.dashboard.largestGalleryTile < 180,
+      check("the phone Dashboard shows eight compact pictures two per row",
+        r.dashboard.galleryPictures === 8 && r.dashboard.galleryColumns === 2 && r.dashboard.galleryRows === 4 && r.dashboard.largestGalleryTile < 180,
         `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns} rows=${r.dashboard.galleryRows} tile=${Math.round(r.dashboard.largestGalleryTile)}px`);
+      check("phone card sizes are exactly three, two and one per row",
+        r.characterSize.small === 3 && r.characterSize.medium === 2 && r.characterSize.large === 1 &&
+          r.personaSize.small === 3 && r.personaSize.medium === 2 && r.personaSize.large === 1,
+        `characters=${r.characterSize.small}/${r.characterSize.medium}/${r.characterSize.large} personas=${r.personaSize.small}/${r.personaSize.medium}/${r.personaSize.large}`);
+      check("phone Grid sizes are exactly three, two and one per row",
+        r.imageGrid.columns.small === 3 && r.imageGrid.columns.medium === 2 && r.imageGrid.columns.large === 1,
+        `small=${r.imageGrid.columns.small} medium=${r.imageGrid.columns.medium} large=${r.imageGrid.columns.large}`);
     } else if (size.android) {
       check("Android tablet is classified by its physical screen", r.dashboard.tabletClass);
       check("tablet Spotlight keeps the picture beside its writing",
         r.dashboard.spotlightDirection === "row" && r.dashboard.spotlightPictureBesideCopy,
         `direction=${r.dashboard.spotlightDirection} beside=${r.dashboard.spotlightPictureBesideCopy}`);
-      check("tablet shows more gallery pictures than a phone",
-        r.dashboard.galleryPictures > 2 && r.dashboard.galleryColumns > 2,
+      check("tablet Dashboard shows at least eight pictures in wider rows",
+        r.dashboard.galleryPictures >= 8 && r.dashboard.galleryColumns > 2,
         `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns}`);
+      check("tablet Grid sizes are exactly four, three and two per row",
+        r.imageGrid.columns.small === 4 && r.imageGrid.columns.medium === 3 && r.imageGrid.columns.large === 2,
+        `small=${r.imageGrid.columns.small} medium=${r.imageGrid.columns.medium} large=${r.imageGrid.columns.large}`);
     } else {
       check("wide Spotlight remains edge-to-edge", r.dashboard.spotlightObjectFit === "cover",
         "object-fit=" + r.dashboard.spotlightObjectFit);
     }
     check("backup is kept out of the Dashboard warning area", !r.dashboard.backupAtTop);
     const expectedPictures = Math.min(r.dashboard.galleryTotal,
-      r.dashboard.galleryColumns <= 1 ? 2 : Math.min(r.dashboard.galleryColumns, 6));
+      Math.min(12, Math.max(8, Math.ceil(8 / Math.max(1, r.dashboard.galleryColumns)) * Math.max(1, r.dashboard.galleryColumns))));
     check("the Dashboard gallery uses a deliberate responsive picture count",
       r.dashboard.galleryPictures === expectedPictures,
       `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns} expected=${expectedPictures}`);
-    check("character card size is available in the Characters library", r.characterSize.present);
-    if (r.characterSize.present) check("character card size changes the real grid",
+    check("Start from anywhere and Recent work collapse only on Android",
+      size.android ? r.dashboardCollapse.buttons.sort().join(",") === "quick,recent" &&
+        r.dashboardCollapse.quick && r.dashboardCollapse.recent : r.dashboardCollapse.buttons.length === 0,
+      "buttons=" + r.dashboardCollapse.buttons.join(","));
+    check("character card size is absent from the Characters toolbar", !r.characterSize.toolbarControl);
+    check("character card size changes the real grid",
       r.characterSize.small > r.characterSize.large,
       `small=${r.characterSize.small} medium=${r.characterSize.medium} large=${r.characterSize.large}`);
-    check("persona card size is available in the Personas library", r.personaSize.present);
-    if (r.personaSize.present) check("persona card size changes the real grid",
+    check("persona card size is absent from the Personas toolbar", !r.personaSize.toolbarControl);
+    check("persona card size changes the real grid",
       r.personaSize.small > r.personaSize.large,
       `small=${r.personaSize.small} medium=${r.personaSize.medium} large=${r.personaSize.large}`);
+    check("the image Grid opens and fits horizontally",
+      r.imageGrid.present && r.imageGrid.overflow <= 1 && !r.imageGrid.outside,
+      `overflow=${r.imageGrid.overflow}px outside=${r.imageGrid.outside}`);
+    check("the image Grid scroll reaches pictures and a tile opens",
+      r.imageGrid.tileVisibleAfterScroll && r.imageGrid.opensPicture);
+    check("the image Grid header scrolls away only on Android",
+      size.android ? r.imageGrid.headerPosition !== "sticky" : r.imageGrid.headerPosition === "sticky",
+      "position=" + r.imageGrid.headerPosition);
     check("a character sheet opens and fits", r.characterSheet.present && r.characterSheet.overflow <= 1,
       "overflow=" + r.characterSheet.overflow + "px");
     check("a persona sheet opens and fits", r.personaSheet.present && r.personaSheet.overflow <= 1,

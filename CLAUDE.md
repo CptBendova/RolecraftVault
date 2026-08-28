@@ -657,21 +657,27 @@ Performance and reduced-motion remove it through the same global gates. Run the
 real renderer check below whenever changing the theme root, ambient layer, crest,
 panels, or Graphics setting.
 
-### Responsive dashboard and library hierarchy (1.234)
+### Responsive dashboard, libraries and image grid (1.238)
 
 - A routine backup is a Settings concern. Keep export, restore, transfer and
   backup health together under **Backup & transfer**; reserve the Dashboard's
   health area for something the user can recover immediately, such as a draft.
 - Dashboard gallery art is deliberately bounded by `dashboardPictureLimit`:
-  phones use two compact columns and show exactly two pictures, tablets use a
-  smaller tile minimum and show more than a phone, and wider layouts keep one
-  measured row capped at six. Initialise the measured column count from the
-  device class so the first render does not briefly queue six phone pictures.
-  The ResizeObserver must attach after `ready`, because the Dashboard ref does
-  not exist during the loading render.
-- Character and persona card size controls live in both library toolbars. Both
-  libraries must use `.grid-cards`; a local hard-coded persona grid silently
-  ignored the shared `--card-min` preference.
+  every device gets at least eight pictures when that many exist, rounded up to
+  a complete measured row and capped at twelve. Phones use two compact columns;
+  tablets and desktop widths get totals that fit their measured columns.
+  Initialise the measured column count from the device class so the first render
+  does not briefly queue desktop quantities on a phone. The ResizeObserver must
+  attach after `ready`, because the Dashboard ref does not exist during the
+  loading render.
+- On Android, **Start from anywhere** and **Recent work** are the only Dashboard
+  sections that collapse. Their state is device-local and Reset layout clears
+  it along with the custom section order.
+- Character and persona card size is a Settings choice, not a library-toolbar
+  control. Both libraries use `.grid-cards`; a local hard-coded persona grid
+  silently ignored the shared preference. The root carries `cards-small`,
+  `cards-medium` or `cards-large`; an Android phone must render exactly 3, 2 or
+  1 card per row respectively.
 - The phone sidebar is exactly five equal grid cells. Its desktop `.brand` and
   `.side-tools` children have inline display styles, so the phone override must
   win explicitly or the Rolecraft crest and name occupy cells under the Android
@@ -698,6 +704,11 @@ panels, or Graphics setting.
 - Responsive Electron checks use `useContentSize: true`; otherwise a framed
   320px window has only 304px of renderer space and the test is not measuring the
   width it names. Keep the exact 320px phone and 600px tablet-threshold cases.
+- The image grid's editing header is sticky on desktop but must scroll away on
+  Android; stacked variant and album tools otherwise leave no viewport for the
+  pictures. Phone Small/Medium/Large is exactly 3/2/1 columns and tablet is
+  exactly 4/3/2. The whole tile already opens the image, so Android hides the
+  duplicate corner open button and keeps Select and Blur in opposite corners.
 
 ## Testing notes
 

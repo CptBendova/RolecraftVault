@@ -35,6 +35,19 @@ check("phone hides the side arrows", /\.rcv\.phone \.lb-side/.test(SRC));
 check("grid tile size is an option", /rcv-gridsize/.test(SRC) && /GRID_TILE\[tileSize\]/.test(SRC));
 check("grid cells stay square", /\.rcv \.imggrid \.tile \{ aspect-ratio: 1;/.test(SRC));
 check("grid pictures keep their shape inside the cell", /\.rcv \.imggrid \.tile img[\s\S]{0,80}object-fit: contain/.test(SRC));
+check("Android lets the editing header scroll away from the pictures",
+  /\.rcv\.phone \.image-grid-header \{ position: relative !important;/.test(SRC));
+check("phone grid sizes are three, two and one columns",
+  /phone:not\(\.tablet\) \.image-grid-view\.grid-size-small \.imggrid \{ grid-template-columns: repeat\(3,/.test(SRC) &&
+  /phone:not\(\.tablet\) \.image-grid-view\.grid-size-medium \.imggrid \{ grid-template-columns: repeat\(2,/.test(SRC) &&
+  /phone:not\(\.tablet\) \.image-grid-view\.grid-size-large \.imggrid \{ grid-template-columns: minmax\(0, 1fr\)/.test(SRC));
+check("tablet grid sizes are four, three and two columns",
+  /phone\.tablet \.image-grid-view\.grid-size-small \.imggrid \{ grid-template-columns: repeat\(4,/.test(SRC) &&
+  /phone\.tablet \.image-grid-view\.grid-size-medium \.imggrid \{ grid-template-columns: repeat\(3,/.test(SRC) &&
+  /phone\.tablet \.image-grid-view\.grid-size-large \.imggrid \{ grid-template-columns: repeat\(2,/.test(SRC));
+check("the Android grid removes the redundant open overlay",
+  /className: "blurbtn grid-open-btn"/.test(SRC) &&
+  /\.rcv\.phone \.image-grid-view \.grid-open-btn \{ display: none !important;/.test(SRC));
 
 console.log("\nwhat the grid shows:\n");
 check("drag is still wired", /onDrop: e => \{[\s\S]{0,260}onMoveImage\(from, it\.imgId\)/.test(SRC));

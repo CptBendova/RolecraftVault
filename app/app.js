@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.237";
+const APP_VERSION = "1.238";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.237";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.237 — current",
+  heading: "1.238 — current",
+  notes: ["Gallery Grid view is usable again on phones and tablets. Its editing controls now scroll out of the way instead of covering the pictures, every control fits the device width, and Small, Medium and Large use deliberate grids: 3, 2 and 1 pictures per row on phones; 4, 3 and 2 on tablets. Tapping a tile still opens the full picture, and selection, blur, albums, versions and reordering remain available.", "The Dashboard now draws at least eight gallery pictures when the vault has enough, completing rows for the current phone, tablet or Windows width and stopping at twelve. On Android, Start from anywhere and Recent work can be collapsed from their headings, and the choice is remembered on that device.", "Character and persona card size is back where it belongs in Settings instead of being repeated in each library toolbar. On phones Small now means exactly 3 cards per row, Medium 2, and Large 1. The in-app guide has been brought up to date for the current Windows, Android and web layouts, Dashboard behavior, gallery grids, transfers and biometric unlock, and it is now directly available from Android Settings. Android users need the 1.238 APK; Windows carries the same interface, guide and changelog in both the update file and full installer."]
+}, {
+  heading: "1.237",
   notes: ["Performance mode no longer leaves Dashboard Spotlight blank when a picture has no separate preview. This can happen legitimately with a detailed image that is under 1000 pixels but still larger than a megabyte. Only the visible Spotlight is allowed to fall back to that original; off-screen Android cards keep the same strict memory guard.", "The interface now fits an exact 320-pixel Android screen as well as modern wider phones. The Character editor and lorebook cards no longer run past the right edge, and the CharSnap theme and Maximum contrast choices stay readable instead of clipping or breaking into odd labels. Tablet and Windows layouts are unchanged.", "Quality mode's theme-animation check is now deterministic. It was sampling translucent anti-aliased dust pixels, so the same correct animation could randomly pass or fail a release build. The check now reads the colour the canvas actually drew. Android users need the 1.237 APK; Windows can use the smaller update file, and the full installer is also provided."]
 }, {
   heading: "1.236",
@@ -1878,14 +1881,15 @@ const timeAgo = ts => {
   if (days < 30) return days + "d ago";
   return new Date(ts).toLocaleDateString();
 };
-/* Gallery art is atmosphere, not the Dashboard's main job. Phones deliberately
-   use two compact columns, tablets use smaller tiles across their wider canvas,
-   and every layout is capped at six so art cannot take over the page. Kept as a
-   named rule so the renderer audit can measure it. */
+/* Give the gallery enough room to feel like a gallery. Every device gets at
+   least eight pictures when eight exist, rounded up to a complete measured row
+   where possible. Phones use four compact two-picture rows; wider devices grow
+   toward two rows and stop at twelve so the Dashboard remains bounded. */
 function dashboardPictureLimit(columns, total) {
   const cols = Math.max(1, Number(columns) || 1);
   const available = Math.max(0, Number(total) || 0);
-  return Math.min(available, cols === 1 ? 2 : Math.min(cols, 6));
+  const completeRows = Math.ceil(8 / cols) * cols;
+  return Math.min(available, Math.min(12, Math.max(8, completeRows)));
 }
 
 /* A busy preview queue can contain hundreds of library cards when someone
@@ -2028,9 +2032,12 @@ const CSS = `
      than the viewport and left the library visible around it. Nothing behind a
      sheet should be visible through it, whatever the reading column is set to. */
   .rcv > .scrollbody.sheet { max-width: none; margin-left: 0; margin-right: 0; }
-  /* Driven by a variable so the size can be chosen in Settings. */
+  /* Driven by a variable so the size can be chosen in Settings. Android phones
+     get exact counts below; min-width alone made Medium and Large both one. */
   .rcv .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 180px), 1fr)); gap: 16px; }
-  .rcv .card-size-select { width: 156px; flex: 0 0 156px; }
+  .rcv.phone:not(.tablet).cards-small .grid-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .rcv.phone:not(.tablet).cards-medium .grid-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .rcv.phone:not(.tablet).cards-large .grid-cards { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .rcv .char-card { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
     background: var(--panel); cursor: pointer; transition: transform .15s, border-color .15s; aspect-ratio: 3/4; }
   .rcv .char-card:hover { transform: translateY(-3px); border-color: var(--brass-line); }
@@ -2229,6 +2236,41 @@ const CSS = `
   .rcv .imggrid .tile { aspect-ratio: 1; background: transparent; border-color: transparent; }
   .rcv .imggrid .tile img { width: 100%; height: 100%; object-fit: contain; }
   .rcv .imggrid .tile:hover img, .rcv .cpage-aside .tile:hover img { transform: none; }
+  /* The image grid's desktop header can hold several editing toolbars. Keeping
+     that whole block sticky on Android left almost no viewport for pictures.
+     Let it scroll away there, arrange the primary controls deliberately, and
+     use device-sized column counts instead of desktop pixel minimums. */
+  .rcv.phone .image-grid-header { position: relative !important; padding: 12px 14px !important; }
+  .rcv.phone .image-grid-mainbar { align-items: stretch !important; gap: 8px !important; }
+  .rcv.phone .image-grid-title { order: 1; flex: 1 1 calc(100% - 58px); min-width: 0; }
+  .rcv.phone .image-grid-title .serif { font-size: 18px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rcv.phone .image-grid-close { order: 2; flex: 0 0 48px; padding-left: 8px; padding-right: 8px; }
+  .rcv.phone .image-grid-size-controls,
+  .rcv.phone .image-grid-bulk-actions { width: 100%; display: grid !important; gap: 8px !important; }
+  .rcv.phone .image-grid-size-controls { order: 3; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: center; }
+  .rcv.phone .image-grid-size-controls .chip { width: 100%; min-width: 0; padding-left: 6px; padding-right: 6px; }
+  .rcv.phone .image-grid-bulk-actions { order: 4; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rcv.phone .image-grid-bulk-actions .btn { width: 100%; min-width: 0; padding-left: 6px; padding-right: 6px; white-space: normal; }
+  .rcv.phone .image-grid-filter-row { min-width: 0; }
+  .rcv.phone .image-grid-row-actions { margin-left: 0 !important; width: 100%; display: grid !important; grid-template-columns: 1fr; }
+  .rcv.phone .image-grid-row-actions input,
+  .rcv.phone .image-grid-row-actions select,
+  .rcv.phone .image-grid-row-actions .btn { width: 100% !important; min-width: 0; max-width: 100%; }
+  .rcv.phone .image-grid-content { padding: 14px 14px 80px !important; }
+  .rcv.phone:not(.tablet) .image-grid-view.grid-size-small .imggrid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; }
+  .rcv.phone:not(.tablet) .image-grid-view.grid-size-medium .imggrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  .rcv.phone:not(.tablet) .image-grid-view.grid-size-large .imggrid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
+  .rcv.phone.tablet .image-grid-view.grid-size-small .imggrid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .rcv.phone.tablet .image-grid-view.grid-size-medium .imggrid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px !important; }
+  .rcv.phone.tablet .image-grid-view.grid-size-large .imggrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 14px !important; }
+  /* Tapping the tile already opens it. Removing the duplicate open control frees
+     a corner, and moving Blur opposite Select keeps 48px targets from colliding
+     even in a three-column phone grid. */
+  .rcv.phone .image-grid-view .grid-open-btn { display: none !important; }
+  .rcv.phone .image-grid-view .gridsel { left: auto !important; right: 8px !important; }
+  .rcv.phone .image-grid-view .imggrid .tile > .blurbtn:not(.grid-open-btn) { top: auto !important; right: 8px !important; bottom: 8px !important; }
+  .rcv.phone:not(.tablet) .image-grid-view.grid-size-small .grid-image-badge,
+  .rcv.phone:not(.tablet) .image-grid-view.grid-size-small .imggrid .tlab { display: none; }
   @media (max-width: 1120px) {
     .rcv .cpage-grid { grid-template-columns: 1fr; }
     .rcv .cpage-aside { position: static; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
@@ -2543,7 +2585,6 @@ const CSS = `
     .rcv.phone.tablet .dashboard-spotlight .spotlight-copy { min-width: 0 !important; padding: 20px !important; display: flex !important; }
     .rcv.phone .wtile .tlab { opacity: 1; }
     .rcv.phone .wtile .wacts { display: none; }
-    .rcv.phone .card-size-select { width: 100%; flex: 1 1 156px; }
     .rcv.phone .modal { max-width: calc(100vw - 42px); }
     .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: break-word; word-break: normal; white-space: normal; }
     .rcv.phone .settings-choice-row { display: grid !important; gap: 8px; }
@@ -2915,13 +2956,14 @@ const GUIDE = [
       "Rolecraft Vault is a private library for the writing behind your roleplay: characters, the personas you play as, lorebooks, and reusable prompts. It keeps them together, lets you edit them properly, and hands them to CharSnap when you want to publish.",
       "Nothing leaves this device. The interface has no way of reaching the internet at all. It cannot sync, phone home, or send a crash report, because the code that would do it is not there. The one exception is the device transfer you start yourself, covered later in this guide.",
       [
-        "The column on the left moves between the four libraries: Characters, Personas, Lorebooks and Prompts.",
-        "Stats, the theme, locking the vault, this guide and Settings sit at the bottom of that column.",
+        "On Windows and the web edition, the column on the left moves between the Dashboard and the four libraries: Characters, Personas, Lorebooks and Prompts.",
+        "On Android those same five destinations sit in the bottom bar. Search, locking and Settings sit in the top bar, and this guide can always be opened from Settings.",
+        "On Windows and the web edition, Stats, the theme, locking, this guide and Settings sit at the bottom of the left column.",
         "The theme button changes the look of the app, and Settings has a reading text size of Small, Medium or Large if the writing feels too small.",
         "Escape closes whatever is open, and every window also has an X in its top corner.",
         "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
       ],
-      "Rolecraft Vault comes in two forms: the Windows app, and a web edition that runs in a browser. They are the same library and behave the same way, but two things belong to the Windows app alone: copying your vault to another device, and installing updates. In the web edition those panels are simply not there, and this guide says so where each one comes up."
+      "Rolecraft Vault comes as a Windows app, an Android app, and a web edition that runs in a browser. They share the same library and interface. Windows can share a vault over local Wi-Fi and install signed update files, Android can receive that transfer and updates from an APK, and the web edition uses backup files instead."
     ]
   },
   {
@@ -2967,7 +3009,8 @@ const GUIDE = [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
         "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
-        "In the grid, Small, Medium and Large change how big the tiles are. The mouse wheel zooms a picture you have opened, on a computer as well as a phone.",
+        "In grid view, Small, Medium and Large change how many pictures fit. A phone uses 3, 2 or 1 per row; a tablet uses 4, 3 or 2; Windows fits as many as its current width allows. The controls scroll away on Android so they do not cover the gallery.",
+        "The mouse wheel zooms a picture you have opened, on a computer as well as a phone.",
         "In the grid the cells stay in even squares so nothing jumps around, but each picture is shown in its own shape, 2:3 or 16:9 or whatever it is. The rest of the cell is empty, not cropped and not filled in.",
         "Open a picture from the grid to see it full screen. Pinch or double-tap to zoom in. Swipe to the next one. On a phone there are no arrows at the sides, because the swipe is the way.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
@@ -3026,7 +3069,9 @@ const GUIDE = [
         "The search box on each library screen looks through names, tags, terms and the writing itself. Ctrl+K on Windows searches every kind at once and also runs common actions.",
         "The star beside any Ctrl+K result keeps it in Favourites on the dashboard, so a large library can keep its most-used records close.",
         "Select, at the top of the Characters and Personas screens, turns on tick boxes. With several picked you can move them all into one bucket at once, or delete them together. A group deletion goes to the bin exactly as a single one does.",
-        "The dashboard can be reordered, and Spotlight picks a character at random each time you open it."
+        "The dashboard can be reordered, and Spotlight picks a character at random each time you open it.",
+        "From your galleries shows at least eight pictures when your vault has enough, then adjusts the total to make complete rows for the device. Wider screens can show up to twelve.",
+        "On Android, Start from anywhere and Recent work can be collapsed from their headings when you want a shorter Dashboard. The choice is remembered on that device."
       ]
     ]
   },
@@ -3121,7 +3166,7 @@ const GUIDE = [
         "Opening a character still shows its pictures at full size in either setting."
       ],
       "The app chooses one for you the first time it runs, going by what your device reports about its memory and its processor. Change it whenever you like. It is remembered, and it applies from the lock screen onwards rather than only once you are inside.",
-      "Reading text size, Card size and Text contrast sit in the same panel. The 200% reading option is there for large text without browser zoom. Card size decides how large characters and personas look in the library, so a smaller card fits more of them on screen at once."
+      "Reading text size, Card size and Text contrast sit in the same panel. The 200% reading option is there for large text without browser zoom. Card size is changed only in Settings and applies to both Characters and Personas. On a phone, Small is 3 cards per row, Medium is 2, and Large is 1; tablets and Windows fit the chosen size to their wider screens."
     ]
   },
   {
@@ -3166,11 +3211,11 @@ const GUIDE = [
         "Putting a second finger down while you are moving a picture sets it back where it was and scrolls instead, so nothing is moved by accident.",
         "A quick tap opens a picture, as it always has. Pinch or double-tap that picture to zoom in.",
         "An S Pen on a tablet does the same as a finger: tap to open, drag to move, hover to see the buttons on a tile. Two fingers still scroll.",
-        "The character page does not keep a strip of pictures down the side. Open Grid to see them, and change how big they are with Small, Medium or Large at the top."
+        "The character page does not keep a strip of pictures down the side. Open Grid to see them. Small, Medium and Large show 3, 2 or 1 pictures per row on a phone and 4, 3 or 2 on a tablet, and the controls scroll away as you browse."
       ],
       "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
-      "A tablet is given more to work with than a phone, because it shows more pictures at once. There is nothing to set: the app looks at the screen and the memory the device reports and decides for itself.",
-      "Android has no equivalent of the Windows account keychain, so the quick unlock PIN is only as strong as the digits you choose. On a device other people pick up, prefer the master password."
+      "A tablet is given more to work with than a phone: Dashboard Spotlight stays beside its details, galleries use more columns, and the Dashboard picture count fills complete rows for the available width. There is nothing to set beyond the size choices in Settings.",
+      "After setting a master password, Settings can add secure fingerprint or face unlock when the device supports strong biometrics. Android Keystore seals the unlock secret and Android shows the system prompt; Rolecraft never receives fingerprint or face data. The password and optional PIN remain available as fallbacks."
     ]
   },
   {
@@ -3180,8 +3225,9 @@ const GUIDE = [
     "body": [
       "A master password encrypts every value in the vault. Without it the vault cannot be opened. There is no recovery and no reset, because there is nobody holding a copy to ask.",
       [
-        "Set it in Settings. The PIN is only a convenience for unlocking quickly on a machine you already trust; it is not a second password.",
-        "On Windows the encryption is also tied to your account, so the files are not readable by simply copying them to another machine.",
+        "Set it in Settings. The PIN is only a convenience for unlocking quickly on a device you already trust; it is not a second password.",
+        "On Windows the encryption is also tied to your account, so the files are not readable by simply copying them to another machine. Windows Hello can unlock the sealed key after the master password has been set.",
+        "On Android, strong fingerprint or face unlock can seal the unlock key in Android Keystore. The system authenticates you and Rolecraft receives only success or failure, never biometric data.",
         "The web edition keeps its vault in the browser's own storage on that computer, encrypted the same way with your master password, but without that extra tie to a Windows account. Clearing your browser's site data removes it, so keep a backup.",
         "For anyone who wants the specifics: values are encrypted with AES-256-GCM, and the key is stretched from your password with PBKDF2 at 210,000 iterations before Windows wraps it again.",
         "Exports are deliberately not encrypted, so other tools can read them. Anyone who gets hold of an export can read it, so keep them somewhere you trust and delete copies you no longer need."
@@ -5535,8 +5581,10 @@ function ImageGridView({
       zIndex: 70,
       overflowY: "auto"
     },
-    className: "scrollbody sheet"
+    className: "scrollbody sheet image-grid-view grid-size-" + tileSize,
+    "aria-label": "Image grid"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-header",
     style: {
       position: "sticky",
       top: 0,
@@ -5546,6 +5594,7 @@ function ImageGridView({
       padding: "16px 26px"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-mainbar",
     style: {
       maxWidth: 2280,
       margin: "0 auto",
@@ -5555,6 +5604,7 @@ function ImageGridView({
       flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-title",
     style: {
       marginRight: "auto"
     }
@@ -5565,11 +5615,10 @@ function ImageGridView({
     style: {
       fontSize: 22
     }
-  }, title, " · ", album === null ? items.length : shownItems.length + " of " + items.length)), /*#__PURE__*/React.createElement("span", {
-    className: "eyebrow",
-    style: {
-      marginLeft: 8
-    }
+  }, title, " · ", album === null ? items.length : shownItems.length + " of " + items.length)), /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-size-controls"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "eyebrow"
   }, "Size"), ["small", "medium", "large"].map(s => /*#__PURE__*/React.createElement("button", {
     key: s,
     className: "chip" + (tileSize === s ? " on" : ""),
@@ -5578,7 +5627,9 @@ function ImageGridView({
       textTransform: "capitalize"
     },
     onClick: () => setGridTile(s)
-  }, s)), /*#__PURE__*/React.createElement("button", {
+  }, s))), /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-bulk-actions"
+  }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => {
       const allShown = shownItems.length > 0 && shownItems.every(it => sel[it.imgId]);
@@ -5604,7 +5655,7 @@ function ImageGridView({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.down,
     size: 14
-  }), " Download selected", selCount ? " (" + selCount + ")" : "", " · original quality")), onDeleteSelected && /*#__PURE__*/React.createElement("button", {
+  }), ON_CAP ? "Download" + (selCount ? " (" + selCount + ")" : "") : " Download selected" + (selCount ? " (" + selCount + ")" : "") + " · original quality")), onDeleteSelected && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     disabled: !selCount,
     style: {
@@ -5620,7 +5671,7 @@ function ImageGridView({
       setSel({});
       setConfirmDel(false);
     }
-  }, confirmDel ? "Really delete " + selCount + "? This can't be undone" : /*#__PURE__*/React.createElement("span", {
+  }, confirmDel ? (ON_CAP ? "Delete " + selCount + " now?" : "Really delete " + selCount + "? This can't be undone") : /*#__PURE__*/React.createElement("span", {
     style: {
       display: "inline-flex",
       gap: 7,
@@ -5629,10 +5680,12 @@ function ImageGridView({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.x,
     size: 14
-  }), " Delete selected", selCount ? " (" + selCount + ")" : "")), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-ghost",
+  }), ON_CAP ? "Delete" + (selCount ? " (" + selCount + ")" : "") : " Delete selected" + (selCount ? " (" + selCount + ")" : "")))), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost image-grid-close",
+    "aria-label": "Close image grid",
     onClick: onClose
   }, "Close")), onSetVariant && vOpts.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-filter-row image-grid-variant-row",
     style: {
       maxWidth: 2280,
       margin: "12px auto 0",
@@ -5673,6 +5726,7 @@ function ImageGridView({
     },
     onClick: () => setVFilter(vFilter === v.id ? null : v.id)
   }, v.name + " \u00b7 " + vCount(v.id))), /*#__PURE__*/React.createElement("span", {
+    className: "image-grid-row-actions",
     style: {
       marginLeft: "auto",
       display: "inline-flex",
@@ -5727,6 +5781,7 @@ function ImageGridView({
     key: v.id,
     value: v.id
   }, v.name + " portrait"))))), onSetAlbum && /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-filter-row image-grid-album-row",
     style: {
       maxWidth: 2280,
       margin: "12px auto 0",
@@ -5777,6 +5832,7 @@ function ImageGridView({
     d: icons.down,
     size: 12
   }), " Download “" + album + "” (" + shownItems.length + ")")), /*#__PURE__*/React.createElement("span", {
+    className: "image-grid-row-actions",
     style: {
       marginLeft: "auto",
       display: "inline-flex",
@@ -5854,6 +5910,7 @@ function ImageGridView({
       setSel({});
     }
   }, confirmAlbumDel ? "Click again — “" + album + "” goes, pictures stay" : "Delete album")))), /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-content",
     style: {
       maxWidth: 2280,
       margin: "0 auto",
@@ -6065,7 +6122,7 @@ function ImageGridView({
   })), /*#__PURE__*/React.createElement("span", {
     /* not forced on: the stylesheet shows it on hover, and shows it always
        where there is no hover to rely on */
-    className: "blurbtn",
+    className: "blurbtn grid-open-btn",
     role: "button",
     tabIndex: 0,
     "aria-label": "Open " + (it.label || "image"),
@@ -6091,6 +6148,7 @@ function ImageGridView({
     onToggleBlur: onToggleBlur,
     label: it.label
   }), onSetAlbum && (it.album || "").trim() && /*#__PURE__*/React.createElement("span", {
+    className: "grid-image-badge grid-album-badge",
     title: "Album: " + it.album,
     style: {
       position: "absolute",
@@ -6111,6 +6169,7 @@ function ImageGridView({
       pointerEvents: "none"
     }
   }, it.album), onSetVariant && (it.variantId || "").trim() && variantNameOf(it.variantId) && /*#__PURE__*/React.createElement("span", {
+    className: "grid-image-badge grid-variant-badge",
     title: "Variant: " + variantNameOf(it.variantId),
     style: {
       position: "absolute",
@@ -11400,25 +11459,10 @@ function TransferWizard({ onClose, onVaultReplaced, onAdvanced }) {
   }, body);
 }
 
-function CardSizeSelect({ value, onChange, noun }) {
-  return /*#__PURE__*/React.createElement("select", {
-    className: "card-size-select",
-    value: value,
-    onChange: e => onChange(e.target.value),
-    "aria-label": noun + " card size",
-    title: "Change how many cards fit in each row"
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "small"
-  }, "Small cards"), /*#__PURE__*/React.createElement("option", {
-    value: "medium"
-  }, "Medium cards"), /*#__PURE__*/React.createElement("option", {
-    value: "large"
-  }, "Large cards"));
-}
-
 function SettingsModal({
   onOpenTrash,
   onOpenHistory,
+  onOpenGuide,
   onOpenTransfer,
   onCopyDiagnostics,
   lastBackup,
@@ -11439,6 +11483,7 @@ function SettingsModal({
   setTextSize,
   cardSize,
   setCardSize,
+  phoneCardCounts,
   contrast,
   setContrast,
   trash,
@@ -11851,6 +11896,12 @@ function SettingsModal({
     onClick: () => setTextSize(s)
   }, label))), /*#__PURE__*/React.createElement("div", {
     style: {
+      fontSize: 12.5,
+      color: "var(--dim)",
+      marginTop: 8
+    }
+  }, "Applies to character, persona, lorebook and prompt text."), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontWeight: 700,
       margin: "18px 0 10px"
     }
@@ -11876,13 +11927,7 @@ function SettingsModal({
       marginBottom: 4,
       lineHeight: 1.5
     }
-  }, "How big characters and personas are shown in the library. Smaller cards fit more on screen at once."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: "var(--dim)",
-      marginTop: 8
-    }
-  }, "Applies to character, persona, lorebook and prompt text."), /*#__PURE__*/React.createElement("div", {
+  }, phoneCardCounts ? "How characters and personas are shown in the library: Small is 3 per row, Medium is 2, and Large is 1." : "How big characters and personas are shown in the library. Smaller cards fit more on screen at once."), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       marginTop: 18,
@@ -12188,6 +12233,14 @@ function SettingsModal({
   })), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    "aria-label": "Guide",
+    onClick: onOpenGuide
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Guide"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, "How the dashboard, libraries, pictures, transfers, security and every edition work.")), /*#__PURE__*/React.createElement("button", {
     className: "filerow",
     onClick: onOpenTrash
   }, /*#__PURE__*/React.createElement("div", {
@@ -13631,6 +13684,8 @@ function RolecraftVault() {
   }, [view, ready]);
   const DASH_KEYS = ["quick", "spotlight", "favorites", "recent", "wall"];
   const [dashOrder, setDashOrderRaw] = useState(DASH_KEYS);
+  const DASH_COLLAPSIBLE = ["quick", "recent"];
+  const [dashCollapsed, setDashCollapsedRaw] = useState({});
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
     sGet("ui:dashorder").then(v => {
@@ -13644,6 +13699,18 @@ function RolecraftVault() {
       } catch (e) {}
     }).catch(() => {});
   }, [authState.checked, authState.locked]);
+  useEffect(() => {
+    if (!authState.checked || authState.locked) return;
+    sGet("ui:dashcollapsed").then(v => {
+      if (!v) return;
+      try {
+        const saved = JSON.parse(v);
+        const next = {};
+        DASH_COLLAPSIBLE.forEach(k => { if (saved && saved[k]) next[k] = true; });
+        setDashCollapsedRaw(next);
+      } catch (e) {}
+    }).catch(() => {});
+  }, [authState.checked, authState.locked]);
   const setDashOrder = arr => {
     setDashOrderRaw(arr);
     sSet("ui:dashorder", JSON.stringify(arr)).catch(() => {}); // cosmetic; not worth a banner
@@ -13651,8 +13718,17 @@ function RolecraftVault() {
   const dashOrderChanged = JSON.stringify(dashOrder) !== JSON.stringify(DASH_KEYS);
   const resetDashLayout = async () => {
     setDashOrderRaw(DASH_KEYS.slice());
+    setDashCollapsedRaw({});
     await sDel("ui:dashorder");
+    await sDel("ui:dashcollapsed");
     toast("Dashboard layout reset to default");
+  };
+  const toggleDashCollapsed = id => {
+    if (!DASH_COLLAPSIBLE.includes(id)) return;
+    const next = { ...dashCollapsed };
+    if (next[id]) delete next[id];else next[id] = true;
+    setDashCollapsedRaw(next);
+    sSet("ui:dashcollapsed", JSON.stringify(next)).catch(() => {});
   };
   const [dashDrag, setDashDrag] = useState(null);
   /* Read instead of dashDrag mid-gesture: React does not flush during a native
@@ -15551,7 +15627,7 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "");
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "") + " cards-" + cardSize;
   const sheetOpen = !!(viewCharId || viewPersonaId);
   const overlayOpen = !!(showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
   quietRef.current = overlayOpen;
@@ -15922,6 +15998,8 @@ function RolecraftVault() {
       const vi = visibleKeys.indexOf(id);
       const first = vi === 0,
         last = vi === visibleKeys.length - 1;
+      const collapsible = ON_PHONE && DASH_COLLAPSIBLE.includes(id);
+      const collapsed = collapsible && !!dashCollapsed[id];
       return /*#__PURE__*/React.createElement("div", {
         style: {
           margin: "26px 0 12px",
@@ -15929,7 +16007,25 @@ function RolecraftVault() {
           alignItems: "center",
           gap: 6
         }
-      }, /*#__PURE__*/React.createElement("div", {
+      }, collapsible ? /*#__PURE__*/React.createElement("button", {
+        className: "btn btn-ghost dashboard-collapse",
+        "data-dashboard-collapse": id,
+        "aria-expanded": !collapsed,
+        "aria-label": (collapsed ? "Expand " : "Collapse ") + label,
+        onClick: () => toggleDashCollapsed(id),
+        style: {
+          marginRight: "auto",
+          padding: "4px 8px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "eyebrow"
+      }, label), /*#__PURE__*/React.createElement(Ic, {
+        d: collapsed ? icons.right : icons.cdown,
+        size: 14
+      })) : /*#__PURE__*/React.createElement("div", {
         className: "eyebrow",
         style: {
           marginRight: "auto"
@@ -15982,8 +16078,12 @@ function RolecraftVault() {
         size: 13
       })));
     };
-    const dashSection = (id, label, children) => /*#__PURE__*/React.createElement("div", {
+    const dashSection = (id, label, children) => {
+      const collapsed = ON_PHONE && DASH_COLLAPSIBLE.includes(id) && !!dashCollapsed[id];
+      return /*#__PURE__*/React.createElement("div", {
       key: id,
+      "data-dashboard-section": id,
+      "data-dashboard-collapsed": collapsed ? "true" : "false",
       className: dashOver === id && dashDrag && dashDrag !== id ? "drag-over" : undefined,
       style: {
         borderRadius: 14
@@ -16019,7 +16119,8 @@ function RolecraftVault() {
         setDashDrag(null);
         setDashOver(null);
       }
-    }, dashHead(id, label), children);
+    }, dashHead(id, label), !collapsed && children);
+    };
     const dashSections = {
       spotlight: spotlight ? dashSection("spotlight", "Spotlight", /*#__PURE__*/React.createElement(React.Fragment, null, spotlight && /*#__PURE__*/React.createElement("div", {
         className: "card dashboard-spotlight",
@@ -16485,11 +16586,7 @@ function RolecraftVault() {
     value: "updated"
   }, "Recently updated"), /*#__PURE__*/React.createElement("option", {
     value: "name"
-  }, "Name A–Z")), /*#__PURE__*/React.createElement(CardSizeSelect, {
-    value: cardSize,
-    onChange: applyCardSize,
-    noun: "Character"
-  }), /*#__PURE__*/React.createElement("button", {
+  }, "Name A–Z")), /*#__PURE__*/React.createElement("button", {
     className: "btn " + (selectMode ? "btn-brass" : "btn-ghost"),
     style: {
       flexShrink: 0
@@ -17088,11 +17185,7 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement("option", { value: "newest" }, "Newest first"),
     /*#__PURE__*/React.createElement("option", { value: "oldest" }, "Oldest first"),
     /*#__PURE__*/React.createElement("option", { value: "updated" }, "Recently updated"),
-    /*#__PURE__*/React.createElement("option", { value: "name" }, "Name A\u2013Z")), /*#__PURE__*/React.createElement(CardSizeSelect, {
-      value: cardSize,
-      onChange: applyCardSize,
-      noun: "Persona"
-    }), /*#__PURE__*/React.createElement("button", {
+    /*#__PURE__*/React.createElement("option", { value: "name" }, "Name A\u2013Z")), /*#__PURE__*/React.createElement("button", {
       className: "btn " + (pSelMode ? "btn-brass" : "btn-ghost"),
       onClick: () => {
         if (pSelMode) {
@@ -19087,8 +19180,10 @@ function RolecraftVault() {
     onVaultReplaced: () => setVaultTick(t => t + 1),
     onResetLayout: async () => {
       setDashOrderRaw(DASH_KEYS.slice());
+      setDashCollapsedRaw({});
       setTextSize("medium");
       await sDel("ui:dashorder");
+      await sDel("ui:dashcollapsed");
       await sDel("ui:advopen");
       await sSet("ui:textsize", "medium");
     setCardSize("medium");
@@ -19098,6 +19193,7 @@ function RolecraftVault() {
       toast("Layout reset to defaults");
     },
     onClose: () => setShowSettings(false),
+    onOpenGuide: () => { setShowSettings(false); setShowGuide(true); },
     onOpenTrash: () => setShowTrash(true),
     onOpenHistory: () => setShowHistory(true),
     onOpenTransfer: () => { setShowSettings(false); setShowTransfer(true); },
@@ -19108,6 +19204,7 @@ function RolecraftVault() {
     setTextSize: applyTextSize,
     cardSize: cardSize,
     setCardSize: applyCardSize,
+    phoneCardCounts: ON_PHONE && !ON_TABLET,
     contrast: contrast,
     setContrast: applyContrast,
     trash: trash,

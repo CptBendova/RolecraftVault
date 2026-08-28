@@ -22,8 +22,9 @@ function lift(name) {
 }
 
 const real = new Function(
-  lift("prioritizeImageQueue") + "\n" + lift("dashboardImagePriority") +
-  "\nreturn { prioritizeImageQueue, dashboardImagePriority };"
+  lift("prioritizeImageQueue") + "\n" + lift("dashboardImagePriority") + "\n" +
+  lift("dashboardPictureLimit") +
+  "\nreturn { prioritizeImageQueue, dashboardImagePriority, dashboardPictureLimit };"
 )();
 
 let bad = 0;
@@ -47,6 +48,13 @@ check("the Dashboard jumps ahead of an existing library queue",
   promoted.slice(0, 3).join(",") === ordered.join(","), promoted.join(", "));
 check("priority does not duplicate an already queued picture",
   new Set(promoted).size === promoted.length);
+check("phones receive eight Dashboard pictures when available",
+  real.dashboardPictureLimit(2, 18) === 8);
+check("Dashboard counts complete device-sized rows without exceeding twelve",
+  real.dashboardPictureLimit(3, 18) === 9 && real.dashboardPictureLimit(4, 18) === 8 &&
+  real.dashboardPictureLimit(5, 18) === 10 && real.dashboardPictureLimit(6, 18) === 12);
+check("a small gallery is never padded with imaginary pictures",
+  real.dashboardPictureLimit(2, 5) === 5);
 
 const scheduleStart = SRC.indexOf("const wallVisible = wallShow.slice");
 const scheduleEnd = SRC.indexOf("const reshuffle", scheduleStart);
