@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
+let lastUpdateFileResult = null;
+const updateFileListeners = new Set();
+ipcRenderer.on("update-file-result", (_e, payload) => {
+  lastUpdateFileResult = payload;
+  updateFileListeners.forEach(cb => { try { cb(payload); } catch (err) {} });
+});
 
 contextBridge.exposeInMainWorld("rcvInstalledApp", true);
 
@@ -22,6 +28,9 @@ contextBridge.exposeInMainWorld("auth", {
   setPin: (pw, pin) => ipcRenderer.invoke("auth-set-pin", pw, pin),
   removePin: (pw) => ipcRenderer.invoke("auth-remove-pin", pw),
   unlockPin: (pin) => ipcRenderer.invoke("auth-unlock-pin", pin),
+  setDeviceUnlock: (pw) => ipcRenderer.invoke("auth-set-device-unlock", pw),
+  removeDeviceUnlock: (pw) => ipcRenderer.invoke("auth-remove-device-unlock", pw),
+  unlockDevice: () => ipcRenderer.invoke("auth-unlock-device"),
   lock: () => ipcRenderer.invoke("auth-lock"),
 });
 
@@ -54,6 +63,11 @@ contextBridge.exposeInMainWorld("updater", {
   install: (text) => ipcRenderer.invoke("updates-install", text),
   revert: () => ipcRenderer.invoke("updates-revert"),
   relaunch: () => ipcRenderer.invoke("updates-relaunch"),
+  onFileResult: (cb) => {
+    updateFileListeners.add(cb);
+    if (lastUpdateFileResult) Promise.resolve().then(() => { try { cb(lastUpdateFileResult); } catch (err) {} });
+    return () => updateFileListeners.delete(cb);
+  },
 });
 contextBridge.exposeInMainWorld("releasePage", {
   open: () => ipcRenderer.invoke("release-page-open"),

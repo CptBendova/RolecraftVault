@@ -692,6 +692,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-import-overwrite.js` | an overwritten record reaching the bin with its pictures, and emptying the bin sparing a picture a live record still holds. Needs Electron |
 | `test-robustness.js` | a damaged or unrecognised bin entry blanking the app or hiding from every group, plus the countdown clamp, the search trim and a long name running off the editor. Needs Electron |
 | `test-shell-guards.js` | the shell's own guards: no write while locked, no plaintext left behind by a transfer, byte offsets past 2 GB, and the LAN-only listen. Lifts main.js; plain node |
+| `test-ux-systems.js` | bottom navigation/back dispatch, durable undo, visible draft protection, text-only templates, Android biometrics, Windows Hello, and `.rcvup` file handoff |
 
 They all follow the same rule, which is the point:
 
@@ -777,3 +778,21 @@ during which the whole suite proved nothing. They are `__dirname`-relative now.
 Never write an absolute path into a check.
 
 Still worth doing: moving them into `tests/`.
+
+### Device unlock, Android Back, and update-file ownership (1.232)
+
+- Android biometric unlock stores only an AES-GCM ciphertext in private native
+  preferences. Its key is authentication-bound in Android Keystore and the
+  enrolled secret is the already-derived 32-byte vault key, never the master
+  password. A password change/removal deletes the enrollment.
+- Windows Hello gates a DPAPI-protected copy of that same derived vault key.
+  Every non-`Verified` OS result fails closed. Do not replace the fixed WinRT
+  script with renderer-controlled PowerShell input.
+- `window.__rcvAndroidBack()` is the single bridge between the AndroidX back
+  dispatcher and React. It returns true only when it unwound a modal, editor,
+  record, book, or library destination; false at Dashboard lets Android exit.
+- `.rcvup` belongs to `RolecraftVault.Update`, registered by the elevated custom
+  installer. Both first launch and `second-instance` must pass the file through
+  `installUpdateText`, so double-click cannot bypass signature or shell checks.
+- Templates and duplicates are text-only on purpose. Sharing image ids between
+  two live records would let deleting a picture from one damage the other.

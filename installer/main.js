@@ -65,6 +65,8 @@ function writeUninstaller(dest, version) {
     `Remove-Item -LiteralPath '${desktop.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue`,
     `Remove-Item -LiteralPath '${startDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue`,
     `Remove-Item -LiteralPath 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath 'HKLM:\\Software\\Classes\\RolecraftVault.Update' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath 'HKLM:\\Software\\Classes\\.rcvup' -Recurse -Force -ErrorAction SilentlyContinue`,
     `Remove-Item -LiteralPath 'HKCU:\\Software\\${APP_NAME}' -Recurse -Force -ErrorAction SilentlyContinue`,
     `$dest = '${dest.replace(/'/g, "''")}'`,
     'Start-Process -FilePath "$env:WINDIR\\System32\\cmd.exe" -ArgumentList @("/c","ping 127.0.0.1 -n 2 > nul & rd /s /q `"$dest`"") -WindowStyle Hidden',
@@ -85,6 +87,23 @@ function writeUninstaller(dest, version) {
   add("UninstallString", "REG_SZ", unCmd);
   add("NoModify", "REG_DWORD", "1");
   add("NoRepair", "REG_DWORD", "1");
+}
+
+function writeUpdateAssociation(dest) {
+  const exe = path.join(dest, APP_EXE);
+  const ico = path.join(dest, "resources", "app", "icon.ico");
+  const root = "HKLM\\Software\\Classes";
+  const put = (key, name, value) => {
+    const args = ["add", key];
+    if (name) args.push("/v", name);else args.push("/ve");
+    args.push("/t", "REG_SZ", "/d", value, "/f");
+    execFileSync("reg.exe", args, { windowsHide: true });
+  };
+  put(root + "\\.rcvup", "", "RolecraftVault.Update");
+  put(root + "\\RolecraftVault.Update", "", "Rolecraft Vault signed update");
+  put(root + "\\RolecraftVault.Update", "FriendlyTypeName", "Rolecraft Vault signed update");
+  put(root + "\\RolecraftVault.Update\\DefaultIcon", "", (fs.existsSync(ico) ? ico : exe) + ",0");
+  put(root + "\\RolecraftVault.Update\\shell\\open\\command", "", `"${exe}" "%1"`);
 }
 
 function copyPayload(src, dest, onProgress) {
@@ -202,6 +221,7 @@ ipcMain.handle("setup-install", async (_e, dir) => {
     makeShortcut(desktop, exe, fs.existsSync(ico) ? ico : exe);
     makeShortcut(path.join(startDir, APP_NAME + ".lnk"), exe, fs.existsSync(ico) ? ico : exe);
     writeUninstaller(dest, version);
+    writeUpdateAssociation(dest);
     installedDir = dest;
     return { ok: true, dest };
   } catch (e) {

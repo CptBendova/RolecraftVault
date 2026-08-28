@@ -10,6 +10,7 @@ import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -17,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(TransferKeepAlivePlugin.class);
+        registerPlugin(DeviceUnlockPlugin.class);
         SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
 
@@ -46,6 +48,26 @@ public class MainActivity extends BridgeActivity {
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         webView.setBackgroundColor(navy);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView current = bridge == null ? null : bridge.getWebView();
+                if (current == null) {
+                    passThrough(this);
+                    return;
+                }
+                current.evaluateJavascript(
+                    "(function(){try{return typeof window.__rcvAndroidBack==='function'&&window.__rcvAndroidBack()===true;}catch(e){return false;}})();",
+                    result -> { if (!"true".equals(String.valueOf(result).trim())) passThrough(this); });
+            }
+        });
+    }
+
+    private void passThrough(OnBackPressedCallback callback) {
+        callback.setEnabled(false);
+        getOnBackPressedDispatcher().onBackPressed();
+        callback.setEnabled(true);
     }
 
     @Override

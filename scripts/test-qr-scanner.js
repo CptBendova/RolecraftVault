@@ -86,7 +86,8 @@ app.whenReady().then(async () => {
         videoFills: !!v && Math.abs(v.getBoundingClientRect().width - f.width) <= 2
                         && Math.abs(v.getBoundingClientRect().height - f.height) <= 2,
         cancelReachable: !!cr && cr.top >= 0 && cr.bottom <= window.innerHeight + 1,
-        stageScrolls: stage ? stage.scrollHeight > stage.clientHeight + 1 : null
+        stageScrolls: stage ? stage.scrollHeight > stage.clientHeight + 1 : null,
+        stageSize: stage ? stage.scrollHeight + "/" + stage.clientHeight : "missing"
       };
     })()`);
 
@@ -97,7 +98,7 @@ app.whenReady().then(async () => {
     check("the picture fills it", r.videoFills);
     check("all four corners are marked", r.corners === 4, "found " + r.corners);
     check("Cancel is on screen", r.cancelReachable);
-    check("nothing has to be scrolled to", r.stageScrolls === false);
+    check("nothing has to be scrolled to", r.stageScrolls === false, r.stageSize);
   }
 
   console.log("");

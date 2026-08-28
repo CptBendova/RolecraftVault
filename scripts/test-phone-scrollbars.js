@@ -6,8 +6,8 @@
    what gets reported as a flickering line. Three elements carried one below
    760px:
 
-   - the menu, which becomes a horizontal strip and runs wider than the screen.
-     Its bar sat under the icons and flickered while the library scrolled.
+   - the menu, which is now a fixed five-destination bottom bar. Every item must
+     fit without a sideways scroller or a painted scrollbar.
    - the library column, where the bar was not even doing anything: the page is
      what scrolls there, the column runs to its full height, and it still set
      aside 10px for a scrollbar with nothing to move.
@@ -34,7 +34,10 @@ const os = require("os");
 const fs = require("fs");
 
 const ROOT = path.join(__dirname, "..");
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "rcv-scrollbars-")));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-scrollbars-"));
+app.setPath("userData", tmp);
+const capPreload = path.join(tmp, "capacitor.js");
+fs.writeFileSync(capPreload, 'try { window.Capacitor = { isNativePlatform: () => true, Plugins: {} }; } catch (e) {}');
 app.on("window-all-closed", () => {});
 const bail = setTimeout(() => { console.log("\n  timed out"); app.exit(2); }, 120000);
 
@@ -76,7 +79,10 @@ const LOOK = `(async () => {
   o.menu = room(document.querySelector(".sidebar"));
   o.column = room(document.querySelector(".rcv > .scrollbody"));
   const sb = document.querySelector(".sidebar");
-  o.menuCanStillScroll = sb.scrollWidth > sb.clientWidth + 1;
+  o.menuFits = sb.scrollWidth <= sb.clientWidth + 1;
+  o.menuFixed = getComputedStyle(sb).position === "fixed";
+  o.primaryDestinations = sb.querySelectorAll(".primary-nav").length;
+  o.rootClass = document.querySelector(".rcv").className;
 
   btn(/^Settings$/).click(); await sleep(1500);
   const m = document.querySelector(".modal");
@@ -94,7 +100,8 @@ const LOOK = `(async () => {
 })()`;
 
 async function at(w, h) {
-  const win = new BrowserWindow({ show: false, width: w, height: h });
+  const win = new BrowserWindow({ show: false, width: w, height: h,
+    webPreferences: w <= 760 ? { preload: capPreload, contextIsolation: false } : {} });
   const wait = ms => new Promise(r => setTimeout(r, ms));
   await win.loadFile(path.join(ROOT, "web", "index.html"));
   await wait(2500);
@@ -109,10 +116,13 @@ async function at(w, h) {
 app.whenReady().then(async () => {
   const p = await at(360, 740);
   console.log("\na phone: nothing should draw a bar");
-  check("the menu is a horizontal strip here", p.menu.flexRow);
+  check("the menu is a horizontal bottom bar here", p.menu.flexRow && p.menuFixed,
+    p.rootClass + " · fixed=" + p.menuFixed);
+  check("all five primary destinations fit", p.primaryDestinations === 5 && p.menuFits,
+    "found " + p.primaryDestinations + " · overflow=" + p.menu.overflowsX + "px");
   check("no bar under the menu", p.menu.reservedY === 0,
     p.menu.reservedY === 0 ? "" : "reserves " + p.menu.reservedY + "px");
-  check("swiping the menu still works", p.menuCanStillScroll);
+  check("the bottom bar does not need sideways scrolling", p.menuFits);
   check("no bar down the library column", p.column.reservedX === 0,
     p.column.reservedX === 0 ? "" : "reserves " + p.column.reservedX + "px");
   check("and none down a panel", p.panel.reservedX === 0,

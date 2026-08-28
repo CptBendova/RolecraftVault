@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.231";
+const APP_VERSION = "1.232";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.231";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.231 — current",
+  heading: "1.232 — current",
+  notes: ["Android now has a proper five-destination bottom navigation bar and a compact top bar for search, lock and Settings. The system Back gesture closes the top picture, dialog or editor first, then unwinds a record and its library before Android exits from the Dashboard. Modern predictive Back is enabled.", "Every character, persona, lore entry and prompt deletion now has an eight-second Undo action and remains recoverable in the encrypted bin for 30 days. Moving a group of characters or personas between buckets can be undone too. Pictures stay owned by the recoverable record until the bin is emptied.", "Every editor now shows whether the saved version is safe, a draft is being protected, the draft was protected on this device, or protection failed. Draft failures are no longer silent.", "Templates are available from the Dashboard and Ctrl+K, with built-in starters for characters, personas, lore and prompts. Any editor can save its current writing as a private template or duplicate a record as a new editable copy. Pictures deliberately stay with the original so two records never fight over the same artwork.", "Android can unlock an encrypted vault with a strong fingerprint or face after one-time setup with the master password. Windows offers Windows Hello when the computer supports it. Both protect the derived vault key with the operating system, never store the master password, fail closed, and are removed when the master password changes.", "Windows setup now owns signed .rcvup files. Double-clicking one opens or focuses Rolecraft Vault, verifies the signature through the existing trusted updater, and either offers a relaunch or names the exact full installer required. This release changes the Windows shell, so install it with Rolecraft-Vault-Setup-1.232.exe; Android users need the 1.232 APK."]
+}, {
+  heading: "1.231",
   notes: ["Writing in every editor is now protected by a private recoverable draft. If the app or device closes before you save, the dashboard points to the draft and the editor lets you restore or discard it. Drafts stay inside the encrypted vault and disappear after a save, delete or explicit discard.", "A first-run quick start now offers a guided starter character, a blank character, a checked backup restore, the transfer wizard or the guide. After later updates, What’s New appears once with shortcuts to the parts that changed.", "Device transfer has its own guided window from the dashboard, Settings and Ctrl+K. It starts by asking whether this device is sending or receiving, previews every merge or mirror, keeps destructive mirroring off by default, and still offers the camera scanner and full advanced controls when needed.", "Backups now have health. A successful export is recorded, newer work produces a reminder, every backup validates itself before saving, and restore shows the date, app version, record counts, picture count and any missing pictures before it can replace the vault.", "Ctrl+K searches characters, personas, lore and prompts together and runs common actions. Records can be starred into a Favourites dashboard section. Settings can also copy a private diagnostic report containing only app settings, counts and generic error labels, never names, writing, pictures, paths, passwords or pairing codes.", "Android controls now use 48-pixel touch targets throughout, reading text has a 200% option, keyboard focus is trapped and restored around dialogs, and Windows high-contrast mode gets a dedicated palette. The phone, tablet, split-width and desktop layouts were checked for sideways overflow. Windows needs the full installer for the new official-downloads button; Android gets the same experience updates in the APK."]
 }, {
   heading: "1.230",
@@ -2201,6 +2204,16 @@ const CSS = `
   .rcv .start-card em { position: absolute; right: 9px; top: 8px; color: var(--brass); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: .08em; }
   .rcv .recovery-banner, .rcv .backup-health, .rcv .backup-summary { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--brass-line); background: var(--brass-soft); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
   .rcv .recovery-banner { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+  .rcv .draft-status { display: inline-flex; align-items: center; gap: 7px; min-height: 24px; margin: -4px 0 14px; color: var(--dim); font-size: 12.5px; }
+  .rcv .draft-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dim) 16%, transparent); }
+  .rcv .draft-status.waiting .draft-status-dot, .rcv .draft-status.saving .draft-status-dot { background: var(--brass); animation: rcv-draft-pulse .9s ease-in-out infinite alternate; }
+  .rcv .draft-status.protected .draft-status-dot { background: #55b985; }
+  .rcv .draft-status.error { color: var(--danger); }
+  .rcv .draft-status.error .draft-status-dot { background: var(--danger); }
+  @keyframes rcv-draft-pulse { to { opacity: .4; transform: scale(.72); } }
+  .rcv .template-row { display: flex; align-items: stretch; gap: 8px; margin-bottom: 7px; }
+  .rcv .template-use { flex: 1; min-width: 0; display: flex; align-items: flex-start; flex-direction: column; gap: 3px; text-align: left; }
+  .rcv .template-use span { color: var(--dim); font-size: 11.5px; font-weight: 400; }
   .rcv .backup-health span, .rcv .backup-summary span { color: var(--mut); font-size: 12.5px; line-height: 1.5; }
   .rcv .backup-health.good { border-color: var(--line2); background: var(--panel); }
   .rcv .backup-health.due { border-color: var(--danger-line); background: var(--danger-soft); }
@@ -2251,6 +2264,7 @@ const CSS = `
   .rcv .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100;
     background: var(--panel2); border: 1px solid var(--line2); color: var(--text); padding: 10px 20px; border-radius: 10px;
     font-size: 13.5px; box-shadow: var(--shadow); animation: rcvpop .18s ease-out; }
+  .rcv .toast-undo { border: 0; border-left: 1px solid var(--line2); background: none; color: var(--brass); padding: 5px 0 5px 15px; font: inherit; font-weight: 750; cursor: pointer; }
   @keyframes rcvpop { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   .rcv .scrollbody::-webkit-scrollbar, .rcv .modal::-webkit-scrollbar { width: 10px; }
   .rcv .scrollbody::-webkit-scrollbar-thumb, .rcv .modal::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; }
@@ -2339,6 +2353,7 @@ const CSS = `
   @keyframes lock-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
   .rcv .sidebar .crest-mark.live { border-radius: 11px; }
   .rcv > .sidebar, .rcv > .scrollbody { position: relative; z-index: 1; }
+  .rcv .phone-topbar { display: none; position: relative; z-index: 4; height: 56px; flex: 0 0 56px; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--sidebg); }
   .rcv .rcv-ambient {
     position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
   }
@@ -2437,8 +2452,19 @@ const CSS = `
     .rcv.phone .btn-move { min-width: 48px; min-height: 48px; }
     .rcv .start-grid { grid-template-columns: 1fr; }
     .rcv .recovery-banner { align-items: flex-start; flex-direction: column; }
-    .rcv .modal { padding: 20px; max-height: calc(100vh - 20px); }
+    .rcv .modal { padding: 20px 21px; max-height: calc(100vh - 20px); }
     .rcv .modal-title-row { align-items: center; }
+    .rcv.phone .sidebar { position: fixed !important; inset: auto 0 0 0; z-index: 12; width: 100% !important; height: calc(62px + env(safe-area-inset-bottom)); max-height: none !important; overflow: hidden; padding: 4px 4px env(safe-area-inset-bottom) !important; border: 0 !important; border-top: 1px solid var(--line) !important; background: color-mix(in srgb, var(--sidebg) 94%, transparent); backdrop-filter: blur(16px); }
+    .rcv.phone .sidebar .brand, .rcv.phone .sidebar .side-tools { display: none; }
+    .rcv.phone .sidebar .primary-nav { flex: 1 1 20%; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 10px; line-height: 1.05; }
+    .rcv.phone .sidebar .primary-nav .navlabel { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rcv.phone .sidebar .primary-nav.active { box-shadow: inset 0 2px 0 var(--brass); }
+    .rcv.phone .phone-topbar { display: flex; }
+    .rcv.phone .modal { max-width: calc(100vw - 42px); }
+    .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+    .rcv.phone .qr-stage { width: 100vw; height: 100vh; }
+    .rcv.phone > .scrollbody { height: calc(100vh - 56px); padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important; }
+    .rcv.phone .toast { bottom: calc(74px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
   }
 `;
 
@@ -2971,8 +2997,8 @@ const GUIDE = [
     "body": [
       "Every character keeps up to twenty snapshots of its writing. Open History in the editor to look through them and restore one.",
       "A snapshot holds words only. Restoring an old draft never changes, removes or brings back a picture. Your artwork is left exactly as it is, on purpose.",
-      "Deleting a character or persona moves it to Recently deleted, which opens from Settings in a window of its own. It waits there for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
-      "What is in the bin is kept apart by kind, so characters and personas do not run together in one long list, and you can search it by name. Lorebook and prompt entries are the exception to all of this: those are removed outright and do not go to the bin at all.",
+      "Deleting a character, persona, lorebook entry or prompt moves it to Recently deleted, which opens from Settings in a window of its own. It waits there for thirty days. Its pictures are kept for as long as it is in there, so restoring brings it back whole. Emptying the bin is what actually removes them.",
+      "What is in the bin is kept apart by kind, so different records do not run together in one long list, and you can search it by name. The Undo button immediately restores the most recent record deletion.",
       "Importing a file over a character or persona counts as deleting it. The version you replaced goes to the bin like anything else, so you can put it back if the file was not what you expected.",
       "Pictures are the exception: removing one is immediate and permanent, which is why those buttons ask twice."
     ]
@@ -3200,6 +3226,17 @@ function LockScreen({
     }
     setBusy(false);
   }, [val, busy, mode, onUnlocked]);
+  const unlockDevice = useCallback(async () => {
+    if (busy || !window.auth.unlockDevice) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await window.auth.unlockDevice();
+      if (r.ok) { onUnlocked(); return; }
+      setErr(r.error || "Device unlock failed");
+    } catch (e) { setErr("Device unlock failed — use your master password"); }
+    setBusy(false);
+  }, [busy, onUnlocked]);
   return /*#__PURE__*/React.createElement("div", {
     className: "lock-screen",
     style: {
@@ -3291,7 +3328,12 @@ function LockScreen({
     },
     disabled: busy,
     onClick: submit
-  }, busy ? "Unlocking\u2026" : "Unlock"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
+  }, busy ? "Unlocking\u2026" : "Unlock"), authState.deviceUnlockSet && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    style: { width: "100%", marginTop: 10 },
+    disabled: busy,
+    onClick: unlockDevice
+  }, ON_PHONE ? "Unlock with fingerprint or face" : "Unlock with Windows Hello"), authState.pinSet && /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
       background: "none",
@@ -8705,8 +8747,10 @@ function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
   const loaded = useRef(false);
   const writeQueue = useRef(Promise.resolve());
   const [found, setFound] = useState(null);
+  const [status, setStatus] = useState({ state: "clean", savedAt: 0 });
   const changed = JSON.stringify(value) !== baseText.current;
   const clear = useCallback(() => {
+    setStatus({ state: "clean", savedAt: 0 });
     writeQueue.current = writeQueue.current.catch(() => {}).then(() => sDel(key).catch(() => {})).then(() => updateDraftIndex({ key }, true).catch(() => {})).then(() => {
       if (onDraftChange) onDraftChange();
     });
@@ -8725,14 +8769,17 @@ function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
   }, [key]);
   useEffect(() => {
     if (!loaded.current || found) return;
+    if (changed) setStatus(s => s.state === "saving" ? s : { state: "waiting", savedAt: s.savedAt || 0 });
     const timer = setTimeout(() => {
       if (!changed) { clear(); return; }
       const data = live.current;
       const label = String(data.name || data.title || "Untitled").trim() || "Untitled";
       const snap = { version: 1, key, type, id: initial.id, label, savedAt: Date.now(), base: initial, data };
+      setStatus(s => ({ state: "saving", savedAt: s.savedAt || 0 }));
       writeQueue.current = writeQueue.current.catch(() => {}).then(() => sSet(key, JSON.stringify(snap))).then(() => updateDraftIndex({ key, type, id: initial.id, label, savedAt: snap.savedAt })).then(() => {
+        setStatus({ state: "protected", savedAt: snap.savedAt });
         if (onDraftChange) onDraftChange();
-      }).catch(() => {});
+      }).catch(() => setStatus({ state: "error", savedAt: 0 }));
     }, 800);
     return () => clearTimeout(timer);
   }, [changed, value, found, key]);
@@ -8745,7 +8792,25 @@ function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
     setFound(null);
     clear();
   };
-  return { found, restore, discardRecovery, clear };
+  return { found, restore, discardRecovery, clear, status };
+}
+function DraftProtectionStatus({ status }) {
+  if (!status) return null;
+  const state = status.state || "clean";
+  const label = state === "waiting" ? "Protecting your changes…"
+    : state === "saving" ? "Protecting your draft…"
+    : state === "protected" ? "Draft protected on this device"
+    : state === "error" ? "Draft protection failed. Save now or try another edit."
+    : "Saved version protected";
+  return /*#__PURE__*/React.createElement("div", {
+    className: "draft-status " + state,
+    role: "status",
+    "aria-live": "polite",
+    title: status.savedAt ? historyWhen(status.savedAt) : undefined
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "draft-status-dot",
+    "aria-hidden": "true"
+  }), label);
 }
 function DraftRecoveryBanner({ draft, onRestore, onDiscard }) {
   if (!draft) return null;
@@ -8776,7 +8841,9 @@ function CharacterEditor({
   onDelete,
   onClose,
   toast,
-  onDraftChange
+  onDraftChange,
+  onSaveTemplate,
+  onDuplicate
 }) {
   const [c, setC] = useState({
     variants: [],
@@ -9140,7 +9207,13 @@ function CharacterEditor({
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
-  }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), /*#__PURE__*/React.createElement("button", {
+  }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), initial.createdAt && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => onDuplicate(cRef.current)
+  }, "Duplicate text"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => onSaveTemplate(cRef.current)
+  }, "Add to templates"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -9150,6 +9223,8 @@ function CharacterEditor({
     draft: draft.found,
     onRestore: draft.restore,
     onDiscard: draft.discardRecovery
+  }), /*#__PURE__*/React.createElement(DraftProtectionStatus, {
+    status: draft.status
   }), confirmLeave && /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px solid var(--brass-line)",
@@ -10201,7 +10276,9 @@ function RecordModal({
   onDelete,
   onClose,
   imgCtx,
-  onDraftChange
+  onDraftChange,
+  onSaveTemplate,
+  onDuplicate
 }) {
   const [r, setR] = useState(initial);
   const draft = useRecoverableDraft(draftType || "record", initial, r, setR, onDraftChange);
@@ -10241,6 +10318,8 @@ function RecordModal({
     draft: draft.found,
     onRestore: draft.restore,
     onDiscard: draft.discardRecovery
+  }), /*#__PURE__*/React.createElement(DraftProtectionStatus, {
+    status: draft.status
   }), confirmLeave && /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px solid var(--brass-line)",
@@ -10380,7 +10459,13 @@ function RecordModal({
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
-  }, confirmDel ? "Click again to delete" : "Delete"), /*#__PURE__*/React.createElement("button", {
+  }, confirmDel ? "Click again to delete" : "Delete"), initial.createdAt && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => onDuplicate(rRef.current)
+  }, "Duplicate text"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => onSaveTemplate(rRef.current)
+  }, "Add to templates"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -10697,15 +10782,13 @@ function TransferQr(props) {
    went out of reach behind a list you had to read through a letterbox. Here it
    has the room, and a search, because picking one thing out of fifty by eye is
    the actual problem rather than the scrolling. */
-/* What the bin can hold. Only characters and personas are ever put in it —
-   lore and prompt entries are removed outright — but restoreFromTrash has
-   always understood all four, so the groups are listed in full and the two
-   that never arrive say why rather than sitting there empty and unexplained. */
+/* What the bin can hold. All four record kinds use the same durable undo path,
+   so an app close during the eight-second snackbar never loses the record. */
 const TRASH_GROUPS = [
   { type: "character", label: "Characters" },
   { type: "persona", label: "Personas" },
-  { type: "lore", label: "Lorebook entries", note: "Lorebook entries are removed outright rather than kept here." },
-  { type: "prompt", label: "Prompts", note: "Prompts are removed outright rather than kept here." },
+  { type: "lore", label: "Lorebook entries" },
+  { type: "prompt", label: "Prompts" },
   /* Anything whose kind is not one of the four above. Nothing writes such an
      entry today, but restoreFromTrash has always had a branch for one, and
      grouping without this made any that did exist invisible: still counted in
@@ -11003,6 +11086,37 @@ function SimpleModal({ eyebrow, title, onClose, children, className, zIndex }) {
     className: "modal-title-row"
   }, /*#__PURE__*/React.createElement("div", null, eyebrow && /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, eyebrow), /*#__PURE__*/React.createElement("h2", { className: "serif" }, title)), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onClose, "aria-label": "Close " + title }, "Close")), children));
 }
+function TemplatePickerModal({ templates, onUse, onDelete, onClose }) {
+  const grouped = ["character", "persona", "lore", "prompt"];
+  const names = { character: "Characters", persona: "Personas", lore: "Lore", prompt: "Prompts" };
+  const sections = grouped.map(type => {
+    const rows = (templates || []).filter(t => t.type === type);
+    if (!rows.length) return null;
+    const buttons = rows.map(t => /*#__PURE__*/React.createElement("div", {
+      key: t.id,
+      className: "template-row"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost template-use",
+      onClick: () => onUse(t)
+    }, /*#__PURE__*/React.createElement("strong", null, t.label), /*#__PURE__*/React.createElement("span", null, t.builtIn ? "Built in" : "Saved on this device")), !t.builtIn && /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      "aria-label": "Delete template " + t.label,
+      onClick: () => onDelete(t.id)
+    }, /*#__PURE__*/React.createElement(Ic, { d: icons.trash, size: 14 }))));
+    return /*#__PURE__*/React.createElement("section", { key: type, style: { marginBottom: 18 } }, /*#__PURE__*/React.createElement("div", {
+      className: "eyebrow",
+      style: { marginBottom: 7 }
+    }, names[type]), buttons);
+  });
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Start with structure",
+    title: "Templates",
+    onClose,
+    className: "template-picker"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { color: "var(--mut)", fontSize: 13.5, lineHeight: 1.6, marginBottom: 16 }
+  }, "Choose a starter or reuse writing you saved from an editor. Templates and duplicates never copy pictures, so the original keeps sole ownership of its artwork."), sections);
+}
 function OnboardingModal({ onCreate, onImport, onTransfer, onGuide, onDone }) {
   const ref = useRef(null);
   return /*#__PURE__*/React.createElement(SimpleModal, {
@@ -11206,7 +11320,7 @@ function SettingsModal({
   authState,
   refreshAuth
 }) {
-  const [form, setForm] = useState(null); // 'setup' | 'change' | 'removePw' | 'setPin' | 'removePin'
+  const [form, setForm] = useState(null); // password, PIN, and device-unlock forms
   const [pendingImport, setPendingImport] = useState(null);
   const [xfer, setXfer] = useState(null);
   const [xferBusy, setXferBusy] = useState(false);
@@ -11697,7 +11811,15 @@ function SettingsModal({
   }, "Remove PIN") : /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setForm("setPin")
-  }, "Add quick-unlock PIN"), /*#__PURE__*/React.createElement("button", {
+  }, "Add quick-unlock PIN"), authState.deviceUnlockAvailable && /*#__PURE__*/React.createElement("span", {
+    className: "chip" + (authState.deviceUnlockSet ? " on" : "")
+  }, authState.deviceUnlockSet ? (android ? "Biometrics on" : "Windows Hello on") : (android ? "Biometrics off" : "Windows Hello off")), authState.deviceUnlockAvailable && (authState.deviceUnlockSet ? /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setForm("removeDevice")
+  }, android ? "Remove biometric unlock" : "Remove Windows Hello") : /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    onClick: () => setForm("setDevice")
+  }, android ? "Add fingerprint or face" : "Add Windows Hello")), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     onClick: () => setForm("removePw")
   }, "Remove password")), form === "setup" && /*#__PURE__*/React.createElement(AuthForm, {
@@ -11735,7 +11857,7 @@ function SettingsModal({
       if (v.a !== v.b) return "New passwords don't match";
       const r = await window.auth.changePassword(v.o || "", v.a);
       if (!r.ok) return r.error;
-      await done("Password changed — set your PIN again if you use one");
+      await done("Password changed — set quick unlock again if you use it");
     }
   }), form === "removePw" && /*#__PURE__*/React.createElement(AuthForm, {
     submitLabel: "Remove password",
@@ -11782,6 +11904,24 @@ function SettingsModal({
       const r = await window.auth.removePin(v.o || "");
       if (!r.ok) return r.error;
       await done("PIN removed");
+    }
+  }), form === "setDevice" && /*#__PURE__*/React.createElement(AuthForm, {
+    submitLabel: android ? "Protect with biometrics" : "Protect with Windows Hello",
+    onCancel: () => setForm(null),
+    fields: [{ key: "o", label: "Master password" }],
+    onSubmit: async v => {
+      const r = await window.auth.setDeviceUnlock(v.o || "");
+      if (!r.ok) return r.error;
+      await done(android ? "Fingerprint or face unlock added" : "Windows Hello unlock added");
+    }
+  }), form === "removeDevice" && /*#__PURE__*/React.createElement(AuthForm, {
+    submitLabel: android ? "Remove biometric unlock" : "Remove Windows Hello",
+    onCancel: () => setForm(null),
+    fields: [{ key: "o", label: "Master password" }],
+    onSubmit: async v => {
+      const r = await window.auth.removeDeviceUnlock(v.o || "");
+      if (!r.ok) return r.error;
+      await done(android ? "Biometric unlock removed" : "Windows Hello unlock removed");
     }
   }), desktop && web && enc && !enc.password && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -12329,6 +12469,53 @@ const blankChar = () => ({
   createdAt: null,
   updatedAt: null
 });
+const BUILT_IN_TEMPLATES = [{
+  id: "builtin-character",
+  type: "character",
+  label: "Story-ready character",
+  builtIn: true,
+  data: { name: "", tagline: "", story: "Goals, history, and the trouble following them.", personality: "Voice, temperament, habits, and contradictions.", scenario: "Where the roleplay begins.", firstMessage: "Set the opening moment and give the other writer something to answer.", tags: [], sections: [{ title: "Boundaries", content: "Keep important limits and preferences here." }] }
+}, {
+  id: "builtin-persona",
+  type: "persona",
+  label: "Player persona",
+  builtIn: true,
+  data: { name: "", role: "", pronouns: "", description: "Identity, voice, preferences, and what this persona wants from the scene.", sections: [{ title: "Boundaries", content: "Keep limits and must-avoid details here." }] }
+}, {
+  id: "builtin-lore",
+  type: "lore",
+  label: "Place or faction",
+  builtIn: true,
+  data: { title: "", world: "", entryType: "Location", triggers: [], content: "What it is, why it matters, who controls it, and what changes when it appears." }
+}, {
+  id: "builtin-prompt",
+  type: "prompt",
+  label: "Opening scene",
+  builtIn: true,
+  data: { title: "", collection: "Scene starters", tags: ["opener"], content: "Establish the place, immediate tension, and a clear invitation for the next response." }
+}];
+function textOnlyCopy(type, source, prefix) {
+  const out = JSON.parse(JSON.stringify(source || {}));
+  out.id = uid();
+  out.createdAt = null;
+  out.updatedAt = null;
+  delete out.history;
+  delete out.__historyPushed;
+  if (type === "character") {
+    out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
+    out.profileImg = null; out.banner = null; out.gallery = []; out.albums = []; out.imgMeta = {};
+    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
+    out.variants = (out.variants || []).map(v => ({ ...v, id: uid(), profileImg: null }));
+  } else if (type === "persona") {
+    out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
+    out.avatar = null; out.gallery = []; out.albums = []; out.imgMeta = {};
+    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
+  } else {
+    out.title = prefix && out.title ? "Copy of " + out.title : out.title || "";
+    out.images = [];
+  }
+  return out;
+}
 function VaultBusyScreen({
   title,
   detail,
@@ -12460,6 +12647,9 @@ function RolecraftVault() {
   const [imgCache, setImgCache] = useState({});
   const [editingChar, setEditingChar] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null); // {type, record}
+  const [savedTemplates, setSavedTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [incomingUpdate, setIncomingUpdate] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   /* Both of these used to be folds inside Settings. With fifty in the bin or a
      hundred releases listed, opening one pushed everything under it out of
@@ -12634,13 +12824,14 @@ function RolecraftVault() {
     const idSet = new Set(ids);
     const going = chars.filter(c => idSet.has(c.id));
     const next = chars.filter(c => !idSet.has(c.id));
+    charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    await sendManyToTrash("character", going);
+    const entries = await sendManyToTrash("character", going);
     setSelected({});
     setConfirmBulkDel(false);
     setSelectMode(false);
-    toast(going.length + (going.length === 1 ? " character" : " characters") + " moved to the bin — restore from Settings within " + TRASH_DAYS + " days");
+    showUndo(going.length + (going.length === 1 ? " character moved to the bin" : " characters moved to the bin"), () => restoreTrashEntries(entries));
   };
   const [selected, setSelected] = useState({});
   useEffect(() => {
@@ -12742,14 +12933,19 @@ function RolecraftVault() {
   const bulkAssign = async bucket => {
     const ids = Object.keys(selected);
     if (!ids.length) return;
+    const before = new Map(chars.filter(c => selected[c.id]).map(c => [c.id, { bucket: c.bucket || "", updatedAt: c.updatedAt }]));
     const next = chars.map(c => selected[c.id] ? {
       ...c,
       bucket,
       updatedAt: Date.now()
     } : c);
+    charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    toast(ids.length + (ids.length === 1 ? " character" : " characters") + (bucket ? " moved to \u201c" + bucket + "\u201d" : " removed from their buckets"));
+    showUndo(ids.length + (ids.length === 1 ? " character moved" : " characters moved"), async () => {
+      const restored = charsRef.current.map(c => before.has(c.id) ? { ...c, ...before.get(c.id) } : c);
+      charsRef.current = restored; setChars(restored); await sSet("chars:all", JSON.stringify(restored));
+    });
     exitSelect();
   };
   const [sort, setSortRaw] = useState("newest");
@@ -12763,10 +12959,71 @@ function RolecraftVault() {
     setSortRaw(v);
     sSet("ui:charsort", v).catch(() => {}); // cosmetic; not worth a banner
   };
-  const toast = useCallback(m => {
-    setToastMsg(m);
-    setTimeout(() => setToastMsg(null), 2400);
+  const toastTimerRef = useRef(null);
+  const undoRef = useRef(null);
+  const finishUndo = useCallback(commit => {
+    if (undoRef.current && undoRef.current.commit && commit) {
+      Promise.resolve(undoRef.current.commit()).catch(() => {});
+    }
+    undoRef.current = null;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
   }, []);
+  const toast = useCallback(m => {
+    finishUndo(true);
+    setToastMsg({ text: String(m) });
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 2400);
+  }, [finishUndo]);
+  const showUndo = useCallback((message, undo, commit) => {
+    finishUndo(true);
+    const action = { undo, commit };
+    undoRef.current = action;
+    setToastMsg({ text: message, undo: true });
+    toastTimerRef.current = setTimeout(() => {
+      if (undoRef.current !== action) return;
+      finishUndo(true);
+      setToastMsg(null);
+    }, 8000);
+  }, [finishUndo]);
+  useEffect(() => {
+    if (!window.updater || !window.updater.onFileResult) return;
+    return window.updater.onFileResult(result => setIncomingUpdate(result || { ok: false, error: "Couldn't open that update" }));
+  }, []);
+  const runUndo = useCallback(async () => {
+    const action = undoRef.current;
+    if (!action) return;
+    finishUndo(false);
+    setToastMsg(null);
+    try { await action.undo(); toast("Undone"); } catch (e) { toast("Couldn't undo that change"); }
+  }, [finishUndo, toast]);
+  useEffect(() => {
+    if (!ready || authState.locked) return;
+    sGet("ui:templates").then(raw => {
+      const list = JSON.parse(raw || "[]");
+      if (Array.isArray(list)) setSavedTemplates(list.filter(t => t && t.id && t.type && t.data));
+    }).catch(() => {});
+  }, [ready, authState.locked]);
+  const persistTemplates = async next => {
+    setSavedTemplates(next);
+    if (next.length) await sSet("ui:templates", JSON.stringify(next));else await sDel("ui:templates");
+  };
+  const saveAsTemplate = async (type, record) => {
+    const fallback = type === "character" ? "Character template" : type === "persona" ? "Persona template" : type === "lore" ? "Lore template" : "Prompt template";
+    const label = String(record.name || record.title || fallback).trim() || fallback;
+    const item = { id: uid(), type, label, createdAt: Date.now(), data: textOnlyCopy(type, record, false) };
+    await persistTemplates([item, ...savedTemplates].slice(0, 40));
+    toast("Template saved · pictures remain with the original");
+  };
+  const openTemplate = template => {
+    const record = textOnlyCopy(template.type, template.data, false);
+    setShowTemplates(false);
+    if (template.type === "character") setEditingChar(record);else setEditingRecord({ type: template.type, record });
+  };
+  const duplicateForEdit = (type, record) => {
+    const copy = textOnlyCopy(type, record, true);
+    if (type === "character") setEditingChar(copy);else setEditingRecord({ type, record: copy });
+    toast("Text duplicated · pictures stay with the original");
+  };
   /* Saving on the phone finishes after the call that started it, and it is the
      only path that can fail or land somewhere unexpected, so it says so itself
      rather than the caller guessing. */
@@ -13461,17 +13718,22 @@ function RolecraftVault() {
   const pBulkAssign = async name => {
     const ids = new Set(Object.keys(pSelected));
     if (!ids.size) return;
+    const before = new Map(personas.filter(p => ids.has(p.id)).map(p => [p.id, { bucket: p.bucket || "", updatedAt: p.updatedAt }]));
     const next = personas.map(p => ids.has(p.id) ? {
       ...p,
       bucket: (name || "").trim(),
       updatedAt: Date.now()
     } : p);
+    personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
     setPSelected({});
     setPSelMode(false);
     setPBulkBucket("");
-    toast(name.trim() ? "Assigned to \u201c" + name.trim() + "\u201d" : "Removed from bucket");
+    showUndo(ids.size + (ids.size === 1 ? " persona moved" : " personas moved"), async () => {
+      const restored = personasRef.current.map(p => before.has(p.id) ? { ...p, ...before.get(p.id) } : p);
+      personasRef.current = restored; setPersonas(restored); await sSet("personas:all", JSON.stringify(restored));
+    });
   };
   useEffect(() => {
     setPConfirmDel(false);
@@ -13481,13 +13743,14 @@ function RolecraftVault() {
     const idSet = new Set(ids);
     const going = personas.filter(p => idSet.has(p.id));
     const next = personas.filter(p => !idSet.has(p.id));
+    personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
-    await sendManyToTrash("persona", going);
+    const entries = await sendManyToTrash("persona", going);
     setPSelected({});
     setPConfirmDel(false);
     setPSelMode(false);
-    toast(going.length + (going.length === 1 ? " persona" : " personas") + " moved to the bin — restore from Settings within " + TRASH_DAYS + " days");
+    showUndo(going.length + (going.length === 1 ? " persona moved to the bin" : " personas moved to the bin"), () => restoreTrashEntries(entries));
   };
   useEffect(() => {
     if (view === "dashboard") setDashSeed(Date.now() & 0x7fffffff || 1);
@@ -14077,12 +14340,14 @@ function RolecraftVault() {
      every write but the last would be thrown away and only one of the records
      would actually reach the bin. */
   const sendManyToTrash = async (type, records) => {
-    if (!records.length) return;
+    if (!records.length) return [];
     const at = Date.now();
     const entries = records.map(record => ({ tid: uid(), type, record, deletedAt: at }));
-    const next = [...entries, ...trash];
+    const next = [...entries, ...trashRef.current];
+    trashRef.current = next;
     setTrash(next);
     await sSet("trash:all", JSON.stringify(next));
+    return entries;
   };
   const sendToTrash = (type, record) => sendManyToTrash(type, [record]);
   /* Every image id something still alive is pointing at: the live records, and
@@ -14102,7 +14367,7 @@ function RolecraftVault() {
     (personasRef.current || []).forEach(p => add(imageIdsOf("persona", p)));
     (loreRef.current || []).forEach(e => add(imageIdsOf("lore", e)));
     (promptsRef.current || []).forEach(e => add(imageIdsOf("prompt", e)));
-    (trash || []).forEach(t => {
+    (trashRef.current || []).forEach(t => {
       if (!skip.has(t.tid)) add(imageIdsOf(t.type, t.record));
     });
     return held;
@@ -14118,7 +14383,7 @@ function RolecraftVault() {
     });
   };
   const restoreFromTrash = async entry => {
-    const rest = trash.filter(t => t.tid !== entry.tid);
+    const rest = trashRef.current.filter(t => t.tid !== entry.tid);
     const rec0 = entry.record || {};
     const bump = list => list.some(x => x.id === rec0.id) ? { ...rec0, id: uid() } : rec0;
     if (entry.type === "character") {
@@ -14149,13 +14414,39 @@ function RolecraftVault() {
       toast("Couldn't restore that record");
       return;
     }
+    trashRef.current = rest;
     setTrash(rest);
     await sSet("trash:all", JSON.stringify(rest));
     toast((entry.record.name || entry.record.title || "Record") + " restored");
   };
+  const restoreTrashEntries = async entries => {
+    const tids = new Set((entries || []).map(e => e.tid));
+    const byType = type => (entries || []).filter(e => e.type === type).map(e => e.record);
+    const addMissing = (live, incoming) => {
+      const ids = new Set(live.map(r => r.id));
+      return live.concat(incoming.filter(r => !ids.has(r.id)));
+    };
+    const cs = addMissing(charsRef.current, byType("character"));
+    const ps = addMissing(personasRef.current, byType("persona"));
+    const ls = addMissing(loreRef.current, byType("lore"));
+    const qs = addMissing(promptsRef.current, byType("prompt"));
+    charsRef.current = cs; personasRef.current = ps; loreRef.current = ls; promptsRef.current = qs;
+    setChars(cs); setPersonas(ps); setLore(ls); setPrompts(qs);
+    const rest = trashRef.current.filter(t => !tids.has(t.tid));
+    trashRef.current = rest;
+    setTrash(rest);
+    await Promise.all([
+      sSet("chars:all", JSON.stringify(cs)),
+      sSet("personas:all", JSON.stringify(ps)),
+      sSet("lore:all", JSON.stringify(ls)),
+      sSet("prompts:all", JSON.stringify(qs)),
+      rest.length ? sSet("trash:all", JSON.stringify(rest)) : sDel("trash:all")
+    ]);
+  };
   const emptyFromTrash = async entry => {
     await purgeTrashEntry(entry);
-    const rest = trash.filter(t => t.tid !== entry.tid);
+    const rest = trashRef.current.filter(t => t.tid !== entry.tid);
+    trashRef.current = rest;
     setTrash(rest);
     await sSet("trash:all", JSON.stringify(rest));
     toast("Deleted for good");
@@ -14188,10 +14479,10 @@ function RolecraftVault() {
     charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    await sendToTrash("character", c);
+    const entries = await sendManyToTrash("character", [c]);
     setEditingChar(null);
     setViewCharId(null);
-    toast("Character moved to the bin — restore it from Settings within " + TRASH_DAYS + " days");
+    showUndo("Character moved to the bin", () => restoreTrashEntries(entries));
   };
 
   /* --- simple collection CRUD --- */
@@ -14275,32 +14566,20 @@ function RolecraftVault() {
     return moved;
   };
   const deleteRecord = async (type, r) => {
-    if (type === "prompt" || type === "lore") {
-      /* These two are removed outright rather than kept in the bin, so their
-         pictures do go now. Only the ones nothing else is holding: a restored
-         backup writes images under the ids in the file, so two entries can be
-         pointing at the same picture, and taking one used to take the other's
-         with it. Same rule as purgeTrashEntry. */
-      const held = heldImageIds();
-      const gone = (r.images || []).map(im => im && im.imgId).filter(id => id && !held.has(id));
-      forgetBlur(gone);
-      gone.forEach(id => {
-        dropImage(id);
-      });
-      if (type === "prompt") setViewPromptEntryId(null);else setViewLoreEntryId(null);
-    }
-    if (type === "persona") {
-      await sendToTrash("persona", r); // keeps its pictures until the bin is emptied
-      setViewPersonaId(null);
-    }
+    const entries = await sendManyToTrash(type, [r]);
+    if (type === "prompt") setViewPromptEntryId(null);
+    if (type === "lore") setViewLoreEntryId(null);
+    if (type === "persona") setViewPersonaId(null);
     const col = collections[type];
     const next = col.list.filter(x => x.id !== r.id);
+    if (type === "persona") personasRef.current = next;
+    if (type === "lore") loreRef.current = next;
+    if (type === "prompt") promptsRef.current = next;
     col.set(next);
     await sSet(col.key, JSON.stringify(next));
     setEditingRecord(null);
-    // a persona is recoverable and a lore entry is not; saying "Deleted" for both
-    // hid the bin from the one place it applies
-    toast(type === "persona" ? "Persona moved to the bin — restore it from Settings within " + TRASH_DAYS + " days" : "Deleted");
+    const noun = type === "persona" ? "Persona" : type === "lore" ? "Lore entry" : "Prompt";
+    showUndo(noun + " moved to the bin", () => restoreTrashEntries(entries));
   };
 
   /* --- backup --- */
@@ -15093,8 +15372,26 @@ function RolecraftVault() {
   PERF = perfMode === "performance";
   const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "");
   const sheetOpen = !!(viewCharId || viewPersonaId);
-  const overlayOpen = !!(showSettings || showGuide || showTransfer || commandOpen || showOnboarding || showWhatsNew || restoreFile);
+  const overlayOpen = !!(showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
   quietRef.current = overlayOpen;
+  useEffect(() => {
+    if (!ON_PHONE) return;
+    const handleBack = () => {
+      const layered = document.querySelector(".modal-back, .lightbox, .scrollbody.sheet");
+      if (layered) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        return true;
+      }
+      if (viewLoreEntryId !== null) { setViewLoreEntryId(null); return true; }
+      if (viewPromptEntryId !== null) { setViewPromptEntryId(null); return true; }
+      if (viewLoreBook !== null) { setViewLoreBook(null); return true; }
+      if (viewPromptBook !== null) { setViewPromptBook(null); return true; }
+      if (view !== "dashboard") { setView("dashboard"); return true; }
+      return false;
+    };
+    window.__rcvAndroidBack = handleBack;
+    return () => { if (window.__rcvAndroidBack === handleBack) delete window.__rcvAndroidBack; };
+  }, [view, viewLoreBook, viewLoreEntryId, viewPromptBook, viewPromptEntryId, sheetOpen, overlayOpen, editingChar, editingRecord]);
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
     "data-rcv-state": "locked",
@@ -15105,10 +15402,7 @@ function RolecraftVault() {
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(LockScreen, {
     authState: authState,
     tone: theme,
-    onUnlocked: () => setAuthState(a => ({
-      ...a,
-      locked: false
-    }))
+    onUnlocked: () => refreshAuth()
   }));
   if (loadError) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
@@ -15239,7 +15533,7 @@ function RolecraftVault() {
     }
   }, "PRIVATE VAULT"))), nav.map(n => /*#__PURE__*/React.createElement("button", {
     key: n.id,
-    className: "navitem" + (view === n.id ? " active" : ""),
+    className: "navitem primary-nav" + (view === n.id ? " active" : ""),
     /* Below 1020px wide the labels are hidden and these become bare icons, which
        left them with no name at all — nothing on hover, and nothing for a screen
        reader to read out but eight identical buttons. */
@@ -15252,6 +15546,7 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
   }, n.label))), /*#__PURE__*/React.createElement("div", {
+    className: "side-tools",
     style: {
       marginTop: "auto",
       display: "flex",
@@ -15312,6 +15607,34 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
   }, "Settings")))), /*#__PURE__*/React.createElement("div", {
+    className: "phone-topbar"
+  }, /*#__PURE__*/React.createElement(CrestMark, {
+    size: 34
+  }), /*#__PURE__*/React.createElement("strong", {
+    className: "serif",
+    style: { marginRight: "auto", fontSize: 17 }
+  }, "Rolecraft"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    "aria-label": "Search everything",
+    onClick: () => setCommandOpen(true)
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.search,
+    size: 17
+  })), authState.passwordSet && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    "aria-label": "Lock vault",
+    onClick: lockVault
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.lock,
+    size: 17
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    "aria-label": "Settings",
+    onClick: () => setShowSettings(true)
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.gear,
+    size: 17
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "scrollbody",
     style: {
       flex: 1,
@@ -15392,6 +15715,11 @@ function RolecraftVault() {
           id: uid()
         }
       })
+    }, {
+      label: "Use a template",
+      sub: "Built-in and saved starters",
+      icon: icons.copy,
+      fn: () => setShowTemplates(true)
     }, {
       label: "Search everything",
       sub: "Records, favourites & actions",
@@ -18329,6 +18657,7 @@ function RolecraftVault() {
       }
     });
   })(), editingChar && /*#__PURE__*/React.createElement(CharacterEditor, {
+    key: editingChar.id,
     initial: editingChar,
     imgCache: imgCache,
     fullCache: fullCache,
@@ -18358,8 +18687,11 @@ function RolecraftVault() {
     onDelete: deleteChar,
     onClose: () => setEditingChar(null),
     toast: toast,
-    onDraftChange: refreshDrafts
+    onDraftChange: refreshDrafts,
+    onSaveTemplate: r => saveAsTemplate("character", r),
+    onDuplicate: r => duplicateForEdit("character", r)
   }), editingRecord && editingRecord.type === "persona" && /*#__PURE__*/React.createElement(RecordModal, {
+    key: "persona:" + editingRecord.record.id,
     title: editingRecord.record.createdAt ? "Edit persona" : "New persona",
     initial: editingRecord.record,
     draftType: "persona",
@@ -18367,6 +18699,8 @@ function RolecraftVault() {
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("persona", r),
     onDelete: r => deleteRecord("persona", r),
+    onSaveTemplate: r => saveAsTemplate("persona", r),
+    onDuplicate: r => duplicateForEdit("persona", r),
     imgCtx: {
       imgCache,
       saveImage,
@@ -18436,6 +18770,7 @@ function RolecraftVault() {
       kindOf: () => "unsent"
     }]
   }), editingRecord && editingRecord.type === "lore" && /*#__PURE__*/React.createElement(RecordModal, {
+    key: "lore:" + editingRecord.record.id,
     title: editingRecord.record.createdAt ? "Edit lore entry" : "New lore entry",
     initial: editingRecord.record,
     draftType: "lore",
@@ -18443,6 +18778,8 @@ function RolecraftVault() {
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("lore", r),
     onDelete: r => deleteRecord("lore", r),
+    onSaveTemplate: r => saveAsTemplate("lore", r),
+    onDuplicate: r => duplicateForEdit("lore", r),
     fields: [{
       key: "title",
       label: "Title",
@@ -18475,6 +18812,7 @@ function RolecraftVault() {
       hintWarn: rec => String(rec.content || "").length > 1500
     }]
   }), editingRecord && editingRecord.type === "prompt" && /*#__PURE__*/React.createElement(RecordModal, {
+    key: "prompt:" + editingRecord.record.id,
     title: editingRecord.record.createdAt ? "Edit prompt" : "New prompt",
     initial: editingRecord.record,
     draftType: "prompt",
@@ -18482,6 +18820,8 @@ function RolecraftVault() {
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("prompt", r),
     onDelete: r => deleteRecord("prompt", r),
+    onSaveTemplate: r => saveAsTemplate("prompt", r),
+    onDuplicate: r => duplicateForEdit("prompt", r),
     fields: [{
       key: "title",
       label: "Title",
@@ -18521,7 +18861,29 @@ function RolecraftVault() {
       toast("Pick characters below, type a bucket name, then hit Assign");
     },
     onClose: () => setNewBucketOpen(false)
-  }), showGuide && /*#__PURE__*/React.createElement(GuideModal, {
+  }), showTemplates && /*#__PURE__*/React.createElement(TemplatePickerModal, {
+    templates: BUILT_IN_TEMPLATES.concat(savedTemplates),
+    onUse: openTemplate,
+    onDelete: id => persistTemplates(savedTemplates.filter(t => t.id !== id)),
+    onClose: () => setShowTemplates(false)
+  }), incomingUpdate && /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: incomingUpdate.ok ? "Authentic update installed" : "Update not installed",
+    title: incomingUpdate.ok ? "Version " + incomingUpdate.version + " is ready" : incomingUpdate.needsInstaller ? "This update needs the full installer" : "That update could not be opened",
+    onClose: () => setIncomingUpdate(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { color: "var(--mut)", lineHeight: 1.65, marginBottom: 16 }
+  }, incomingUpdate.ok ? "The signed update passed verification. Relaunch Rolecraft Vault to use it." : incomingUpdate.error), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 9, flexWrap: "wrap" }
+  }, incomingUpdate.ok ? /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => window.updater.relaunch()
+  }, "Relaunch now") : incomingUpdate.needsInstaller ? /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    onClick: () => window.releasePage && window.releasePage.open()
+  }, "Open the latest release") : null, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setIncomingUpdate(null)
+  }, incomingUpdate.ok ? "Later" : "Close"))), showGuide && /*#__PURE__*/React.createElement(GuideModal, {
     onClose: () => setShowGuide(false)
   }), statsOpen && /*#__PURE__*/React.createElement(StatsModal, {
     title: statsOpen.title,
@@ -18648,7 +19010,7 @@ function RolecraftVault() {
     onToggleFavorite: toggleFavorite,
     onOpen: openLibraryItem,
     onClose: () => setCommandOpen(false),
-    actions: [{ label: "New character", hint: "Open the character editor", run: () => { setCommandOpen(false); setEditingChar(blankChar()); } }, { label: "New persona", hint: "Create who you play as", run: () => { setCommandOpen(false); setEditingRecord({ type: "persona", record: { id: uid() } }); } }, { label: "New lore entry", hint: "Add a world rule, place or person", run: () => { setCommandOpen(false); setEditingRecord({ type: "lore", record: { id: uid() } }); } }, { label: "New prompt", hint: "Create a reusable scene starter", run: () => { setCommandOpen(false); setEditingRecord({ type: "prompt", record: { id: uid() } }); } }, { label: "Guided device transfer", hint: "Copy over local Wi-Fi", run: () => { setCommandOpen(false); setShowTransfer(true); } }, { label: "Export full backup", hint: backupDue ? "Recommended now" : "Save a verified copy", run: () => { setCommandOpen(false); askExport("a full vault backup", exportAll); } }, { label: "Copy private diagnostics", hint: "No names, writing or pictures", run: () => { setCommandOpen(false); copyDiagnostics(); } }, { label: "Open Settings", key: "Ctrl+,", run: () => { setCommandOpen(false); setShowSettings(true); } }, { label: "Open guide", run: () => { setCommandOpen(false); setShowGuide(true); } }]
+    actions: [{ label: "New character", hint: "Open the character editor", run: () => { setCommandOpen(false); setEditingChar(blankChar()); } }, { label: "New persona", hint: "Create who you play as", run: () => { setCommandOpen(false); setEditingRecord({ type: "persona", record: { id: uid() } }); } }, { label: "New lore entry", hint: "Add a world rule, place or person", run: () => { setCommandOpen(false); setEditingRecord({ type: "lore", record: { id: uid() } }); } }, { label: "New prompt", hint: "Create a reusable scene starter", run: () => { setCommandOpen(false); setEditingRecord({ type: "prompt", record: { id: uid() } }); } }, { label: "Use a template", hint: "Built-in and saved starters", run: () => { setCommandOpen(false); setShowTemplates(true); } }, { label: "Guided device transfer", hint: "Copy over local Wi-Fi", run: () => { setCommandOpen(false); setShowTransfer(true); } }, { label: "Export full backup", hint: backupDue ? "Recommended now" : "Save a verified copy", run: () => { setCommandOpen(false); askExport("a full vault backup", exportAll); } }, { label: "Copy private diagnostics", hint: "No names, writing or pictures", run: () => { setCommandOpen(false); copyDiagnostics(); } }, { label: "Open Settings", key: "Ctrl+,", run: () => { setCommandOpen(false); setShowSettings(true); } }, { label: "Open guide", run: () => { setCommandOpen(false); setShowGuide(true); } }]
   }), /*#__PURE__*/React.createElement("input", {
     ref: bucketCoverRef,
     type: "file",
@@ -18781,8 +19143,14 @@ function RolecraftVault() {
       opacity: 0.7
     }
   }, zipProg.left)), toastMsg && !zipProg && /*#__PURE__*/React.createElement("div", {
-    className: "toast"
-  }, toastMsg));
+    className: "toast",
+    role: "status",
+    "aria-live": "polite",
+    style: toastMsg.undo ? { display: "flex", alignItems: "center", gap: 16, textAlign: "left" } : undefined
+  }, /*#__PURE__*/React.createElement("span", null, toastMsg.text), toastMsg.undo && /*#__PURE__*/React.createElement("button", {
+    className: "toast-undo",
+    onClick: runUndo
+  }, "Undo")));
 }
 /* Anything that throws while drawing used to take the whole interface with it:
    React unmounts the tree, and with nothing left on the page there is no way

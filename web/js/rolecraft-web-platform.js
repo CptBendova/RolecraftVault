@@ -106,6 +106,10 @@
   function fsCall(method, opts) {
     return nativeFs().nativePromise("Filesystem", method, opts);
   }
+  function deviceUnlockCall(method, opts) {
+    if (!nativeFs()) return Promise.reject(new Error("Device unlock is not available"));
+    return nativeFs().nativePromise("DeviceUnlock", method, opts || {});
+  }
   var vaultReady = null;
   function ensureVaultDir() {
     if (vaultReady) return vaultReady;
@@ -537,8 +541,13 @@
   /* ---------- window.auth (same contract as the desktop build) ---------- */
   window.auth = {
     status: function () {
-      return loadSecurity().then(function (s) {
-        return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: !!s && !masterKey };
+      return Promise.all([
+        loadSecurity(),
+        nativeFs() ? deviceUnlockCall("status", {}).catch(function () { return {}; }) : Promise.resolve({})
+      ]).then(function (r) {
+        var s = r[0], device = r[1] || {};
+        return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: !!s && !masterKey,
+          deviceUnlockAvailable: !!device.available, deviceUnlockSet: !!device.enrolled };
       });
     },
     setPassword: function (pw) {
@@ -577,6 +586,8 @@
             return setMaster(d.keyRaw);
           }).then(function () {
             return persistWrapKey();
+          }).then(function () {
+            return nativeFs() ? deviceUnlockCall("remove", {}).catch(function () {}) : null;
           }).then(function () { return { ok: true }; });
         });
       });
@@ -586,6 +597,8 @@
         if (!raw) return { ok: false, error: "Password is incorrect" };
         return rewrapAll(raw, null).then(function () {
           return saveSecurity(null);
+        }).then(function () {
+          return nativeFs() ? deviceUnlockCall("remove", {}).catch(function () {}) : null;
         }).then(function () {
           return setMaster(null);
         }).then(function () {
@@ -636,6 +649,33 @@
           }).then(function () { return { ok: true }; });
         }).catch(function () { return { ok: false, error: "That PIN doesn't match" }; });
       });
+    },
+    setDeviceUnlock: function (pw) {
+      return verifyPassword(pw).then(function (raw) {
+        if (!raw) return { ok: false, error: "Password is incorrect" };
+        return deviceUnlockCall("enroll", { secret: b64encode(raw) })
+          .then(function () { return { ok: true }; })
+          .catch(function (e) { return { ok: false, error: e && e.message ? e.message : "Couldn't set up biometric unlock" }; });
+      });
+    },
+    removeDeviceUnlock: function (pw) {
+      return verifyPassword(pw).then(function (raw) {
+        if (!raw) return { ok: false, error: "Password is incorrect" };
+        return deviceUnlockCall("remove", {}).then(function () { return { ok: true }; })
+          .catch(function () { return { ok: false, error: "Couldn't remove biometric unlock" }; });
+      });
+    },
+    unlockDevice: function () {
+      return deviceUnlockCall("unlock", {}).then(function (r) {
+        if (!r || !r.secret) throw new Error("No vault key returned");
+        return setMaster(b64decode(r.secret)).then(function () { return ensureWrapKey(); });
+      }).then(function () { return { ok: true }; })
+        .catch(function (e) {
+          return setMaster(null).then(function () {
+            if (nativeFs()) { wrapKey = null; wrapRaw = null; }
+            return { ok: false, error: e && e.message ? e.message : "Biometric unlock failed" };
+          });
+        });
     },
     lock: function () {
       return setMaster(null).then(function () {

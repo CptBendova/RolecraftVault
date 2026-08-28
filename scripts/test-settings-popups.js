@@ -130,11 +130,10 @@ app.whenReady().then(async () => {
   // the label and the count are separate spans, so there is no space between them
   check("characters and personas are counted", /Characters\s*30 items/.test(b1.groups[0] || "") &&
     /Personas\s*30 items/.test(b1.groups[1] || ""), (b1.groups[0] || "") + " / " + (b1.groups[1] || ""));
-  /* Only characters and personas are ever put in the bin. The other two are
-     shown so the four kinds are all accounted for, but they say why they are
-     empty rather than sitting there looking broken. */
-  check("the two that never arrive say so", b1.explains === 2, b1.explains + " explained");
-  check("and cannot be opened onto nothing", b1.disabled.length === 2, JSON.stringify(b1.disabled));
+  /* All four can arrive now. The empty groups stay visible and disabled, but
+     must not claim that lore and prompts are still deleted outright. */
+  check("empty groups do not describe obsolete deletion rules", b1.explains === 0, b1.explains + " obsolete notes");
+  check("empty groups cannot be opened onto nothing", b1.disabled.length === 2, JSON.stringify(b1.disabled));
   check("sixty stays folded until you ask for it", b1.restores === 0,
     b1.restores + " listed before opening anything");
 

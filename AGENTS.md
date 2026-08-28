@@ -103,6 +103,13 @@ npx electron app --user-data-dir=./tmp-codex-vault
 Do not launch development source against the real vault in `%APPDATA%\Rolecraft
 Vault\`. A mismatched `FACTORY_BUILD` can invalidate an installed patch.
 
+### Keep quick unlock subordinate to the master password
+
+Android biometrics and Windows Hello protect a derived vault key, never the
+master password. Password changes and removal must invalidate device unlock.
+Every cancelled, unavailable, damaged, or non-verified OS result fails closed.
+The normal password path must always remain available.
+
 ### Protect signing material
 
 Anything signed with `keys/private_key.pem` is trusted by installed desktop

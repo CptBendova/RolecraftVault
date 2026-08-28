@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, safeStorage, shell, session, screen } = req
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { execFile } = require("child_process");
 
 let dataDir, boundsFile, securityFile, rewrapFile;
 let masterKey = null; // Buffer(32) in memory only while unlocked
@@ -21,7 +22,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.231";
+const FACTORY_BUILD = "1.232";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1407,6 +1408,74 @@ function verifyPassword(pw) {
   if (check.length !== known.length || !crypto.timingSafeEqual(check, known)) return null;
   return kdf(pw, Buffer.from(s.salt + ":key"));
 }
+function installUpdateText(text) {
+  let pkg;
+  try { pkg = JSON.parse(text); } catch { return { ok: false, error: "Not a valid update file" }; }
+  const v = verifyUpdatePackage(pkg);
+  if (!v.ok) return v;
+  if (v.needsShell && v.shellBuild && v.shellBuild !== FACTORY_BUILD) {
+    return { ok: false, version: v.version, needsInstaller: true, error: "Version " + v.version + " changes the app itself, not just the interface. Run Rolecraft-Vault-Setup-" + v.version + ".exe instead; it keeps your vault and settings. This copy is build " + FACTORY_BUILD + "." };
+  }
+  try {
+    const cur = path.join(updatesDir, "current");
+    fs.mkdirSync(cur, { recursive: true });
+    fs.writeFileSync(updateAppJsPath(), v.appJs);
+    fs.writeFileSync(updateManifestPath(), JSON.stringify({
+      version: pkg.version, notes: v.notes, hashes: pkg.hashes, sig: pkg.sig, installedAt: new Date().toISOString(),
+      factoryBuild: FACTORY_BUILD,
+    }));
+    return { ok: true, version: v.version, notes: v.notes };
+  } catch (err) { return { ok: false, error: "Couldn't write the update: " + err.message }; }
+}
+function updateFileArg(args) {
+  return (args || []).map(v => String(v || "").replace(/^"|"$/g, ""))
+    .find(v => path.extname(v).toLowerCase() === ".rcvup") || null;
+}
+let pendingUpdateFile = updateFileArg(process.argv);
+function openUpdateFile(file, win) {
+  let result;
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size > 64 * 1024 * 1024) throw new Error("That update file is too large");
+    result = installUpdateText(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    result = { ok: false, error: err && err.message ? err.message : "Couldn't read that update file" };
+  }
+  try { if (win && !win.isDestroyed()) win.webContents.send("update-file-result", result); } catch (e) {}
+  return result;
+}
+
+/* Windows Hello is asked for by Windows itself. The only value returned to the
+   app is the verification result; passwords, PINs and biometrics never cross
+   this process boundary. PowerShell supplies the built-in WinRT projection on
+   supported Windows versions, and every unavailable/error result fails closed. */
+function windowsHello(mode) {
+  const check = mode === "check";
+  const resultType = check
+    ? "Windows.Security.Credentials.UI.UserConsentVerifierAvailability"
+    : "Windows.Security.Credentials.UI.UserConsentVerificationResult";
+  const operation = check
+    ? "$t::CheckAvailabilityAsync()"
+    : "$t::RequestVerificationAsync('Unlock Rolecraft Vault')";
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    "Add-Type -AssemblyName System.Runtime.WindowsRuntime",
+    "$t=[Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]",
+    "$op=" + operation,
+    "$m=([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 })[0].MakeGenericMethod([" + resultType + "])",
+    "$task=$m.Invoke($null,@($op))",
+    "$task.Wait()",
+    "[string]$task.Result"
+  ].join("; ");
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  return new Promise(resolve => {
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded], {
+      windowsHide: true,
+      timeout: 120000,
+      maxBuffer: 64 * 1024,
+    }, (err, stdout) => resolve(err ? "Unavailable" : String(stdout || "").trim()));
+  });
+}
 
 function setupAuthIpc() {
   ipcMain.handle("transfer-start", () => isLocked() ? { ok: false, error: "Unlock the vault first — sharing reads every record to work out what to send." } : startTransferServer());
@@ -1432,28 +1501,7 @@ function setupAuthIpc() {
     return { build: FACTORY_BUILD, active: act ? act.version : null, notes: act ? act.notes : "" };
   });
   ipcMain.handle("updates-install", (e, text) => {
-    let pkg;
-    try { pkg = JSON.parse(text); } catch { return { ok: false, error: "Not a valid update file" }; }
-    const v = verifyUpdatePackage(pkg);
-    if (!v.ok) return v;
-    /* A patch swaps app.js and nothing else. When the release also changed the
-       shell, applying it would leave the new interface running on the old one —
-       it would look installed and then misbehave in ways nothing explains. Say
-       so instead, and leave the working copy alone. Packages predating these
-       fields carry no claim either way and are installed as before. */
-    if (v.needsShell && v.shellBuild && v.shellBuild !== FACTORY_BUILD) {
-      return { ok: false, error: "Version " + v.version + " changes the app itself, not just the interface, so it cannot arrive as a patch. Run Rolecraft-Vault-Setup-" + v.version + ".exe instead — it keeps your vault and settings exactly as they are. This copy is build " + FACTORY_BUILD + "." };
-    }
-    try {
-      const cur = path.join(updatesDir, "current");
-      fs.mkdirSync(cur, { recursive: true });
-      fs.writeFileSync(updateAppJsPath(), v.appJs);
-      fs.writeFileSync(updateManifestPath(), JSON.stringify({
-        version: pkg.version, notes: v.notes, hashes: pkg.hashes, sig: pkg.sig, installedAt: new Date().toISOString(),
-        factoryBuild: FACTORY_BUILD, // so a later shell upgrade can tell this patch is stale
-      }));
-      return { ok: true, version: v.version, notes: v.notes };
-    } catch (err) { return { ok: false, error: "Couldn't write the update: " + err.message }; }
+    return installUpdateText(text);
   });
   ipcMain.handle("updates-revert", () => {
     try {
@@ -1463,9 +1511,12 @@ function setupAuthIpc() {
   });
   ipcMain.handle("updates-relaunch", () => { app.relaunch(); app.exit(0); });
   ipcMain.handle("release-page-open", () => shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases/latest"));
-  ipcMain.handle("auth-status", () => {
+  ipcMain.handle("auth-status", async () => {
     const s = loadSecurity();
-    return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: isLocked() };
+    const hello = process.platform === "win32" && safeStorage.isEncryptionAvailable()
+      ? await windowsHello("check") : "Unavailable";
+    return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: isLocked(),
+      deviceUnlockAvailable: hello === "Available", deviceUnlockSet: !!(s && s.helloBlob) };
   });
 
   // rewrapAll writes security.json itself, as the last step of an all-or-nothing swap
@@ -1546,6 +1597,40 @@ function setupAuthIpc() {
       return { ok: true };
     } catch {
       return { ok: false, error: "That PIN doesn't match" };
+    }
+  });
+
+  ipcMain.handle("auth-set-device-unlock", async (e, pw) => {
+    const key = verifyPassword(pw);
+    if (!key) return { ok: false, error: "Password is incorrect" };
+    if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: "Windows device encryption is not available" };
+    const result = await windowsHello("verify");
+    if (result !== "Verified") return { ok: false, error: result === "Canceled" ? "Windows Hello was cancelled" : "Windows Hello could not verify you (" + result + ")" };
+    const s = loadSecurity();
+    s.helloBlob = safeStorage.encryptString(key.toString("base64")).toString("base64");
+    saveSecurity(s);
+    return { ok: true };
+  });
+
+  ipcMain.handle("auth-remove-device-unlock", (e, pw) => {
+    if (!verifyPassword(pw)) return { ok: false, error: "Password is incorrect" };
+    const s = loadSecurity();
+    if (s) { delete s.helloBlob; saveSecurity(s); }
+    return { ok: true };
+  });
+
+  ipcMain.handle("auth-unlock-device", async () => {
+    const s = loadSecurity();
+    if (!s || !s.helloBlob) return { ok: false, error: "Windows Hello unlock is not set up" };
+    const result = await windowsHello("verify");
+    if (result !== "Verified") return { ok: false, error: result === "Canceled" ? "Windows Hello was cancelled" : "Windows Hello could not verify you (" + result + ")" };
+    try {
+      masterKey = Buffer.from(safeStorage.decryptString(Buffer.from(s.helloBlob, "base64")), "base64");
+      if (masterKey.length !== 32) throw new Error("key");
+      return { ok: true };
+    } catch {
+      masterKey = null;
+      return { ok: false, error: "Windows Hello unlock needs to be set up again" };
     }
   });
 
@@ -1700,6 +1785,12 @@ function createWindow() {
     if (/^https:\/\//i.test(url)) shell.openExternal(url);
   });
   win.loadFile(resolveEntryFile());
+  win.webContents.once("did-finish-load", () => {
+    if (!pendingUpdateFile) return;
+    const file = pendingUpdateFile;
+    pendingUpdateFile = null;
+    openUpdateFile(file, win);
+  });
   // failsafe 1: if an active update produced a dead page, auto-revert to the factory build.
   // "Rendered something" isn't enough — a bundle stuck on its loading screen also paints
   // .rcv — so wait for a root that reports a state other than "loading". Bundles predating
@@ -1742,14 +1833,16 @@ process.on("unhandledRejection", err => {
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, commandLine) => {
     const win = BrowserWindow.getAllWindows()[0];
     if (!win || win.isDestroyed()) return;
+    const updateFile = updateFileArg(commandLine);
     const b = onScreenBounds({ x: win.getBounds().x, y: win.getBounds().y, width: win.getBounds().width, height: win.getBounds().height });
     if (b && typeof b.x === "number") win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
+    if (updateFile) openUpdateFile(updateFile, win);
   });
 }
 app.on("before-quit", () => stopTransferServer());
