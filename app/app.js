@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.230";
+const APP_VERSION = "1.231";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.230";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.230 — current",
+  heading: "1.231 — current",
+  notes: ["Writing in every editor is now protected by a private recoverable draft. If the app or device closes before you save, the dashboard points to the draft and the editor lets you restore or discard it. Drafts stay inside the encrypted vault and disappear after a save, delete or explicit discard.", "A first-run quick start now offers a guided starter character, a blank character, a checked backup restore, the transfer wizard or the guide. After later updates, What’s New appears once with shortcuts to the parts that changed.", "Device transfer has its own guided window from the dashboard, Settings and Ctrl+K. It starts by asking whether this device is sending or receiving, previews every merge or mirror, keeps destructive mirroring off by default, and still offers the camera scanner and full advanced controls when needed.", "Backups now have health. A successful export is recorded, newer work produces a reminder, every backup validates itself before saving, and restore shows the date, app version, record counts, picture count and any missing pictures before it can replace the vault.", "Ctrl+K searches characters, personas, lore and prompts together and runs common actions. Records can be starred into a Favourites dashboard section. Settings can also copy a private diagnostic report containing only app settings, counts and generic error labels, never names, writing, pictures, paths, passwords or pairing codes.", "Android controls now use 48-pixel touch targets throughout, reading text has a 200% option, keyboard focus is trapped and restored around dialogs, and Windows high-contrast mode gets a dedicated palette. The phone, tablet, split-width and desktop layouts were checked for sideways overflow. Windows needs the full installer for the new official-downloads button; Android gets the same experience updates in the APK."]
+}, {
+  heading: "1.230",
   notes: ["Quality mode has had a full visual pass on Windows and Android in Dark, Light and CharSnap. The drifting dust now changes colour immediately with the theme instead of keeping the colour from the theme the app opened with. Panels also arrive with a short, restrained fade and lift so opening Settings, the guide or an editor feels less abrupt.", "Performance mode now does no hidden crest-film work. A detached video used to be loaded even though Performance never showed it; that unused download, memory and decoder work are gone. The dust animation also stops scheduling frames while a panel or record covers it, then resumes cleanly when the library is visible again.", "Reduced motion now covers the crest's breathing glow and travelling gleam as well as ordinary elements. Quality keeps its full motion when motion is welcome; Performance and the system reduced-motion setting leave every decorative animation still.", "The shipped Windows interface and Android-sized layout were checked across all themes and both graphics modes, including the Settings controls at a 360-pixel phone width. The APK and Windows app carry this same changelog entry."]
 }, {
   heading: "1.229",
@@ -765,11 +768,13 @@ function phoneSave(filename, blob) {
 function saveFile(blob, filename) {
   const onPhone = phoneSave(filename, blob);
   if (onPhone) {
-    onPhone.then(
-      where => saveNotice && saveNotice("Saved as " + filename + " in " + where),
-      e => saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e))
-    );
-    return;
+    return onPhone.then(where => {
+      saveNotice && saveNotice("Saved as " + filename + " in " + where);
+      return true;
+    }, e => {
+      saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e));
+      return false;
+    });
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -780,9 +785,50 @@ function saveFile(blob, filename) {
      small one has finished, and revoking it mid-download can cut it off. Hold
      it for a minute per 200 MB, and never less than the original minute. */
   revokeSoon(url, Math.max(60000, Math.ceil((blob.size || 0) / 2e8) * 60000));
+  return Promise.resolve(true);
 }
 function downloadJSON(obj, filename) {
-  saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }), filename);
+  return saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }), filename);
+}
+const DIAG_EVENTS = [];
+function recordDiag(label) {
+  DIAG_EVENTS.push({ at: new Date().toISOString(), label: String(label || "event").slice(0, 80) });
+  if (DIAG_EVENTS.length > 20) DIAG_EVENTS.shift();
+}
+function backupInspection(data) {
+  const fatal = [], warnings = [];
+  if (!data || data.app !== "rolecraft-vault") fatal.push("Not a Rolecraft Vault backup");
+  const lists = ["chars", "personas", "lore", "prompts"];
+  lists.forEach(k => { if (data && data[k] != null && !Array.isArray(data[k])) fatal.push(k + " is damaged"); });
+  const safeList = k => Array.isArray(data && data[k]) ? data[k] : [];
+  const counts = Object.fromEntries(lists.map(k => [k, safeList(k).length]));
+  const images = data && data.images && typeof data.images === "object" ? data.images : {};
+  const wanted = new Set();
+  if (data) {
+    safeList("chars").forEach(c => charImgIds(c).forEach(id => wanted.add(id)));
+    safeList("personas").forEach(p => personaImgIds(p).forEach(id => wanted.add(id)));
+    safeList("lore").forEach(e => (e.images || []).forEach(x => x && x.imgId && wanted.add(x.imgId)));
+    safeList("prompts").forEach(e => (e.images || []).forEach(x => x && x.imgId && wanted.add(x.imgId)));
+  }
+  const missing = [...wanted].filter(id => !images[id]);
+  if (missing.length) warnings.push(missing.length + " referenced picture" + (missing.length === 1 ? " is" : "s are") + " missing");
+  return {
+    ok: !fatal.length,
+    fatal,
+    warnings,
+    counts,
+    imageCount: Object.values(images).filter(Boolean).length,
+    exportedAt: data && data.exportedAt || null,
+    appVersion: data && data.manifest && data.manifest.appVersion || "Earlier release"
+  };
+}
+async function readBackupPreview(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    return { file, data, info: backupInspection(data) };
+  } catch (e) {
+    return { file, data: null, info: { ok: false, fatal: ["The file is not valid JSON"], warnings: [], counts: { chars: 0, personas: 0, lore: 0, prompts: 0 }, imageCount: 0 } };
+  }
 }
 function mulberry32(a) {
   return function () {
@@ -1896,7 +1942,8 @@ const CSS = `
   .rcv ::placeholder { color: var(--dim); }
   .rcv .btn { border-radius: 9px; padding: 9px 16px; font-weight: 600; font-size: 13.5px; transition: filter .12s, background .12s; }
   .rcv .btn:hover { filter: brightness(1.08); }
-  .rcv .btn:focus-visible, .rcv input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .rcv button:focus-visible, .rcv [role="button"]:focus-visible, .rcv input:focus-visible,
+  .rcv textarea:focus-visible, .rcv select:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
   .rcv .btn-primary { background: var(--btn-grad, linear-gradient(135deg, #5670d0, #4a63c8)); color: var(--btn-text, #fff); }
   .rcv .btn-ghost { background: transparent; color: var(--mut); border: 1px solid var(--line); }
   .rcv .btn-ghost:hover { color: var(--text); border-color: var(--line2); }
@@ -2143,6 +2190,55 @@ const CSS = `
     /* Do not retain the final transform after the entrance: fixed overlays such
        as the QR scanner must stay relative to the viewport, not this panel. */
     animation: rcv-modal-in .2s cubic-bezier(.2,.8,.2,1); }
+  .rcv .modal-title-row { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+  .rcv .modal-title-row h2 { margin: 3px 0 0; font-size: 26px; }
+  .rcv .modal-intro { color: var(--mut); line-height: 1.6; font-size: 13.5px; margin: 0 0 16px; }
+  .rcv .start-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .rcv .start-grid.two { margin-bottom: 0; }
+  .rcv .start-card { position: relative; padding: 16px; min-height: 112px; color: var(--text); text-align: left; display: flex; flex-direction: column; gap: 7px; }
+  .rcv .start-card:hover, .rcv .start-card.recommended { border-color: var(--brass-line); }
+  .rcv .start-card span { color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .rcv .start-card em { position: absolute; right: 9px; top: 8px; color: var(--brass); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: .08em; }
+  .rcv .recovery-banner, .rcv .backup-health, .rcv .backup-summary { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--brass-line); background: var(--brass-soft); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  .rcv .recovery-banner { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+  .rcv .backup-health span, .rcv .backup-summary span { color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .rcv .backup-health.good { border-color: var(--line2); background: var(--panel); }
+  .rcv .backup-health.due { border-color: var(--danger-line); background: var(--danger-soft); }
+  .rcv .validation-error, .rcv .validation-warning { padding: 9px 11px; border-radius: 8px; margin: 8px 0; font-size: 13px; line-height: 1.5; }
+  .rcv .validation-error { color: var(--danger); background: var(--danger-soft); border: 1px solid var(--danger-line); }
+  .rcv .validation-warning { color: var(--brass); background: var(--brass-soft); border: 1px solid var(--brass-line); }
+  .rcv .shortcut-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .rcv .release-notes { padding-left: 20px; color: var(--mut); line-height: 1.65; font-size: 13.5px; max-height: 52vh; overflow: auto; }
+  .rcv .release-notes li { margin-bottom: 10px; }
+  .rcv .command-palette .modal { max-width: 720px; }
+  .rcv .palette-search { font-size: 16px !important; padding: 13px 14px !important; }
+  .rcv .palette-results { max-height: min(62vh, 620px); overflow: auto; margin-top: 12px; }
+  .rcv .palette-group + .palette-group { margin-top: 16px; }
+  .rcv .palette-group > .eyebrow { padding: 5px 8px; }
+  .rcv .palette-row-wrap { display: flex; align-items: stretch; }
+  .rcv .palette-row { flex: 1; min-width: 0; padding: 10px 11px; background: transparent; color: var(--text); border-radius: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rcv .palette-row:hover, .rcv .palette-row:focus-visible { background: var(--nav-hov); }
+  .rcv .palette-row span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rcv .palette-row strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rcv .palette-row small { color: var(--mut); }
+  .rcv .palette-row kbd { color: var(--dim); border: 1px solid var(--line2); border-radius: 5px; padding: 2px 6px; }
+  .rcv .favorite-btn { width: 46px; color: var(--brass); background: transparent; border-radius: 8px; font-size: 21px; }
+  .rcv .empty-palette { color: var(--dim); padding: 24px; text-align: center; }
+  .rcv .favorite-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .rcv .favorite-card { padding: 14px; color: var(--text); text-align: left; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .rcv .favorite-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rcv .favorite-card small { color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rcv .dashboard-health { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 18px; }
+  .rcv .health-action { padding: 13px 15px; color: var(--text); text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .rcv .health-action > span { color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .rcv .drafts-action .btn { width: 100%; text-align: left; }
+  .rcv .update-dropzone { margin-top: 10px; padding: 18px; border: 1px dashed var(--line2); border-radius: 10px; color: var(--mut); font-size: 13px; text-align: center; cursor: pointer; }
+  .rcv .update-dropzone.over { border-color: var(--brass); color: var(--brass); background: var(--brass-soft); }
+  .rcv .wizard-back { margin-bottom: 12px; }
+  .rcv .send-code-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+  .rcv .send-code { font: 700 24px ui-monospace, Consolas, monospace; letter-spacing: .12em; overflow-wrap: anywhere; }
+  .rcv .mirror-choice { display: flex; align-items: flex-start; gap: 10px; color: var(--mut); font-size: 13px; line-height: 1.5; margin: 12px 0; }
+  .rcv .transfer-progress { margin-top: 12px; color: var(--brass); font-size: 13px; }
   @keyframes rcv-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes rcv-modal-in {
     from { opacity: 0; transform: translateY(10px) scale(.985); }
@@ -2283,6 +2379,12 @@ const CSS = `
   @media (prefers-reduced-motion: reduce) {
     .rcv *, .rcv *::before, .rcv *::after { transition: none !important; animation: none !important; }
   }
+  @media (forced-colors: active) {
+    .rcv, .rcv .card, .rcv .modal, .rcv .sidebar { background: Canvas; color: CanvasText; forced-color-adjust: auto; }
+    .rcv .btn, .rcv button, .rcv input, .rcv textarea, .rcv select, .rcv .card { border: 1px solid ButtonText; }
+    .rcv .btn-primary, .rcv .btn-brass, .rcv .navitem.active { background: Highlight; color: HighlightText; }
+    .rcv .muted, .rcv .eyebrow, .rcv .modal-intro { color: CanvasText; }
+  }
   /* Performance mode. Everything here is either motion or a compositing effect
      that costs a full-screen pass to draw. The colours, spacing and type are
      untouched: it should look like the same app sitting still, not a plainer
@@ -2329,6 +2431,14 @@ const CSS = `
     .rcv .wall { grid-auto-rows: 118px; }
     .rcv .tile.big, .rcv .tile.wide { grid-column: span 1; grid-row: span 1; }
     .rcv .stile { height: 132px; }
+    .rcv .btn, .rcv button.chip, .rcv .btn-move, .rcv .blurbtn, .rcv .gridsel, .rcv .ss-btn, .rcv .navitem, .rcv .sidebar button { min-height: 48px; min-width: 48px; }
+    .rcv input:not([type="checkbox"]):not([type="radio"]), .rcv select { min-height: 48px; }
+    .rcv.phone button.chip { min-height: 48px; padding: 8px 13px; }
+    .rcv.phone .btn-move { min-width: 48px; min-height: 48px; }
+    .rcv .start-grid { grid-template-columns: 1fr; }
+    .rcv .recovery-banner { align-items: flex-start; flex-direction: column; }
+    .rcv .modal { padding: 20px; max-height: calc(100vh - 20px); }
+    .rcv .modal-title-row { align-items: center; }
   }
 `;
 
@@ -2784,7 +2894,8 @@ const GUIDE = [
         "Buckets are folders. A character or persona sits in one bucket, and a bucket can have its own cover picture.",
         "Tags describe a character and are how you filter your own library. They may contain spaces.",
         "Searchable terms are extra words that help a character be found. CharSnap does not allow spaces in these, so a space becomes a hyphen when exporting. What you typed stays here unchanged.",
-        "The search box on each library screen looks through names, tags, terms and the writing itself.",
+        "The search box on each library screen looks through names, tags, terms and the writing itself. Ctrl+K on Windows searches every kind at once and also runs common actions.",
+        "The star beside any Ctrl+K result keeps it in Favourites on the dashboard, so a large library can keep its most-used records close.",
         "Select, at the top of the Characters and Personas screens, turns on tick boxes. With several picked you can move them all into one bucket at once, or delete them together. A group deletion goes to the bin exactly as a single one does.",
         "The dashboard can be reordered, and Spotlight picks a character at random each time you open it."
       ]
@@ -2823,7 +2934,9 @@ const GUIDE = [
         "Download a sample file gives you a blank file listing every field an import will accept."
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
-      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file, and Import backup brings it back."
+      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. The app records when a backup succeeds and reminds you when recent work needs another copy.",
+      "Import backup checks the file first and shows its date, app version, record counts, picture count and any missing pictures before it offers to replace the vault.",
+      "While an editor is open, unsaved writing is kept as a private draft inside the encrypted vault. If the app closes unexpectedly, the dashboard and the editor offer to restore it."
     ]
   },
   {
@@ -2879,7 +2992,7 @@ const GUIDE = [
         "Opening a character still shows its pictures at full size in either setting."
       ],
       "The app chooses one for you the first time it runs, going by what your device reports about its memory and its processor. Change it whenever you like. It is remembered, and it applies from the lock screen onwards rather than only once you are inside.",
-      "Reading text size, Card size and Text contrast sit in the same panel. Card size decides how large characters and personas look in the library, so a smaller card fits more of them on screen at once."
+      "Reading text size, Card size and Text contrast sit in the same panel. The 200% reading option is there for large text without browser zoom. Card size decides how large characters and personas look in the library, so a smaller card fits more of them on screen at once."
     ]
   },
   {
@@ -2887,7 +3000,7 @@ const GUIDE = [
     "title": "Moving to another device",
     "summary": "Copying your vault across your own network.",
     "body": [
-      "Settings has a device transfer that copies your vault to another computer over your own network. Nothing goes to the internet. The two machines talk directly, and only while you have that panel open.",
+      "The dashboard and Settings open a guided device transfer that copies your vault over your own network. Nothing goes to the internet. The two machines talk directly, and only after you start sharing.",
       "Sharing starts on the Windows app. A phone or tablet with the Android app can receive by scanning the QR. The web edition has no device transfer, because a page in a browser cannot open a connection for another machine to reach. To move a vault out of the web edition, use Export backup in Settings and import that file wherever you want it.",
       [
         "Start on the device you are copying from. It shows a one-time code.",
@@ -2953,11 +3066,12 @@ const GUIDE = [
     "title": "Updates",
     "summary": "How new versions arrive, and which file you need.",
     "body": [
-      "Updates arrive as a signed file that you pick yourself in Settings. The app installs nothing on its own and never checks for anything.",
+      "Updates arrive as a signed file that you pick yourself in Settings. Open official downloads takes you to the real GitHub release page in your browser. The app installs nothing on its own and never checks for anything.",
       "This is in the Windows app only. The web edition is served rather than installed, so it is already whatever version is being hosted and there is nothing for you to apply.",
       [
-        "A .rcvup file updates the interface, which covers almost every release.",
+        "A .rcvup file updates the Windows interface. You can pick it or drop it onto the update box in Settings.",
         "A setup .exe is needed when a release changes the part of the app a patch cannot reach. The release notes always say which you need, and from 1.150 the app checks too: hand it a .rcvup that needs the installer and it will tell you, rather than installing something that cannot work.",
+        "An .apk updates Android. Install it over the copy already on the device so its private vault stays in place.",
         "Only the newest file matters, because each one contains everything before it."
       ],
       "Version history in Settings lists what changed in each release. If an update ever misbehaves the app falls back to the version it shipped with, and Ctrl+Shift+F12 forces that at any time."
@@ -6865,7 +6979,10 @@ function CharacterPage({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody sheet"
+    className: "scrollbody sheet",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Character " + (c.name || "Untitled")
   }, /*#__PURE__*/React.createElement(CloseX, {
     onClose: onClose,
     fixed: true,
@@ -7727,7 +7844,10 @@ function PersonaPage({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody sheet"
+    className: "scrollbody sheet",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Persona " + (p.name || "Untitled")
   }, /*#__PURE__*/React.createElement(CloseX, {
     onClose: onClose,
     fixed: true,
@@ -8565,6 +8685,80 @@ function historyWhen(ts) {
     return "";
   }
 }
+
+/* ---------- recoverable writing drafts ---------- */
+const DRAFT_INDEX_KEY = "draft:index";
+const draftKeyOf = (type, id) => "draft:" + type + ":" + id;
+async function updateDraftIndex(entry, remove) {
+  let list = [];
+  try { list = JSON.parse(await sGet(DRAFT_INDEX_KEY) || "[]"); } catch (e) {}
+  list = Array.isArray(list) ? list.filter(x => x && x.key !== entry.key) : [];
+  if (!remove) list.unshift(entry);
+  list = list.slice(0, 30);
+  if (list.length) await sSet(DRAFT_INDEX_KEY, JSON.stringify(list));else await sDel(DRAFT_INDEX_KEY);
+}
+function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
+  const key = draftKeyOf(type, initial.id);
+  const baseText = useRef(JSON.stringify(initial));
+  const live = useRef(value);
+  live.current = value;
+  const loaded = useRef(false);
+  const writeQueue = useRef(Promise.resolve());
+  const [found, setFound] = useState(null);
+  const changed = JSON.stringify(value) !== baseText.current;
+  const clear = useCallback(() => {
+    writeQueue.current = writeQueue.current.catch(() => {}).then(() => sDel(key).catch(() => {})).then(() => updateDraftIndex({ key }, true).catch(() => {})).then(() => {
+      if (onDraftChange) onDraftChange();
+    });
+    return writeQueue.current;
+  }, [key, onDraftChange]);
+  useEffect(() => {
+    let alive = true;
+    sGet(key).then(raw => {
+      if (!alive || !raw) return;
+      try {
+        const snap = JSON.parse(raw);
+        if (snap && snap.data && JSON.stringify(snap.data) !== baseText.current) setFound(snap);
+      } catch (e) {}
+    }).catch(() => {}).finally(() => { loaded.current = true; });
+    return () => { alive = false; };
+  }, [key]);
+  useEffect(() => {
+    if (!loaded.current || found) return;
+    const timer = setTimeout(() => {
+      if (!changed) { clear(); return; }
+      const data = live.current;
+      const label = String(data.name || data.title || "Untitled").trim() || "Untitled";
+      const snap = { version: 1, key, type, id: initial.id, label, savedAt: Date.now(), base: initial, data };
+      writeQueue.current = writeQueue.current.catch(() => {}).then(() => sSet(key, JSON.stringify(snap))).then(() => updateDraftIndex({ key, type, id: initial.id, label, savedAt: snap.savedAt })).then(() => {
+        if (onDraftChange) onDraftChange();
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [changed, value, found, key]);
+  const restore = () => {
+    if (!found) return;
+    setValue(found.data);
+    setFound(null);
+  };
+  const discardRecovery = () => {
+    setFound(null);
+    clear();
+  };
+  return { found, restore, discardRecovery, clear };
+}
+function DraftRecoveryBanner({ draft, onRestore, onDiscard }) {
+  if (!draft) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "recovery-banner",
+    role: "status"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Unsaved writing found"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: { fontSize: 12.5, marginTop: 3 }
+  }, "Saved on this device ", historyWhen(draft.savedAt), ". Restore it or keep the last saved version.")), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("button", { className: "btn btn-primary", onClick: onRestore }, "Restore draft"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onDiscard }, "Discard draft")));
+}
 function CharacterEditor({
   initial,
   imgCache,
@@ -8581,7 +8775,8 @@ function CharacterEditor({
   onSave,
   onDelete,
   onClose,
-  toast
+  toast,
+  onDraftChange
 }) {
   const [c, setC] = useState({
     variants: [],
@@ -8604,6 +8799,8 @@ function CharacterEditor({
      beside Save. Compared against what was opened, so undoing an edit by hand
      counts as unchanged and closes without nagging. */
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const draftBase = useRef({ variants: [], ...initial });
+  const draft = useRecoverableDraft("character", draftBase.current, c, setC, onDraftChange);
   /* Compared against the state as the editor first built it, not against the
      record it was handed: the editor fills in a missing variants list on open,
      which reorders the keys and made an untouched character look edited. */
@@ -8831,6 +9028,7 @@ function CharacterEditor({
       createdAt: c.createdAt || Date.now()
     };
     delete out.__historyPushed;
+    draft.clear();
     onSave(out);
   };
   const setPortraitFor = imgId => {
@@ -8901,7 +9099,10 @@ function CharacterEditor({
       zIndex: 50,
       overflowY: "auto"
     },
-    className: "scrollbody sheet"
+    className: "scrollbody sheet",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": initial.createdAt ? "Edit character" : "New character"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: 1080,
@@ -8934,7 +9135,7 @@ function CharacterEditor({
   }, initial.createdAt && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     onClick: () => {
-      if (confirmDel) onDelete(c);else {
+      if (confirmDel) { draft.clear(); onDelete(c); }else {
         setConfirmDel(true);
         setTimeout(() => setConfirmDel(false), 3500);
       }
@@ -8945,7 +9146,11 @@ function CharacterEditor({
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: doSave
-  }, "Save character"))), confirmLeave && /*#__PURE__*/React.createElement("div", {
+  }, "Save character"))), /*#__PURE__*/React.createElement(DraftRecoveryBanner, {
+    draft: draft.found,
+    onRestore: draft.restore,
+    onDiscard: draft.discardRecovery
+  }), confirmLeave && /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px solid var(--brass-line)",
       background: "var(--brass-soft)",
@@ -8965,7 +9170,7 @@ function CharacterEditor({
       lineHeight: 1.55,
       marginBottom: 12
     }
-  }, "Closing now throws away what you have written here."), /*#__PURE__*/React.createElement("div", {
+  }, "Your writing is kept as a private draft on this device until you save or explicitly discard it."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -8976,7 +9181,7 @@ function CharacterEditor({
     onClick: () => setConfirmLeave(false)
   }, "Keep editing"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onClose
+    onClick: () => { draft.clear(); onClose(); }
   }, "Discard changes"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -9842,14 +10047,14 @@ function CharacterEditor({
   }, c.name.trim() ? "Editing \u201c" + c.name.trim() + "\u201d" : "Unnamed character"), initial.createdAt && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     onClick: () => {
-      if (confirmDel) onDelete(c);else {
+      if (confirmDel) { draft.clear(); onDelete(c); }else {
         setConfirmDel(true);
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
   }, confirmDel ? "Click again — it goes to the bin for 30 days" : "Delete"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onClose
+    onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: doSave
@@ -9991,12 +10196,15 @@ function RecordModal({
   title,
   fields,
   initial,
+  draftType,
   onSave,
   onDelete,
   onClose,
-  imgCtx
+  imgCtx,
+  onDraftChange
 }) {
   const [r, setR] = useState(initial);
+  const draft = useRecoverableDraft(draftType || "record", initial, r, setR, onDraftChange);
   /* Committing a half-typed tag when the box loses focus is not enough on its
      own: clicking Save blurs the box and saves in the same gesture, and the
      click handler still holds the record as it was before the blur. Keeping a
@@ -10025,8 +10233,15 @@ function RecordModal({
     onClick: tryClose
   }, /*#__PURE__*/React.createElement("div", {
     className: "card modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": title,
     onClick: e => e.stopPropagation()
-  }, confirmLeave && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(DraftRecoveryBanner, {
+    draft: draft.found,
+    onRestore: draft.restore,
+    onDiscard: draft.discardRecovery
+  }), confirmLeave && /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px solid var(--brass-line)",
       background: "var(--brass-soft)",
@@ -10046,7 +10261,7 @@ function RecordModal({
       lineHeight: 1.55,
       marginBottom: 12
     }
-  }, "Closing now throws away what you have written here."), /*#__PURE__*/React.createElement("div", {
+  }, "Your writing is kept as a private draft on this device until you save or explicitly discard it."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -10057,7 +10272,7 @@ function RecordModal({
     onClick: () => setConfirmLeave(false)
   }, "Keep editing"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onClose
+    onClick: () => { draft.clear(); onClose(); }
   }, "Discard changes"))),/*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -10160,21 +10375,24 @@ function RecordModal({
       marginRight: "auto"
     },
     onClick: () => {
-      if (confirmDel) onDelete(r);else {
+      if (confirmDel) { draft.clear(); onDelete(r); }else {
         setConfirmDel(true);
         setTimeout(() => setConfirmDel(false), 3500);
       }
     }
   }, confirmDel ? "Click again to delete" : "Delete"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: onClose
+    onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
-    onClick: () => onSave({
-      ...rRef.current,
-      updatedAt: Date.now(),
-      createdAt: rRef.current.createdAt || Date.now()
-    })
+    onClick: () => {
+      draft.clear();
+      onSave({
+        ...rRef.current,
+        updatedAt: Date.now(),
+        createdAt: rRef.current.createdAt || Date.now()
+      });
+    }
   }, "Save"))));
 }
 
@@ -10760,9 +10978,210 @@ function ChangelogModal({ onClose }) {
   }, n))))))));
 }
 
+function SimpleModal({ eyebrow, title, onClose, children, className, zIndex }) {
+  useEffect(() => {
+    const key = e => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [onClose]);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-back" + (className ? " " + className : ""),
+    style: zIndex ? { zIndex } : null,
+    onClick: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": title,
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-title-row"
+  }, /*#__PURE__*/React.createElement("div", null, eyebrow && /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, eyebrow), /*#__PURE__*/React.createElement("h2", { className: "serif" }, title)), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onClose, "aria-label": "Close " + title }, "Close")), children));
+}
+function OnboardingModal({ onCreate, onImport, onTransfer, onGuide, onDone }) {
+  const ref = useRef(null);
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Welcome",
+    title: "Start your private library",
+    onClose: onDone,
+    className: "onboarding-modal",
+    zIndex: 130
+  }, /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "Everything stays on this device. Pick the shortest path in; you can change or import anything later."), /*#__PURE__*/React.createElement("div", { className: "start-grid" }, [
+    ["Starter character", "A useful example with sections you can replace.", () => onCreate(true)],
+    ["Blank character", "Open a clean character editor.", () => onCreate(false)],
+    ["Restore a backup", "Preview a Rolecraft backup before replacing this vault.", () => ref.current.click()],
+    ["Receive from computer", "Use a pairing code over your local Wi-Fi.", onTransfer],
+    ["Read the quick guide", "Learn the library in a few minutes.", onGuide]
+  ].map(([head, body, go], i) => /*#__PURE__*/React.createElement("button", {
+    key: head,
+    className: "card start-card" + (i === 0 ? " recommended" : ""),
+    onClick: go
+  }, /*#__PURE__*/React.createElement("strong", null, head), /*#__PURE__*/React.createElement("span", null, body), i === 0 && /*#__PURE__*/React.createElement("em", null, "Recommended"))), /*#__PURE__*/React.createElement("input", {
+    ref,
+    type: "file",
+    accept: "application/json,.json",
+    hidden: true,
+    onChange: e => { if (e.target.files[0]) onImport(e.target.files[0]); e.target.value = ""; }
+  })), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onDone }, "Skip for now"));
+}
+function WhatsNewModal({ onClose, onTransfer, onBackup, onSearch }) {
+  const current = CHANGELOG[0];
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Updated to " + APP_VERSION,
+    title: "What’s new",
+    onClose,
+    className: "whats-new",
+    zIndex: 125
+  }, /*#__PURE__*/React.createElement("ul", { className: "release-notes" }, current.notes.map((n, i) => /*#__PURE__*/React.createElement("li", { key: i }, n))), /*#__PURE__*/React.createElement("div", { className: "shortcut-row" }, /*#__PURE__*/React.createElement("button", { className: "btn btn-primary", onClick: onTransfer }, "Open transfer"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onBackup }, "Back up now"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onSearch }, "Try Ctrl+K")));
+}
+function CommandPalette({ items, actions, favorites, onToggleFavorite, onOpen, onClose }) {
+  const [q, setQ] = useState("");
+  const searchRef = useRef(null);
+  useEffect(() => {
+    const timer = setTimeout(() => searchRef.current && searchRef.current.focus(), 40);
+    return () => clearTimeout(timer);
+  }, []);
+  const query = q.trim().toLowerCase();
+  const actionHits = actions.filter(a => !query || (a.label + " " + (a.hint || "")).toLowerCase().includes(query));
+  const itemHits = items.filter(x => !query || x.search.includes(query)).slice(0, 40);
+  const fav = new Set(favorites.map(x => x.type + ":" + x.id));
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Quick find",
+    title: "Search and actions",
+    onClose,
+    className: "command-palette",
+    zIndex: 160
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: searchRef,
+    autoFocus: true,
+    "data-initial-focus": "true",
+    className: "palette-search",
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Find a record or run an action…",
+    "aria-label": "Search records and actions"
+  }), /*#__PURE__*/React.createElement("div", { className: "palette-results" }, actionHits.length > 0 && /*#__PURE__*/React.createElement("div", { className: "palette-group" }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Actions"), actionHits.map(a => /*#__PURE__*/React.createElement("button", { key: a.label, className: "palette-row", onClick: a.run }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, a.label), a.hint && /*#__PURE__*/React.createElement("small", null, a.hint)), a.key && /*#__PURE__*/React.createElement("kbd", null, a.key)))), itemHits.length > 0 && /*#__PURE__*/React.createElement("div", { className: "palette-group" }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Library"), itemHits.map(x => /*#__PURE__*/React.createElement("div", { key: x.type + x.id, className: "palette-row-wrap" }, /*#__PURE__*/React.createElement("button", { className: "palette-row", onClick: () => onOpen(x) }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, x.label), /*#__PURE__*/React.createElement("small", null, x.type + (x.group ? " · " + x.group : "")))), /*#__PURE__*/React.createElement("button", {
+    className: "favorite-btn",
+    "aria-label": (fav.has(x.type + ":" + x.id) ? "Remove " : "Add ") + x.label + (fav.has(x.type + ":" + x.id) ? " from favorites" : " to favorites"),
+    "aria-pressed": fav.has(x.type + ":" + x.id),
+    onClick: () => onToggleFavorite(x)
+  }, fav.has(x.type + ":" + x.id) ? "★" : "☆")))), !actionHits.length && !itemHits.length && /*#__PURE__*/React.createElement("div", { className: "empty-palette" }, "Nothing matches that search.")));
+}
+function BackupRestoreModal({ file, onRestore, onClose }) {
+  const [preview, setPreview] = useState(null);
+  useEffect(() => { let alive = true; readBackupPreview(file).then(v => alive && setPreview(v)); return () => { alive = false; }; }, [file]);
+  const info = preview && preview.info;
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Restore preview",
+    title: file.name,
+    onClose,
+    className: "backup-preview",
+    zIndex: 170
+  }, !info ? /*#__PURE__*/React.createElement("div", { className: "busy-line" }, /*#__PURE__*/React.createElement("span", { className: "spin" }), " Checking the backup…") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { className: "backup-summary" }, /*#__PURE__*/React.createElement("strong", null, info.ok ? "Backup is readable" : "This backup cannot be restored"), info.exportedAt && /*#__PURE__*/React.createElement("span", null, "Created " + historyWhen(info.exportedAt) + " · app " + info.appVersion), /*#__PURE__*/React.createElement("span", null, info.counts.chars + " characters · " + info.counts.personas + " personas · " + info.counts.lore + " lore · " + info.counts.prompts + " prompts · " + info.imageCount + " pictures")), info.fatal.concat(info.warnings).map((m, i) => /*#__PURE__*/React.createElement("div", { key: i, className: info.fatal.includes(m) ? "validation-error" : "validation-warning" }, m)), /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "Restoring replaces every current record, grouping, picture and bin entry. The preview above was read without changing the vault."), /*#__PURE__*/React.createElement("div", { className: "shortcut-row" }, /*#__PURE__*/React.createElement("button", { className: "btn btn-danger", disabled: !info.ok, onClick: () => onRestore(preview.data) }, "Replace and restore"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onClose }, "Cancel"))));
+}
+function TransferWizard({ onClose, onVaultReplaced, onAdvanced }) {
+  const [mode, setMode] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [code, setCode] = useState("");
+  const [mirror, setMirror] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const T = window.transfer;
+  const canShare = !!(T && T.canShare !== false);
+  useEffect(() => {
+    if (!T) return;
+    T.status().then(s => { if (s && s.active) { setStatus(s); setMode("send"); } }).catch(() => {});
+    return T.onProgress ? T.onProgress(setProgress) : undefined;
+  }, []);
+  const start = async () => {
+    setBusy(true); setMsg(null);
+    const r = await T.start().catch(e => ({ ok: false, error: e.message }));
+    setBusy(false);
+    if (r && r.ok) setStatus(r);else setMsg(r && r.error || "Couldn't start sharing");
+  };
+  const check = async () => {
+    setBusy(true); setMsg(null);
+    const r = await T.preview(code.trim(), mirror).catch(e => ({ ok: false, error: e.message }));
+    setBusy(false);
+    if (r && r.ok) { if (r.upToDate) setMsg("Already up to date. Nothing needs copying.");else setPlan(r); } else setMsg(r && r.error || "Couldn't reach the other device");
+  };
+  const receive = async () => {
+    setBusy(true); setMsg(mirror ? "Waiting for the other device to approve the mirror…" : null);
+    const r = await T.receive(code.trim(), mirror).catch(e => ({ ok: false, error: e.message }));
+    setBusy(false); setPlan(null); setProgress(null);
+    if (r && r.ok) { if (!r.partial && onVaultReplaced) onVaultReplaced(); setMsg(r.upToDate ? "Already up to date." : "Complete. " + (r.added || 0) + " new, " + (r.updated || 0) + " updated" + (r.removed ? ", " + r.removed + " removed" : "") + "."); } else setMsg(r && r.error || "Transfer failed");
+  };
+  let body;
+  if (!T) {
+    body = /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "Device transfer is available in the Windows and Android apps.");
+  } else if (!mode) {
+    body = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+      className: "modal-intro"
+    }, "Choose what this device should do. Records travel directly over your local network and never go to the internet."), /*#__PURE__*/React.createElement("div", {
+      className: "start-grid two"
+    }, canShare && /*#__PURE__*/React.createElement("button", {
+      className: "card start-card recommended",
+      onClick: () => setMode("send")
+    }, /*#__PURE__*/React.createElement("strong", null, "Send this vault"), /*#__PURE__*/React.createElement("span", null, "Show a code for the other device.")), /*#__PURE__*/React.createElement("button", {
+      className: "card start-card",
+      onClick: () => setMode("receive")
+    }, /*#__PURE__*/React.createElement("strong", null, "Receive onto this device"), /*#__PURE__*/React.createElement("span", null, "Preview a merge or mirror before saving."))));
+  } else {
+    const back = /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost wizard-back",
+      onClick: () => { setMode(null); setPlan(null); setMsg(null); }
+    }, "← Choose direction");
+    let step;
+    if (mode === "send") {
+      step = status ? /*#__PURE__*/React.createElement("div", {
+        className: "send-code-card"
+      }, /*#__PURE__*/React.createElement("div", { className: "eyebrow" }, "Code for the other device"), /*#__PURE__*/React.createElement("div", { className: "send-code" }, status.code), /*#__PURE__*/React.createElement(TransferQr, { text: status.code, size: 188 }), /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "On the other device choose Receive, then scan or type this code."), /*#__PURE__*/React.createElement("button", {
+        className: "btn btn-ghost",
+        onClick: async () => { await T.stop(); setStatus(null); setProgress(null); }
+      }, "Stop sending")) : /*#__PURE__*/React.createElement("button", { className: "btn btn-primary", disabled: busy, onClick: start }, busy ? "Preparing…" : "Start sending");
+    } else {
+      step = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { className: "lbl" }, "Pairing code"), /*#__PURE__*/React.createElement("input", {
+        value: code,
+        onChange: e => { setCode(e.target.value); setPlan(null); },
+        placeholder: "Type the code shown on the other device"
+      }), /*#__PURE__*/React.createElement("label", { className: "mirror-choice" }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: mirror,
+        onChange: e => { setMirror(e.target.checked); setPlan(null); }
+      }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, "Mirror exactly"), " (can delete records here). Leave off for a safe merge.")), plan && /*#__PURE__*/React.createElement("div", { className: "backup-summary" }, /*#__PURE__*/React.createElement("strong", null, "Preview"), /*#__PURE__*/React.createElement("span", null, plan.added + " new · " + plan.updated + " updated · " + plan.removed + " removed · " + plan.unchanged + " unchanged")), /*#__PURE__*/React.createElement("div", { className: "shortcut-row" }, /*#__PURE__*/React.createElement("button", {
+        className: plan && plan.removed ? "btn btn-danger" : "btn btn-primary",
+        disabled: busy || !code.trim(),
+        onClick: plan ? receive : check
+      }, busy ? "Working…" : plan ? (mirror ? "Confirm mirror" : "Confirm merge") : "Check what would change"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onAdvanced }, "Camera scanner and advanced options")));
+    }
+    body = /*#__PURE__*/React.createElement(React.Fragment, null, back, step, progress && /*#__PURE__*/React.createElement("div", {
+      className: "transfer-progress",
+      role: "status"
+    }, (progress.phase || "Working") + (progress.total ? " · " + Math.round((progress.pct || 0) * 100) + "%" : "…")), msg && /*#__PURE__*/React.createElement("div", { className: "validation-warning", role: "status" }, msg));
+  }
+  return /*#__PURE__*/React.createElement(SimpleModal, {
+    eyebrow: "Local Wi-Fi",
+    title: "Transfer wizard",
+    onClose,
+    className: "transfer-wizard",
+    zIndex: 150
+  }, body);
+}
+
 function SettingsModal({
   onOpenTrash,
   onOpenHistory,
+  onOpenTransfer,
+  onCopyDiagnostics,
+  lastBackup,
+  backupDue,
   perfMode,
   setPerfMode,
   onVaultReplaced,
@@ -10958,6 +11377,17 @@ function SettingsModal({
   const [upd, setUpd] = useState(null);
   const [updMsg, setUpdMsg] = useState(null);
   const updRef = useRef(null);
+  const installUpdateFile = async f => {
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const r = await window.updater.install(text);
+      setUpdMsg(r.ok ? { ok: true, text: "Update " + r.version + " installed — relaunch to apply." } : { ok: false, text: r.error });
+      window.updater.status().then(setUpd);
+    } catch (err) {
+      setUpdMsg({ ok: false, text: "Couldn't read that file" });
+    }
+  };
   useEffect(() => {
     if (window.updater) window.updater.status().then(setUpd).catch(() => {});
   }, []);
@@ -11016,6 +11446,9 @@ function SettingsModal({
     onClick: onClose
   }, /*#__PURE__*/React.createElement("div", {
     className: "card modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Settings",
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11160,9 +11593,10 @@ function SettingsModal({
   }, "Reading text size"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 8,
+      flexWrap: "wrap"
     }
-  }, [["small", "Small"], ["medium", "Medium"], ["large", "Large"]].map(([s, label]) => /*#__PURE__*/React.createElement("button", {
+  }, [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["maximum", "200%"]].map(([s, label]) => /*#__PURE__*/React.createElement("button", {
     key: s,
     className: "btn " + (textSize === s ? "btn-primary" : "btn-ghost"),
     style: {
@@ -11403,7 +11837,7 @@ function SettingsModal({
       color: "var(--mut)",
       marginBottom: 10
     }
-  }, "Build ", upd ? upd.build : "…", upd && upd.active ? " · update " + upd.active + " active" : " · factory version", ". Updates are signed files — the app only accepts packages signed with your update key, so patches install in place without reinstalling. If an update ever misbehaves, the app auto-reverts to the factory version, and Ctrl+Shift+F12 forces a revert at any time."), updMsg && /*#__PURE__*/React.createElement("div", {
+  }, "Build ", upd ? upd.build : "…", upd && upd.active ? " · update " + upd.active + " active" : " · factory version", ". Download the .rcvup for a quick Windows interface update, the Setup.exe when release notes say Windows needs the full installer, or the APK on Android. The app never checks or downloads in the background."), updMsg && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: updMsg.ok ? "var(--brass)" : "#e2698a",
@@ -11416,6 +11850,11 @@ function SettingsModal({
       flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => {
+      if (window.releasePage && window.releasePage.open) window.releasePage.open();else toast("Use the full Windows installer once to enable the official downloads button");
+    }
+  }, "Open official downloads"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => updRef.current.click()
   }, "Install update file…"), upd && upd.active && /*#__PURE__*/React.createElement("button", {
@@ -11434,7 +11873,16 @@ function SettingsModal({
   }, "Revert to factory"), updMsg && updMsg.ok && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: () => window.updater.relaunch()
-  }, "Relaunch now")), /*#__PURE__*/React.createElement("input", {
+  }, "Relaunch now")), /*#__PURE__*/React.createElement("div", {
+    className: "update-dropzone",
+    onDragOver: e => { e.preventDefault(); e.currentTarget.classList.add("over"); },
+    onDragLeave: e => e.currentTarget.classList.remove("over"),
+    onDrop: e => { e.preventDefault(); e.currentTarget.classList.remove("over"); installUpdateFile(e.dataTransfer.files && e.dataTransfer.files[0]); },
+    onClick: () => updRef.current.click(),
+    role: "button",
+    tabIndex: 0,
+    onKeyDown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); updRef.current.click(); } }
+  }, "Drop a signed .rcvup here, or choose one above"), /*#__PURE__*/React.createElement("input", {
     ref: updRef,
     type: "file",
     accept: ".rcvup,.json",
@@ -11443,23 +11891,7 @@ function SettingsModal({
       const f = e.target.files && e.target.files[0];
       e.target.value = "";
       if (!f) return;
-      try {
-        const text = await f.text();
-        const r = await window.updater.install(text);
-        setUpdMsg(r.ok ? {
-          ok: true,
-          text: "Update " + r.version + " installed — relaunch to apply."
-        } : {
-          ok: false,
-          text: r.error
-        });
-        window.updater.status().then(setUpd);
-      } catch (err) {
-        setUpdMsg({
-          ok: false,
-          text: "Couldn't read that file"
-        });
-      }
+      installUpdateFile(f);
     }
   })), /*#__PURE__*/React.createElement("div", {
     className: "divider"
@@ -11491,7 +11923,9 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. \"Download all images\" saves just the pictures as a zip, at the original quality they were added in. Import it here later to restore or move devices. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
+  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
+    className: "backup-health " + (backupDue ? "due" : "good")
+  }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -11538,8 +11972,8 @@ function SettingsModal({
     type: "file",
     accept: "application/json",
     hidden: true,
-    onChange: e => {
-      if (e.target.files[0]) setPendingImport(e.target.files[0]);
+    onChange: async e => {
+      if (e.target.files[0]) setPendingImport(await readBackupPreview(e.target.files[0]));
       e.target.value = "";
     }
   })), pendingImport && /*#__PURE__*/React.createElement("div", {
@@ -11555,15 +11989,16 @@ function SettingsModal({
       fontSize: 13,
       marginBottom: 10
     }
-  }, "Restore ", /*#__PURE__*/React.createElement("b", null, pendingImport.name), "? This replaces everything currently in the vault."), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("strong", null, pendingImport.info.ok ? "Backup preview: " + pendingImport.file.name : "This backup cannot be restored"), /*#__PURE__*/React.createElement("div", { style: { marginTop: 5, color: "var(--mut)", lineHeight: 1.55 } }, pendingImport.info.counts.chars, " characters · ", pendingImport.info.counts.personas, " personas · ", pendingImport.info.counts.lore, " lore · ", pendingImport.info.counts.prompts, " prompts · ", pendingImport.info.imageCount, " pictures", pendingImport.info.exportedAt ? " · " + historyWhen(pendingImport.info.exportedAt) : ""), pendingImport.info.fatal.concat(pendingImport.info.warnings).map((m, i) => /*#__PURE__*/React.createElement("div", { key: i, style: { color: pendingImport.info.fatal.includes(m) ? "var(--danger)" : "var(--brass)", marginTop: 5 } }, m)), /*#__PURE__*/React.createElement("div", { style: { marginTop: 8 } }, "Restoring replaces everything currently in the vault.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
+    disabled: !pendingImport.info.ok,
     onClick: () => {
-      onImport(pendingImport);
+      onImport(pendingImport.data);
       setPendingImport(null);
     }
   }, "Replace and restore"), /*#__PURE__*/React.createElement("button", {
@@ -11573,7 +12008,11 @@ function SettingsModal({
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: { fontWeight: 700, marginBottom: 4 }
-  }, "Transfer to another device"), mirrorAsk && /*#__PURE__*/React.createElement("div", {
+  }, "Transfer to another device"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    style: { marginBottom: 10 },
+    onClick: onOpenTransfer
+  }, "Open guided transfer"), mirrorAsk && /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
     style: { zIndex: 60 }
   }, /*#__PURE__*/React.createElement("div", {
@@ -11809,7 +12248,17 @@ function SettingsModal({
     className: "btn btn-ghost",
     disabled: xferBusy,
     onClick: () => setXferPlan(null)
-  }, "Cancel")), !xfer && (!xferProg || xferProg.phase !== "preparing") && xferBar()),
+  }, "Cancel")), !xfer && (!xferProg || xferProg.phase !== "preparing") && xferBar()), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 700, marginBottom: 4 }
+  }, "Privacy & support"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: { fontSize: 13, lineHeight: 1.55, marginBottom: 10 }
+  }, "Copy a diagnostic report with app settings, counts and generic error labels. It never includes names, writing, pictures, file paths, passwords or pairing codes."), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onCopyDiagnostics
+  }, "Copy private diagnostics"),
   /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
@@ -12367,6 +12816,7 @@ function RolecraftVault() {
       const msg = err && err.message || String(err || "");
       if (/locked/i.test(msg)) toast("The vault is locked — nothing was saved");
       else toast("Couldn't save — your last change may not be stored");
+      recordDiag("unhandled rejection");
       console.error("unhandled rejection", err);
     };
     window.addEventListener("unhandledrejection", onReject);
@@ -12403,6 +12853,19 @@ function RolecraftVault() {
      "Relaunch to see them", which is what it means when an app cannot show you
      your own data. */
   const [vaultTick, setVaultTick] = useState(0);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [restoreFile, setRestoreFile] = useState(null);
+  const [favorites, setFavorites] = useState([]);
+  const [drafts, setDrafts] = useState([]);
+  const [lastBackup, setLastBackup] = useState(0);
+  const refreshDrafts = useCallback(() => {
+    sGet(DRAFT_INDEX_KEY).then(v => {
+      try { setDrafts(v ? JSON.parse(v).filter(Boolean) : []); } catch (e) { setDrafts([]); }
+    }).catch(() => {});
+  }, []);
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
     (async () => {
@@ -12419,6 +12882,10 @@ function RolecraftVault() {
           return fallback;
         }
       };
+      const parseSoft = (raw, fallback) => {
+        if (!raw) return fallback;
+        try { return JSON.parse(raw); } catch (e) { return fallback; }
+      };
       try {
         const [c, p, l, pr] = await Promise.all([sGet("chars:all"), sGet("personas:all"), sGet("lore:all"), sGet("prompts:all")]);
         const charList = parse(c, "chars:all", []);
@@ -12434,6 +12901,11 @@ function RolecraftVault() {
     const cds = await sGet("ui:cardsize");
         const ctr = await sGet("ui:contrast");
         const trashRaw = parse(await sGet("trash:all"), "trash:all", []);
+        const favoriteRaw = parseSoft(await sGet("ui:favorites"), []);
+        const draftRaw = parseSoft(await sGet(DRAFT_INDEX_KEY), []);
+        const backupRaw = Number(await sGet("ui:lastbackup")) || 0;
+        const onboarded = await sGet("ui:onboarded");
+        const lastSeen = await sGet("ui:lastseenversion");
         if (damaged.length) {
           setLoadError(damaged);
           return; // nothing is loaded, so nothing can be written back over it
@@ -12454,11 +12926,25 @@ function RolecraftVault() {
     setCardSize(cds || "medium");
         setContrast(ctr || "normal");
         setTrash(Array.isArray(trashRaw) ? trashRaw : []);
+        setFavorites(Array.isArray(favoriteRaw) ? favoriteRaw : []);
+        setDrafts(Array.isArray(draftRaw) ? draftRaw : []);
+        setLastBackup(backupRaw);
         const blObj = {};
         blurList.forEach(id => blObj[id] = true);
         setBlurred(blObj);
         setLoadError(null);
         setReady(true);
+        const recordCount = charList.length + personaList.length + loreList.length + promptList.length;
+        /* These are installed-app moments. The embeddable web edition is often
+           mounted inside another product and should not seize that page with a
+           first-run or post-update window. Android's real bridge has
+           nativePromise; test shims and ordinary browsers do not. */
+        const installedApp = window.rcvInstalledApp === true || !!(window.Capacitor && typeof window.Capacitor.nativePromise === "function");
+        if (installedApp && onboarded !== "1" && recordCount === 0) setShowOnboarding(true);
+        else if (installedApp) {
+          if (onboarded !== "1") sSet("ui:onboarded", "1").catch(() => {});
+          if (lastSeen !== APP_VERSION) setShowWhatsNew(true);
+        }
         charList.forEach(ch => {
           if (ch.profileImg) loadImage(ch.profileImg);
         });
@@ -12722,7 +13208,7 @@ function RolecraftVault() {
       if (ro) ro.disconnect();
     };
   }, [view]);
-  const DASH_KEYS = ["quick", "spotlight", "recent", "wall"];
+  const DASH_KEYS = ["quick", "spotlight", "favorites", "recent", "wall"];
   const [dashOrder, setDashOrderRaw] = useState(DASH_KEYS);
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
@@ -12765,6 +13251,47 @@ function RolecraftVault() {
     setDashOrder(next);
   };
   const [showGuide, setShowGuide] = useState(false);
+  useEffect(() => {
+    const key = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCommandOpen(v => !v);
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  const modalCount = [showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, showTrash, showHistory].filter(Boolean).length + (editingChar ? 1 : 0) + (editingRecord ? 1 : 0);
+  useEffect(() => {
+    if (!modalCount) return;
+    const before = document.activeElement;
+    const timer = setTimeout(() => {
+      const open = [...document.querySelectorAll(".modal-back .modal, .sheet")].filter(el => {
+        const s = getComputedStyle(el);
+        return s.display !== "none" && s.visibility !== "hidden";
+      });
+      const panel = open[open.length - 1];
+      if (!panel) return;
+      if (!panel.hasAttribute("role")) panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-modal", "true");
+      panel.setAttribute("tabindex", "-1");
+      const focusable = panel.querySelector("[data-initial-focus='true'], [autofocus], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])");
+      (focusable || panel).focus();
+    }, 0);
+    const trap = e => {
+      if (e.key !== "Tab") return;
+      const open = [...document.querySelectorAll(".modal-back .modal, .sheet")].filter(el => getComputedStyle(el).display !== "none");
+      const panel = open[open.length - 1];
+      if (!panel) return;
+      const list = [...panel.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])")].filter(el => el.offsetParent !== null);
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", trap, true);
+    return () => { clearTimeout(timer); document.removeEventListener("keydown", trap, true); if (before && before.focus) before.focus(); };
+  }, [modalCount]);
   const [statsOpen, setStatsOpen] = useState(null); // null | { title, subtitle?, rows, note?, loading }
   /* Adds up what a set of pictures takes on disk. Sizes recorded at save time
      cost a few bytes each to read; anything from before that (or from an
@@ -12863,7 +13390,7 @@ function RolecraftVault() {
       toast("Couldn't compute stats");
     }
   };
-  const [textSize, setTextSize] = useState("medium"); // reading size for prose: small | medium | large
+  const [textSize, setTextSize] = useState("medium"); // reading size for prose: small | medium | large | maximum
   const [cardSize, setCardSize] = useState("medium"); // character and persona cards: small | medium | large
   const [contrast, setContrast] = useState("normal"); // text contrast boost: normal | high | max
   const [trash, setTrash] = useState([]); // [{tid, type, record, deletedAt}] — restorable deletes
@@ -12871,7 +13398,7 @@ function RolecraftVault() {
      what the bin holds now rather than what it held when it started. */
   const trashRef = useRef([]);
   trashRef.current = trash;
-  const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : "14.5px";
+  const proseSizePx = textSize === "small" ? "13px" : textSize === "large" ? "16px" : textSize === "maximum" ? "29px" : "14.5px";
   const cardMinPx = cardSize === "small" ? "132px" : cardSize === "large" ? "268px" : "180px";
   const applyTextSize = async s => {
     setTextSize(s);
@@ -13409,12 +13936,12 @@ function RolecraftVault() {
     };
   }, [requestFull, queueFull]);
   useEffect(() => {
-    quietRef.current = !!(showSettings || showGuide);
+    quietRef.current = !!(showSettings || showGuide || showTransfer || commandOpen || showOnboarding || showWhatsNew || restoreFile);
     if (quietRef.current) return;
     pumpImg();
     pumpFull();
     flushFull();
-  }, [showSettings, showGuide, pumpImg, pumpFull, flushFull]);
+  }, [showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, pumpImg, pumpFull, flushFull]);
   /* After unlock, pull some originals in the background so the first thing you
      open is already sharp.
 
@@ -14369,7 +14896,7 @@ function RolecraftVault() {
       const t = await sGet("th:" + id);
       if (t) thumbs[id] = t;
     }
-    downloadJSON({
+    const backup = {
       app: "rolecraft-vault",
       version: 4,
       exportedAt: new Date().toISOString(),
@@ -14384,14 +14911,30 @@ function RolecraftVault() {
       personaBuckets: pBucketMeta,
       loreBooks: loreMeta,
       promptBooks: promptMeta,
-      trash
-    }, "rolecraft-backup-" + new Date().toISOString().slice(0, 10) + ".json");
+      trash,
+      manifest: {
+        appVersion: APP_VERSION,
+        formatVersion: 4,
+        counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length },
+        images: Object.values(images).filter(Boolean).length
+      }
+    };
+    const check = backupInspection(backup);
+    if (!check.ok) { toast("Backup validation failed — nothing was exported"); recordDiag("backup validation failed"); return; }
+    const saved = await downloadJSON(backup, "rolecraft-backup-" + new Date().toISOString().slice(0, 10) + ".json");
+    if (saved) {
+      const at = Date.now();
+      setLastBackup(at);
+      await sSet("ui:lastbackup", String(at));
+      toast("Backup saved and verified");
+    }
   };
-  const importAll = async file => {
+  const importAll = async source => {
     try {
-      const data = JSON.parse(await file.text());
-      if (data.app !== "rolecraft-vault") {
-        toast("That file isn't a Rolecraft Vault backup");
+      const data = source && typeof source.text === "function" ? JSON.parse(await source.text()) : source;
+      const inspected = backupInspection(data);
+      if (!inspected.ok) {
+        toast(inspected.fatal[0] || "That file isn't a Rolecraft Vault backup");
         return;
       }
       setChars(data.chars || []);
@@ -14438,7 +14981,14 @@ function RolecraftVault() {
       const tr = Array.isArray(data.trash) ? data.trash : [];
       setTrash(tr);
       await sSet("trash:all", JSON.stringify(tr));
+      const draftKeys = (await sList()).keys.filter(k => k.startsWith("draft:"));
+      await Promise.all(draftKeys.map(k => sDel(k).catch(() => {})));
+      setDrafts([]);
+      const verifiedAt = Date.now();
+      setLastBackup(verifiedAt);
+      await sSet("ui:lastbackup", String(verifiedAt));
       setShowSettings(false);
+      setRestoreFile(null);
       toast("Backup restored");
     } catch {
       toast("Couldn't read that file");
@@ -14467,6 +15017,56 @@ function RolecraftVault() {
     add(prompts, "Prompt");
     return refs.sort((a, b) => b.u - a.u).slice(0, 6).map(x => ({ ...x.r, _t: x.t }));
   }, [chars, personas, lore, prompts]);
+  const libraryItems = useMemo(() => {
+    const out = [];
+    chars.forEach(r => out.push({ id: r.id, type: "Character", label: r.name || "Untitled character", group: r.bucket || "", search: ("character " + (r.name || "") + " " + (r.tagline || "") + " " + (r.tags || []).join(" ")).toLowerCase(), record: r }));
+    personas.forEach(r => out.push({ id: r.id, type: "Persona", label: r.name || "Untitled persona", group: r.bucket || "", search: ("persona " + (r.name || "") + " " + (r.tagline || "")).toLowerCase(), record: r }));
+    lore.forEach(r => out.push({ id: r.id, type: "Lore", label: r.title || "Untitled lore entry", group: r.world || "Unfiled", search: ("lore " + (r.title || "") + " " + (r.world || "") + " " + (r.triggers || []).join(" ")).toLowerCase(), record: r }));
+    prompts.forEach(r => out.push({ id: r.id, type: "Prompt", label: r.title || "Untitled prompt", group: r.collection || "Unfiled", search: ("prompt " + (r.title || "") + " " + (r.collection || "") + " " + (r.tags || []).join(" ")).toLowerCase(), record: r }));
+    return out;
+  }, [chars, personas, lore, prompts]);
+  const openLibraryItem = x => {
+    setCommandOpen(false);
+    if (x.type === "Character") { setView("characters"); setViewCharId(x.id); }
+    else if (x.type === "Persona") { setView("personas"); setViewPersonaId(x.id); }
+    else if (x.type === "Lore") { setView("lorebooks"); setViewLoreBook((x.record && x.record.world) || ""); setViewLoreEntryId(x.id); }
+    else { setView("prompts"); setViewPromptBook((x.record && x.record.collection) || ""); setViewPromptEntryId(x.id); }
+  };
+  const toggleFavorite = x => {
+    const key = x.type + ":" + x.id;
+    const exists = favorites.some(f => f.type + ":" + f.id === key);
+    const next = exists ? favorites.filter(f => f.type + ":" + f.id !== key) : [{ type: x.type, id: x.id }, ...favorites].slice(0, 40);
+    setFavorites(next);
+    sSet("ui:favorites", JSON.stringify(next)).catch(() => {});
+  };
+  const favoriteItems = favorites.map(f => libraryItems.find(x => x.type === f.type && x.id === f.id)).filter(Boolean);
+  const newestChange = Math.max(0, ...libraryItems.map(x => Number(x.record.updatedAt || x.record.createdAt) || 0));
+  const hasRecords = libraryItems.length > 0;
+  const backupDue = hasRecords && (!lastBackup || Date.now() - lastBackup > 30 * 864e5 || newestChange > lastBackup && Date.now() - lastBackup > 7 * 864e5);
+  const copyDiagnostics = async () => {
+    let imageCount = 0;
+    try { imageCount = (await sList()).keys.filter(k => k.startsWith("img:")).length; } catch (e) {}
+    const platform = typeof window !== "undefined" && window.Capacitor ? "Android" : window.auth ? "Windows" : "Web";
+    const report = {
+      app: "Rolecraft Vault",
+      version: APP_VERSION,
+      platform,
+      settings: { theme, graphics: perfMode, textSize, cardSize, contrast },
+      counts: { characters: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length, images: imageCount, drafts: drafts.length },
+      security: { passwordSet: !!authState.passwordSet, pinSet: !!authState.pinSet },
+      backup: { lastVerified: lastBackup ? new Date(lastBackup).toISOString() : null, due: backupDue },
+      diagnostics: DIAG_EVENTS.slice()
+    };
+    writeClipboard(JSON.stringify(report, null, 2), () => toast("Private diagnostics copied"));
+  };
+  const openDraft = async entry => {
+    try {
+      const raw = await sGet(entry.key);
+      const snap = raw && JSON.parse(raw);
+      if (!snap || !snap.base) { refreshDrafts(); return; }
+      if (snap.type === "character") setEditingChar(snap.base);else setEditingRecord({ type: snap.type, record: snap.base });
+    } catch (e) { toast("Couldn't open that draft"); }
+  };
   const nav = [{
     id: "dashboard",
     label: "Dashboard",
@@ -14493,7 +15093,7 @@ function RolecraftVault() {
   PERF = perfMode === "performance";
   const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "");
   const sheetOpen = !!(viewCharId || viewPersonaId);
-  const overlayOpen = !!(showSettings || showGuide);
+  const overlayOpen = !!(showSettings || showGuide || showTransfer || commandOpen || showOnboarding || showWhatsNew || restoreFile);
   quietRef.current = overlayOpen;
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
@@ -14792,8 +15392,18 @@ function RolecraftVault() {
           id: uid()
         }
       })
+    }, {
+      label: "Search everything",
+      sub: "Records, favourites & actions",
+      icon: icons.search,
+      fn: () => setCommandOpen(true)
+    }, {
+      label: "Transfer devices",
+      sub: "Guided local Wi-Fi copy",
+      icon: icons.up,
+      fn: () => setShowTransfer(true)
     }];
-    const visibleKeys = dashOrder.filter(k => k === "spotlight" ? !!spotlight : k === "wall" ? wallShow.length > 0 : true);
+    const visibleKeys = dashOrder.filter(k => k === "spotlight" ? !!spotlight : k === "favorites" ? favoriteItems.length > 0 : k === "wall" ? wallShow.length > 0 : true);
     const dashHead = (id, label) => {
       const vi = visibleKeys.indexOf(id);
       const first = vi === 0,
@@ -15129,6 +15739,13 @@ function RolecraftVault() {
           marginTop: 4
         }
       }, "Updated ", timeAgo(r.updatedAt)))))))),
+      favorites: favoriteItems.length ? dashSection("favorites", "Favourites", /*#__PURE__*/React.createElement("div", {
+        className: "favorite-strip"
+      }, favoriteItems.slice(0, 10).map(x => /*#__PURE__*/React.createElement("button", {
+        key: x.type + x.id,
+        className: "card favorite-card",
+        onClick: () => openLibraryItem(x)
+      }, /*#__PURE__*/React.createElement("span", { className: "eyebrow" }, x.type), /*#__PURE__*/React.createElement("strong", null, x.label), x.group && /*#__PURE__*/React.createElement("small", null, x.group))))) : null,
       wall: wallShow.length > 0 ? dashSection("wall", "From your galleries", /*#__PURE__*/React.createElement(React.Fragment, null, wallShow.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
         onMouseEnter: () => {
           wallHoverRef.current = true;
@@ -15260,7 +15877,14 @@ function RolecraftVault() {
         color: "var(--mut)",
         marginTop: 1
       }
-    }, label))))), dashOrderChanged && /*#__PURE__*/React.createElement("div", {
+    }, label))))), (backupDue || drafts.length > 0) && /*#__PURE__*/React.createElement("div", {
+      className: "dashboard-health"
+    }, backupDue && /*#__PURE__*/React.createElement("button", {
+      className: "card health-action",
+      onClick: () => askExport("a full vault backup", exportAll)
+    }, /*#__PURE__*/React.createElement("strong", null, "Back up your latest work"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Your vault changed since the last verified backup." : "No verified backup is recorded yet.")), drafts.length > 0 && /*#__PURE__*/React.createElement("div", {
+      className: "card health-action drafts-action"
+    }, /*#__PURE__*/React.createElement("strong", null, drafts.length + " recoverable draft" + (drafts.length === 1 ? "" : "s")), drafts.slice(0, 3).map(d => /*#__PURE__*/React.createElement("button", { key: d.key, className: "btn btn-ghost", onClick: () => openDraft(d) }, (d.label || "Untitled") + " · " + (d.type || "record"))))), dashOrderChanged && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "flex-end",
@@ -17733,10 +18357,13 @@ function RolecraftVault() {
     onSave: saveChar,
     onDelete: deleteChar,
     onClose: () => setEditingChar(null),
-    toast: toast
+    toast: toast,
+    onDraftChange: refreshDrafts
   }), editingRecord && editingRecord.type === "persona" && /*#__PURE__*/React.createElement(RecordModal, {
     title: editingRecord.record.createdAt ? "Edit persona" : "New persona",
     initial: editingRecord.record,
+    draftType: "persona",
+    onDraftChange: refreshDrafts,
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("persona", r),
     onDelete: r => deleteRecord("persona", r),
@@ -17811,6 +18438,8 @@ function RolecraftVault() {
   }), editingRecord && editingRecord.type === "lore" && /*#__PURE__*/React.createElement(RecordModal, {
     title: editingRecord.record.createdAt ? "Edit lore entry" : "New lore entry",
     initial: editingRecord.record,
+    draftType: "lore",
+    onDraftChange: refreshDrafts,
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("lore", r),
     onDelete: r => deleteRecord("lore", r),
@@ -17848,6 +18477,8 @@ function RolecraftVault() {
   }), editingRecord && editingRecord.type === "prompt" && /*#__PURE__*/React.createElement(RecordModal, {
     title: editingRecord.record.createdAt ? "Edit prompt" : "New prompt",
     initial: editingRecord.record,
+    draftType: "prompt",
+    onDraftChange: refreshDrafts,
     onClose: () => setEditingRecord(null),
     onSave: r => saveRecord("prompt", r),
     onDelete: r => deleteRecord("prompt", r),
@@ -17918,6 +18549,10 @@ function RolecraftVault() {
     onClose: () => setShowSettings(false),
     onOpenTrash: () => setShowTrash(true),
     onOpenHistory: () => setShowHistory(true),
+    onOpenTransfer: () => { setShowSettings(false); setShowTransfer(true); },
+    onCopyDiagnostics: copyDiagnostics,
+    lastBackup: lastBackup,
+    backupDue: backupDue,
     textSize: textSize,
     setTextSize: applyTextSize,
     cardSize: cardSize,
@@ -17971,6 +18606,49 @@ function RolecraftVault() {
     onClose: () => setShowTrash(false)
   }), showHistory && /*#__PURE__*/React.createElement(ChangelogModal, {
     onClose: () => setShowHistory(false)
+  }), showTransfer && /*#__PURE__*/React.createElement(TransferWizard, {
+    onClose: () => setShowTransfer(false),
+    onVaultReplaced: () => setVaultTick(t => t + 1),
+    onAdvanced: () => { setShowTransfer(false); setShowSettings(true); }
+  }), restoreFile && /*#__PURE__*/React.createElement(BackupRestoreModal, {
+    file: restoreFile,
+    onClose: () => setRestoreFile(null),
+    onRestore: importAll
+  }), showOnboarding && /*#__PURE__*/React.createElement(OnboardingModal, {
+    onDone: () => {
+      setShowOnboarding(false);
+      sSet("ui:onboarded", "1").catch(() => {});
+      sSet("ui:lastseenversion", APP_VERSION).catch(() => {});
+    },
+    onCreate: starter => {
+      setShowOnboarding(false);
+      sSet("ui:onboarded", "1").catch(() => {});
+      sSet("ui:lastseenversion", APP_VERSION).catch(() => {});
+      const c = blankChar();
+      if (starter) {
+        c.name = "My first character";
+        c.tagline = "Replace this with one vivid line";
+        c.story = "Where did they come from, and what do they want now?";
+        c.personality = "How do they think, speak and behave under pressure?";
+        c.sections = [{ id: uid(), title: "Appearance", content: "Describe the details that should stay consistent." }, { id: uid(), title: "Voice", content: "Add speech patterns, habits and boundaries." }];
+      }
+      setEditingChar(c);
+    },
+    onImport: f => { setShowOnboarding(false); sSet("ui:onboarded", "1").catch(() => {}); setRestoreFile(f); },
+    onTransfer: () => { setShowOnboarding(false); sSet("ui:onboarded", "1").catch(() => {}); setShowTransfer(true); },
+    onGuide: () => { setShowOnboarding(false); sSet("ui:onboarded", "1").catch(() => {}); setShowGuide(true); }
+  }), showWhatsNew && /*#__PURE__*/React.createElement(WhatsNewModal, {
+    onClose: () => { setShowWhatsNew(false); sSet("ui:lastseenversion", APP_VERSION).catch(() => {}); },
+    onTransfer: () => { setShowWhatsNew(false); sSet("ui:lastseenversion", APP_VERSION).catch(() => {}); setShowTransfer(true); },
+    onBackup: () => { setShowWhatsNew(false); sSet("ui:lastseenversion", APP_VERSION).catch(() => {}); askExport("a full vault backup", exportAll); },
+    onSearch: () => { setShowWhatsNew(false); sSet("ui:lastseenversion", APP_VERSION).catch(() => {}); setCommandOpen(true); }
+  }), commandOpen && /*#__PURE__*/React.createElement(CommandPalette, {
+    items: libraryItems,
+    favorites: favorites,
+    onToggleFavorite: toggleFavorite,
+    onOpen: openLibraryItem,
+    onClose: () => setCommandOpen(false),
+    actions: [{ label: "New character", hint: "Open the character editor", run: () => { setCommandOpen(false); setEditingChar(blankChar()); } }, { label: "New persona", hint: "Create who you play as", run: () => { setCommandOpen(false); setEditingRecord({ type: "persona", record: { id: uid() } }); } }, { label: "New lore entry", hint: "Add a world rule, place or person", run: () => { setCommandOpen(false); setEditingRecord({ type: "lore", record: { id: uid() } }); } }, { label: "New prompt", hint: "Create a reusable scene starter", run: () => { setCommandOpen(false); setEditingRecord({ type: "prompt", record: { id: uid() } }); } }, { label: "Guided device transfer", hint: "Copy over local Wi-Fi", run: () => { setCommandOpen(false); setShowTransfer(true); } }, { label: "Export full backup", hint: backupDue ? "Recommended now" : "Save a verified copy", run: () => { setCommandOpen(false); askExport("a full vault backup", exportAll); } }, { label: "Copy private diagnostics", hint: "No names, writing or pictures", run: () => { setCommandOpen(false); copyDiagnostics(); } }, { label: "Open Settings", key: "Ctrl+,", run: () => { setCommandOpen(false); setShowSettings(true); } }, { label: "Open guide", run: () => { setCommandOpen(false); setShowGuide(true); } }]
   }), /*#__PURE__*/React.createElement("input", {
     ref: bucketCoverRef,
     type: "file",

@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+contextBridge.exposeInMainWorld("rcvInstalledApp", true);
+
 contextBridge.exposeInMainWorld("storage", {
   get: async (key) => {
     const value = await ipcRenderer.invoke("vault-get", key);
@@ -52,6 +54,9 @@ contextBridge.exposeInMainWorld("updater", {
   install: (text) => ipcRenderer.invoke("updates-install", text),
   revert: () => ipcRenderer.invoke("updates-revert"),
   relaunch: () => ipcRenderer.invoke("updates-relaunch"),
+});
+contextBridge.exposeInMainWorld("releasePage", {
+  open: () => ipcRenderer.invoke("release-page-open"),
 });
 /* The window's own shape. Read only apart from full screen, which the Settings
    panel offers because a full screen window has no title bar to close from. */

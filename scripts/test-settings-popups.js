@@ -64,9 +64,9 @@ app.whenReady().then(async () => {
   };
   const js = src => win.webContents.executeJavaScript(src);
 
-  /* The Settings panel is the .modal with no role on it; the two new windows
-     are .modal as well, and carry role="dialog". */
-  const SETTINGS_PANEL = `[...document.querySelectorAll(".modal")].find(m => !m.getAttribute("role"))`;
+  /* Settings now carries the same dialog semantics and accessible name as the
+     windows over it, so identify it by that name rather than by missing ARIA. */
+  const SETTINGS_PANEL = `[...document.querySelectorAll(".modal")].find(m => m.getAttribute("aria-label") === "Settings")`;
 
   /* Both the old fold and the new row are a button saying "Recently deleted",
      so this presses the same thing either way, and then asks what it did to

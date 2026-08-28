@@ -81,10 +81,10 @@ app.whenReady().then(async () => {
   // by class, since that is what carries the touch sizing; before it existed
   // the arrows were there but nothing set them apart to size them
   check("the reorder arrows are marked for touch sizing", moves.length > 0, moves.length + " found");
-  if (moves.length) check("and they are big enough to hit", smallest(moves) >= 44, "smallest side " + smallest(moves) + "px");
+  if (moves.length) check("and they meet the 48px Android target", smallest(moves) >= 48, "smallest side " + smallest(moves) + "px");
 
   check("the grid's chip controls exist", (r.chips || []).length > 0, (r.chips || []).length + " found");
-  if ((r.chips || []).length) check("and they are big enough to hit", smallest(r.chips) >= 32, "smallest side " + smallest(r.chips) + "px");
+  if ((r.chips || []).length) check("and they meet the 48px Android target", smallest(r.chips) >= 48, "smallest side " + smallest(r.chips) + "px");
 
   check("the page still does not scroll sideways", !r.sideways);
 

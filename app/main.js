@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.230";
+const FACTORY_BUILD = "1.231";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1462,6 +1462,7 @@ function setupAuthIpc() {
     } catch (err) { return { ok: false, error: err.message }; }
   });
   ipcMain.handle("updates-relaunch", () => { app.relaunch(); app.exit(0); });
+  ipcMain.handle("release-page-open", () => shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases/latest"));
   ipcMain.handle("auth-status", () => {
     const s = loadSecurity();
     return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: isLocked() };
