@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.232";
+const APP_VERSION = "1.233";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.232";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.232 — current",
+  heading: "1.233 — current",
+  notes: ["Opening a character on Android no longer lets the record sheet draw six pixels into the fixed bottom navigation. Character and persona pages, editors, lorebooks, prompts and the full picture grid now stop exactly above the complete bar and its device safe area, while the end of every page remains reachable.", "Fingerprint and face unlock now opens Android's system biometric prompt on the required UI thread. The first version called the main-thread-only prompt from Capacitor's background plugin worker, so a real phone could refuse it before anything appeared.", "Biometric setup no longer disappears without explanation when Android cannot provide a secure Class 3 fingerprint or face. Settings says whether enrollment, stronger hardware, a security update or a retry is needed, and vendor devices whose capability is reported as unknown are allowed to try the system prompt while all failed authentication still stays closed.", "Android users need the 1.233 APK for both fixes. The Windows and Android apps carry this same changelog entry; no Windows behavior changed in this release."]
+}, {
+  heading: "1.232",
   notes: ["Android now has a proper five-destination bottom navigation bar and a compact top bar for search, lock and Settings. The system Back gesture closes the top picture, dialog or editor first, then unwinds a record and its library before Android exits from the Dashboard. Modern predictive Back is enabled.", "Every character, persona, lore entry and prompt deletion now has an eight-second Undo action and remains recoverable in the encrypted bin for 30 days. Moving a group of characters or personas between buckets can be undone too. Pictures stay owned by the recoverable record until the bin is emptied.", "Every editor now shows whether the saved version is safe, a draft is being protected, the draft was protected on this device, or protection failed. Draft failures are no longer silent.", "Templates are available from the Dashboard and Ctrl+K, with built-in starters for characters, personas, lore and prompts. Any editor can save its current writing as a private template or duplicate a record as a new editable copy. Pictures deliberately stay with the original so two records never fight over the same artwork.", "Android can unlock an encrypted vault with a strong fingerprint or face after one-time setup with the master password. Windows offers Windows Hello when the computer supports it. Both protect the derived vault key with the operating system, never store the master password, fail closed, and are removed when the master password changes.", "Windows setup now owns signed .rcvup files. Double-clicking one opens or focuses Rolecraft Vault, verifies the signature through the existing trusted updater, and either offers a relaunch or names the exact full installer required. This release changes the Windows shell, so install it with Rolecraft-Vault-Setup-1.232.exe; Android users need the 1.232 APK."]
 }, {
   heading: "1.231",
@@ -2464,6 +2467,11 @@ const CSS = `
     .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
     .rcv.phone .qr-stage { width: 100vw; height: 100vh; }
     .rcv.phone > .scrollbody { height: calc(100vh - 56px); padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important; }
+    /* A record sheet starts at the top of the screen, unlike the library below
+       the 56px phone header. Reusing that library height made every sheet end
+       six pixels inside the 62px bottom bar. Give fixed record screens their
+       own lower edge and keep the device safe area entirely with the bar. */
+    .rcv.phone .scrollbody.sheet { height: auto; bottom: calc(62px + env(safe-area-inset-bottom)) !important; padding-bottom: 24px !important; }
     .rcv.phone .toast { bottom: calc(74px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
   }
 `;
@@ -5427,7 +5435,7 @@ function ImageGridView({
       zIndex: 70,
       overflowY: "auto"
     },
-    className: "scrollbody"
+    className: "scrollbody sheet"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       position: "sticky",
@@ -6441,7 +6449,7 @@ function LorebookPage({
       zIndex: zTop,
       overflowY: "auto"
     },
-    className: "scrollbody"
+    className: "scrollbody sheet"
   }, /*#__PURE__*/React.createElement(CloseX, {
     onClose: onClose,
     fixed: true,
@@ -11791,7 +11799,14 @@ function SettingsModal({
   }, desktop ? web ? (android ? "Your password encrypts every record and photo in an encrypted folder on this phone (AES-256, key derived from your password and never stored). The app only reads a picture when it is on screen; the rest stay on disk. That folder is private to Rolecraft Vault: no other app and no browser can read it, and it is never backed up to Google Drive. There is no recovery if you forget your password — keep an exported backup somewhere safe. Note: uninstalling the app, or clearing its storage in Android settings, erases the vault." : "Your password encrypts every record and photo in this browser's storage (AES-256, key derived from your password and never stored). There is no recovery if you forget it — keep an exported backup somewhere safe. Note: clearing this site's browser data erases the vault.") : "Your password encrypts every record and photo on disk (AES-256), layered on top of Windows account encryption. There is no recovery if you forget it — keep an exported backup somewhere safe." : "Password and PIN protection are available in the Windows desktop app."), desktop && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => setForm("setup")
-  }, "Set master password"), desktop && authState.passwordSet && !form && /*#__PURE__*/React.createElement("div", {
+  }, "Set master password"), desktop && web && android && !authState.passwordSet && !form && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--dim)",
+      lineHeight: 1.5,
+      marginTop: 9
+    }
+  }, "Secure fingerprint or face unlock becomes available after you set a master password."), desktop && authState.passwordSet && !form && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -11811,18 +11826,27 @@ function SettingsModal({
   }, "Remove PIN") : /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setForm("setPin")
-  }, "Add quick-unlock PIN"), authState.deviceUnlockAvailable && /*#__PURE__*/React.createElement("span", {
+  }, "Add quick-unlock PIN"), (authState.deviceUnlockAvailable || authState.deviceUnlockSet) && /*#__PURE__*/React.createElement("span", {
     className: "chip" + (authState.deviceUnlockSet ? " on" : "")
-  }, authState.deviceUnlockSet ? (android ? "Biometrics on" : "Windows Hello on") : (android ? "Biometrics off" : "Windows Hello off")), authState.deviceUnlockAvailable && (authState.deviceUnlockSet ? /*#__PURE__*/React.createElement("button", {
+  }, authState.deviceUnlockSet ? (android ? "Biometrics on" : "Windows Hello on") : (android ? "Biometrics off" : "Windows Hello off")), authState.deviceUnlockSet ? /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setForm("removeDevice")
-  }, android ? "Remove biometric unlock" : "Remove Windows Hello") : /*#__PURE__*/React.createElement("button", {
+  }, android ? "Remove biometric unlock" : "Remove Windows Hello") : authState.deviceUnlockAvailable && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => setForm("setDevice")
-  }, android ? "Add fingerprint or face" : "Add Windows Hello")), /*#__PURE__*/React.createElement("button", {
+  }, android ? "Add secure fingerprint or face" : "Add Windows Hello"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger",
     onClick: () => setForm("removePw")
-  }, "Remove password")), form === "setup" && /*#__PURE__*/React.createElement(AuthForm, {
+  }, "Remove password")), desktop && web && android && authState.passwordSet && !form && !authState.deviceUnlockAvailable && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--mut)",
+      lineHeight: 1.5,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: { color: "var(--text)" }
+  }, "Biometric unlock unavailable. "), authState.deviceUnlockReason || "Android could not use this device's secure biometric sensor."), form === "setup" && /*#__PURE__*/React.createElement(AuthForm, {
     submitLabel: "Encrypt my vault",
     onCancel: () => setForm(null),
     fields: [{
@@ -12604,6 +12628,9 @@ function RolecraftVault() {
   const [authState, setAuthState] = useState({
     passwordSet: false,
     pinSet: false,
+    deviceUnlockAvailable: false,
+    deviceUnlockSet: false,
+    deviceUnlockReason: "",
     locked: false,
     checked: false
   });
@@ -13085,6 +13112,9 @@ function RolecraftVault() {
     let st = {
       passwordSet: false,
       pinSet: false,
+      deviceUnlockAvailable: false,
+      deviceUnlockSet: false,
+      deviceUnlockReason: "",
       locked: false
     };
     if (window.auth) {

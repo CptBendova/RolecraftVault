@@ -547,7 +547,8 @@
       ]).then(function (r) {
         var s = r[0], device = r[1] || {};
         return { passwordSet: !!s, pinSet: !!(s && s.pinBlob), locked: !!s && !masterKey,
-          deviceUnlockAvailable: !!device.available, deviceUnlockSet: !!device.enrolled };
+          deviceUnlockAvailable: !!device.available, deviceUnlockSet: !!device.enrolled,
+          deviceUnlockReason: device.reason || "" };
       });
     },
     setPassword: function (pw) {

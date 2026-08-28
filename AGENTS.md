@@ -109,6 +109,9 @@ Android biometrics and Windows Hello protect a derived vault key, never the
 master password. Password changes and removal must invalidate device unlock.
 Every cancelled, unavailable, damaged, or non-verified OS result fails closed.
 The normal password path must always remain available.
+Android's biometric prompt must be constructed and opened on the main thread;
+Capacitor plugin methods themselves run on a worker. When secure biometrics are
+unavailable, expose an actionable reason rather than hiding the setting.
 
 ### Protect signing material
 

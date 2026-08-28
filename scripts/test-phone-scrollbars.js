@@ -84,6 +84,32 @@ const LOOK = `(async () => {
   o.primaryDestinations = sb.querySelectorAll(".primary-nav").length;
   o.rootClass = document.querySelector(".rcv").className;
 
+  const character = [...document.querySelectorAll("[role=button], button")]
+    .find(el => /Character 0/.test((el.textContent || "").trim()));
+  if (character) character.click();
+  await sleep(1200);
+  const sheet = document.querySelector('.scrollbody.sheet[aria-label^="Character "]');
+  if (sheet) {
+    sheet.scrollTop = sheet.scrollHeight;
+    await sleep(100);
+    const sheetRect = sheet.getBoundingClientRect();
+    const menuRect = sb.getBoundingClientRect();
+    const last = sheet.lastElementChild;
+    o.character = {
+      opened: true,
+      sheetBottom: Math.round(sheetRect.bottom),
+      menuTop: Math.round(menuRect.top),
+      lastBottom: last ? Math.round(last.getBoundingClientRect().bottom) : null,
+      topElementInMenu: (document.elementFromPoint(menuRect.left + menuRect.width / 2,
+        menuRect.top + Math.min(12, menuRect.height / 2)) || {}).closest?.(".sidebar") === sb
+    };
+    const closeCharacter = document.querySelector('button[aria-label="Close character"]');
+    if (closeCharacter) closeCharacter.click();
+    await sleep(500);
+  } else {
+    o.character = { opened: false };
+  }
+
   btn(/^Settings$/).click(); await sleep(1500);
   const m = document.querySelector(".modal");
   o.panel = room(m);
@@ -123,6 +149,15 @@ app.whenReady().then(async () => {
   check("no bar under the menu", p.menu.reservedY === 0,
     p.menu.reservedY === 0 ? "" : "reserves " + p.menu.reservedY + "px");
   check("the bottom bar does not need sideways scrolling", p.menuFits);
+  check("a character opens for the overlap check", p.character.opened);
+  check("the character sheet stops above the bottom bar",
+    p.character.opened && p.character.sheetBottom <= p.character.menuTop + 1,
+    p.character.opened ? "sheet=" + p.character.sheetBottom + "px · bar=" + p.character.menuTop + "px" : "");
+  check("the bottom bar remains the top touch layer",
+    p.character.opened && p.character.topElementInMenu);
+  check("the end of a character is not hidden under the bar",
+    p.character.opened && p.character.lastBottom <= p.character.menuTop + 1,
+    p.character.opened ? "content=" + p.character.lastBottom + "px · bar=" + p.character.menuTop + "px" : "");
   check("no bar down the library column", p.column.reservedX === 0,
     p.column.reservedX === 0 ? "" : "reserves " + p.column.reservedX + "px");
   check("and none down a panel", p.panel.reservedX === 0,

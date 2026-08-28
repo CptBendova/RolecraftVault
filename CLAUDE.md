@@ -493,6 +493,10 @@ exported backup.
   oversized lead tile and becomes an even grid.
 - `.scrollbody` is reused by small scrollers inside panels, which is why the column
   rule is `.rcv > .scrollbody` and not `.rcv .scrollbody`.
+- On a Capacitor phone, fixed `.scrollbody.sheet` records stop above the 62px
+  bottom navigation plus `safe-area-inset-bottom`. Do not give them the library's
+  `100vh - 56px` height: 56px is the top bar and leaves six pixels drawn into the
+  bottom navigation.
 
 ## Phone copies dying while saving around 1 GB (1.168)
 
@@ -785,6 +789,10 @@ Still worth doing: moving them into `tests/`.
   preferences. Its key is authentication-bound in Android Keystore and the
   enrolled secret is the already-derived 32-byte vault key, never the master
   password. A password change/removal deletes the enrollment.
+- Capacitor invokes plugin methods on its task handler. Construct and authenticate
+  `BiometricPrompt` through `getBridge().executeOnMainThread`; its API is
+  main-thread-only. Treat `BIOMETRIC_STATUS_UNKNOWN` as worth trying, and return
+  the exact unavailable reason to Settings instead of silently hiding the feature.
 - Windows Hello gates a DPAPI-protected copy of that same derived vault key.
   Every non-`Verified` OS result fails closed. Do not replace the fixed WinRT
   script with renderer-controlled PowerShell input.

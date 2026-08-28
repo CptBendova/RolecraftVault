@@ -55,10 +55,14 @@ check("draft status is announced accessibly", app.includes('className: "draft-st
 
 console.log("\nAndroid navigation and secure unlock");
 check("phone navigation is a fixed five-destination bottom bar", app.includes(".rcv.phone .sidebar { position: fixed") && app.includes("primary-nav") && app.includes("safe-area-inset-bottom"));
+check("phone record sheets reserve the whole bottom bar", app.includes(".rcv.phone .scrollbody.sheet { height: auto; bottom: calc(62px + env(safe-area-inset-bottom)) !important"));
 check("the interface unwinds its top layer before exiting", app.includes("window.__rcvAndroidBack = handleBack") && app.includes('document.querySelector(".modal-back, .lightbox, .scrollbody.sheet")'));
 check("Android uses the modern back dispatcher", activity.includes("OnBackPressedCallback") && activity.includes("getOnBackPressedDispatcher"));
 check("predictive back is enabled", manifest.includes('android:enableOnBackInvokedCallback="true"'));
 check("biometrics require a strong authenticator and Android Keystore", device.includes("BIOMETRIC_STRONG") && device.includes("AndroidKeyStore") && device.includes("setUserAuthenticationRequired(true)"));
+check("the biometric prompt opens on Android's UI thread", device.includes("getBridge().executeOnMainThread") && device.includes("prompt.authenticate(info"));
+check("unavailable biometrics explain what the device needs", device.includes('out.put("reason", unavailableReason(strong))') && web.includes("deviceUnlockReason") && app.includes("Biometric unlock unavailable."));
+check("biometric permissions do not rely on a transitive manifest", manifest.includes("android.permission.USE_BIOMETRIC") && manifest.includes("android.permission.USE_FINGERPRINT"));
 check("the raw vault key is sealed before native storage", web.includes('deviceUnlockCall("enroll", { secret: b64encode(raw) })') && !device.includes('putString("secret"') && device.includes("result.doFinal(secret.getBytes"));
 check("Android and Windows expose the same device-unlock contract", ["setDeviceUnlock", "removeDeviceUnlock", "unlockDevice"].every(k => preload.includes(k) && web.includes(k)));
 

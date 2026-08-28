@@ -38,10 +38,48 @@ public class DeviceUnlockPlugin extends Plugin {
         return getContext().getSharedPreferences(PREFS, 0);
     }
 
-    private boolean available() {
+    private int strongStatus() {
         return BiometricManager.from(getContext()).canAuthenticate(
             BiometricManager.Authenticators.BIOMETRIC_STRONG
-        ) == BiometricManager.BIOMETRIC_SUCCESS;
+        );
+    }
+
+    private boolean canTry(int status) {
+        // AndroidX documents UNKNOWN as "authentication may still succeed".
+        // Hiding the control made those vendor devices impossible even to try.
+        return status == BiometricManager.BIOMETRIC_SUCCESS ||
+            status == BiometricManager.BIOMETRIC_STATUS_UNKNOWN;
+    }
+
+    private boolean available() {
+        return canTry(strongStatus());
+    }
+
+    private String unavailableReason(int strong) {
+        if (canTry(strong)) return "";
+        int weak = BiometricManager.from(getContext()).canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+        );
+        if (strong == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED &&
+            weak == BiometricManager.BIOMETRIC_SUCCESS) {
+            return "The enrolled face or fingerprint is not strong enough to protect the vault key. Add a Class 3 fingerprint or face in Android Settings.";
+        }
+        if (strong == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED) {
+            return "Add a secure fingerprint or face in Android Settings first.";
+        }
+        if (strong == BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE) {
+            return "This device has no Class 3 biometric sensor.";
+        }
+        if (strong == BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE) {
+            return "The biometric sensor is unavailable right now. Unlock the phone normally and try again.";
+        }
+        if (strong == BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED) {
+            return "Android requires a security update before this biometric sensor can protect the vault.";
+        }
+        if (strong == BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED) {
+            return "This Android version does not support secure biometric vault unlock.";
+        }
+        return "Android could not use this device's secure biometric sensor.";
     }
 
     private boolean enrolled() {
@@ -50,9 +88,11 @@ public class DeviceUnlockPlugin extends Plugin {
 
     @PluginMethod
     public void status(PluginCall call) {
+        int strong = strongStatus();
         JSObject out = new JSObject();
-        out.put("available", available());
+        out.put("available", canTry(strong));
         out.put("enrolled", enrolled());
+        out.put("reason", unavailableReason(strong));
         call.resolve(out);
     }
 
@@ -139,30 +179,44 @@ public class DeviceUnlockPlugin extends Plugin {
             }
             activeCall = call;
         }
-        FragmentActivity activity = (FragmentActivity) getActivity();
-        Executor executor = ContextCompat.getMainExecutor(getContext());
-        BiometricPrompt prompt = new BiometricPrompt(activity, executor,
-            new BiometricPrompt.AuthenticationCallback() {
-                @Override
-                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
-                    Cipher authenticated = result.getCryptoObject() == null ? null : result.getCryptoObject().getCipher();
-                    if (authenticated == null) finishReject(call, "Biometric authentication failed");
-                    else success.accept(authenticated);
+        /* Capacitor invokes plugin methods on its task handler, but
+           BiometricPrompt is a @MainThread API. 1.232 constructed and opened
+           it on the bridge worker, so real phones could reject the request
+           before Android ever displayed its system prompt. */
+        getBridge().executeOnMainThread(() -> {
+            try {
+                if (!(getActivity() instanceof FragmentActivity)) {
+                    finishReject(call, "Biometric unlock is not available in this window");
+                    return;
                 }
+                FragmentActivity activity = (FragmentActivity) getActivity();
+                Executor executor = ContextCompat.getMainExecutor(getContext());
+                BiometricPrompt prompt = new BiometricPrompt(activity, executor,
+                    new BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                            Cipher authenticated = result.getCryptoObject() == null ? null : result.getCryptoObject().getCipher();
+                            if (authenticated == null) finishReject(call, "Biometric authentication failed");
+                            else success.accept(authenticated);
+                        }
 
-                @Override
-                public void onAuthenticationError(int code, CharSequence message) {
-                    finishReject(call, code == BiometricPrompt.ERROR_NEGATIVE_BUTTON || code == BiometricPrompt.ERROR_USER_CANCELED
-                        ? "Biometric unlock cancelled" : String.valueOf(message));
-                }
-            });
-        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
-            .setTitle(title)
-            .setSubtitle("Your vault stays on this device")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText("Use master password")
-            .build();
-        prompt.authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+                        @Override
+                        public void onAuthenticationError(int code, CharSequence message) {
+                            finishReject(call, code == BiometricPrompt.ERROR_NEGATIVE_BUTTON || code == BiometricPrompt.ERROR_USER_CANCELED
+                                ? "Biometric unlock cancelled" : String.valueOf(message));
+                        }
+                    });
+                BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle("Your vault stays on this device")
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                    .setNegativeButtonText("Use master password")
+                    .build();
+                prompt.authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+            } catch (Exception error) {
+                finishReject(call, "Couldn't open the biometric prompt");
+            }
+        });
     }
 
     private SecretKey getOrCreateKey() throws Exception {
