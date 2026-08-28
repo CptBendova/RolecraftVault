@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.227";
+const APP_VERSION = "1.228";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.227";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.227 — current",
+  heading: "1.228 — current",
+  notes: ["A transfer no longer waits forever when the sending device disappears while it is gathering records. Windows and Android now allow a brief interruption to recover, then stop with a clear message if contact is really gone.", "Large transfers on Windows now get the ten minutes they were meant to have. The download asked for ten, but the ordinary three-minute connection limit was being applied over it, so a slow copy could be cut off even though it was still moving.", "Windows needs the full installer for this release because its transfer code is part of the app itself. Android needs the new APK. Both install over the version you have and keep the vault and settings in place."]
+}, {
+  heading: "1.227",
   notes: ["This one is the app itself rather than the interface, so it needs the installer. Your vault and settings are kept exactly as they are.", "A copy of your records could be left behind unencrypted. Receiving a vault from another device writes what arrives to a working file on the way in, and that file holds your records in the clear. It was always removed when the copy finished or failed, but not if the app was closed or lost power partway through, and it then simply stayed there. Anything left over is now cleared away, both when a copy ends and every time the app starts.", "Transfers now refuse to run while the vault is locked. Receiving while locked wrote every arriving record without the password layer, so records that should have been encrypted with your password were not. Sharing is held back too, since it reads every record to work out what to send.", "Sharing now offers itself only to your local network. It was answering on every connection the computer had, including VPNs and virtual adapters, rather than the one the pairing code is for.", "The app no longer disappears without a word. Nothing was catching an unexpected error in the app itself, so a bad moment in the background could end it outright with the window simply vanishing."]
 }, {
   heading: "1.226",
