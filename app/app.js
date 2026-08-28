@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.234";
+const APP_VERSION = "1.235";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.234";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.234 — current",
+  heading: "1.235 — current",
+  notes: ["Mobile Spotlight no longer magnifies a character portrait into a shallow widescreen crop. The whole artwork is now visible at its real aspect ratio, whether the source is portrait, square or wide, with the character details kept directly beneath it. Tablet and desktop Spotlight remain edge-to-edge as before.", "Settings choices no longer split ordinary words into vertical fragments on a phone. Theme, reading size, card size and contrast use deliberate compact grids with whole labels, while longer action buttons still wrap normally between words. Android users need the 1.235 APK; the Windows app carries these notes but its layout is unchanged."]
+}, {
+  heading: "1.234",
   notes: ["A password-protected Android vault with biometric unlock enrolled opens normally again. Its lock screen referred to an Android flag that existed only inside a different component, so precisely that real-device state fell into the safety screen with ‘ON_PHONE is not defined’ before the password or fingerprint buttons could be used. The vault was never changed by the failure.", "The Dashboard now keeps routine backup controls where they belong, in Settings under Backup & transfer. Only work that needs immediate recovery, such as a protected draft, appears at the top of the Dashboard.", "Dashboard art now supports the content instead of taking over the page: phones show two gallery pictures, wider layouts keep them to one responsive row capped at six, and picture labels remain readable on touch screens. The phone Spotlight, overview counts and every primary library, record and editor were audited for horizontal clipping from 360-pixel Android screens through wide Windows displays.", "Character and persona card size can now be changed directly in their library toolbars. The old option was buried in Settings, and persona cards did not respond to it at all; Small, Medium and Large now change both real grids consistently.", "Android's bottom navigation now uses five equal cells with every icon and label centred. The hidden desktop Rolecraft brand block no longer sits underneath the phone bar and pushes its destinations out of place. Windows and Android share the updated interface; Android users need the 1.234 APK."]
 }, {
   heading: "1.233",
@@ -2488,14 +2491,25 @@ const CSS = `
     .rcv.phone .phone-topbar { display: flex; }
     .rcv.phone .dashboard-counts { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     .rcv.phone .dashboard-spotlight { height: auto !important; flex-direction: column; }
-    .rcv.phone .dashboard-spotlight .spotlight-image { width: 100% !important; min-width: 0 !important; height: min(72vw, 260px) !important; flex: 0 0 auto; }
+    .rcv.phone .dashboard-spotlight .spotlight-image { width: 100% !important; min-width: 0 !important; height: min(92vw, 340px) !important; flex: 0 0 auto; }
+    /* Spotlight portraits are user artwork, not disposable card crops. The
+       desktop split view has enough height for cover; the stacked phone stage
+       must show the whole image whatever its aspect ratio. */
+    .rcv.phone .dashboard-spotlight .spotlight-image img { object-fit: contain !important; object-position: center; }
     .rcv.phone .dashboard-spotlight .spotlight-copy { min-width: 0 !important; padding: 18px !important; display: block !important; }
     .rcv.phone .dashboard-spotlight .spotlight-prose { max-height: 180px; margin-top: 10px; }
     .rcv.phone .wtile .tlab { opacity: 1; }
     .rcv.phone .wtile .wacts { display: none; }
     .rcv.phone .card-size-select { width: 100%; flex: 1 1 156px; }
     .rcv.phone .modal { max-width: calc(100vw - 42px); }
-    .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+    .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: break-word; word-break: normal; white-space: normal; }
+    .rcv.phone .settings-choice-row { display: grid !important; gap: 8px; }
+    .rcv.phone .settings-theme-choices,
+    .rcv.phone .settings-card-choices,
+    .rcv.phone .settings-contrast-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .rcv.phone .settings-reading-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rcv.phone .settings-choice { width: 100%; min-width: 0; padding-left: 6px; padding-right: 6px; overflow-wrap: normal; white-space: nowrap; }
+    .rcv.phone .settings-theme-choices .settings-choice-content { flex-direction: column; gap: 4px !important; }
     .rcv.phone .qr-stage { width: 100vw; height: 100vh; }
     .rcv.phone > .scrollbody { height: calc(100vh - 56px); padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important; }
     /* A record sheet starts at the top of the screen, unlike the library below
@@ -11650,6 +11664,7 @@ function SettingsModal({
       marginBottom: 10
     }
   }, "Appearance"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-theme-choices",
     style: {
       display: "flex",
       gap: 8,
@@ -11660,12 +11675,14 @@ function SettingsModal({
     }
   }, [["light", "Light", icons.sun], ["dark", "Dark", icons.moon], ["charsnap", "CharSnap", icons.persona]].map(([t, label, ic]) => /*#__PURE__*/React.createElement("button", {
     key: t,
-    className: "btn " + (theme === t ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (theme === t ? "btn-primary" : "btn-ghost"),
+    "data-settings-choice": "theme-" + t,
     style: {
       flex: 1
     },
     onClick: () => setTheme(t)
   }, /*#__PURE__*/React.createElement("span", {
+    className: "settings-choice-content",
     style: {
       display: "inline-flex",
       gap: 8,
@@ -11765,6 +11782,7 @@ function SettingsModal({
       marginBottom: 10
     }
   }, "Reading text size"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-reading-choices",
     style: {
       display: "flex",
       gap: 8,
@@ -11772,7 +11790,8 @@ function SettingsModal({
     }
   }, [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["maximum", "200%"]].map(([s, label]) => /*#__PURE__*/React.createElement("button", {
     key: s,
-    className: "btn " + (textSize === s ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (textSize === s ? "btn-primary" : "btn-ghost"),
+    "data-settings-choice": "reading-" + s,
     style: {
       flex: 1
     },
@@ -11783,13 +11802,15 @@ function SettingsModal({
       margin: "18px 0 10px"
     }
   }, "Card size"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-card-choices",
     style: {
       display: "flex",
       gap: 8
     }
   }, [["small", "Small"], ["medium", "Medium"], ["large", "Large"]].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
     key: v,
-    className: "btn " + (cardSize === v ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (cardSize === v ? "btn-primary" : "btn-ghost"),
+    "data-settings-choice": "card-" + v,
     style: {
       flex: 1
     },
@@ -11815,6 +11836,7 @@ function SettingsModal({
       marginBottom: 4
     }
   }, "Text contrast"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-contrast-choices",
     style: {
       display: "flex",
       gap: 8,
@@ -11823,7 +11845,8 @@ function SettingsModal({
     }
   }, [["normal", "Normal"], ["high", "Higher"], ["max", "Maximum"]].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
     key: v,
-    className: "btn " + (contrast === v ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (contrast === v ? "btn-primary" : "btn-ghost"),
+    "data-settings-choice": "contrast-" + v,
     style: {
       flex: 1
     },

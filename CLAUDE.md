@@ -673,10 +673,15 @@ panels, or Graphics setting.
   `.side-tools` children have inline display styles, so the phone override must
   win explicitly or the Rolecraft crest and name occupy cells under the Android
   bar and push navigation off centre.
-- At 360px, Spotlight stacks image above prose, Dashboard counts use two columns,
-  and gallery labels remain visible without hover. Audit every primary screen,
-  record, editor and Settings for page overflow as a set; they do not share all
-  their layout rules.
+- At 360px, Spotlight stacks image above prose and uses `object-fit: contain`.
+  A fixed wide `cover` stage magnifies and crops portrait artwork, which shipped
+  in 1.234. Dashboard counts use two columns and gallery labels remain visible
+  without hover. Audit every primary screen, record, editor and Settings for
+  page overflow as a set; they do not share all their layout rules.
+- Do not use `overflow-wrap: anywhere` on mobile modal buttons. It breaks even
+  short words into vertical fragments when a segmented row gets narrow. Settings
+  choice groups use explicit phone grids and `.settings-choice` keeps each label
+  whole; longer ordinary actions may still wrap at spaces.
 
 ## Testing notes
 

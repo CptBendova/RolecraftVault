@@ -87,7 +87,7 @@ const SEED = `(async () => {
   ]));
   await s.set("ui:cardsize", "medium");
   await s.set("ui:onboarded", "1");
-  await s.set("ui:lastseenversion", ${JSON.stringify("1.234")});
+  await s.set("ui:lastseenversion", ${JSON.stringify("1.235")});
   await s.delete("ui:lastbackup");
 })()`;
 
@@ -133,12 +133,14 @@ const AUDIT = `(async () => {
 
   out.screens.push(fit("Dashboard"));
   const gallery = document.querySelector('[data-dashboard-gallery="true"]');
+  const spotlightImage = document.querySelector(".dashboard-spotlight .spotlight-image img");
   out.dashboard = {
     backupAtTop: [...document.querySelectorAll(".health-action")]
       .some(el => /Back up your latest work/.test(el.textContent || "")),
     galleryPictures: gallery ? gallery.querySelectorAll(".wtile").length : 0,
     galleryColumns: columns(gallery),
-    galleryTotal: 24
+    galleryTotal: 24,
+    spotlightObjectFit: spotlightImage ? getComputedStyle(spotlightImage).objectFit : "missing"
   };
   const navItems = [...document.querySelectorAll(".sidebar .primary-nav")];
   const sidebarBrand = document.querySelector(".sidebar .brand");
@@ -155,7 +157,21 @@ const AUDIT = `(async () => {
 
   button(/^Settings$/).click(); await sleep(400);
   const modal = document.querySelector(".modal");
-  out.settings = { present: visible(modal), overflow: modal ? Math.max(0, modal.scrollWidth - modal.clientWidth) : 999 };
+  const choiceTextLines = el => {
+    const tops = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) {
+      if (!walk.currentNode.nodeValue.trim()) continue;
+      const range = document.createRange(); range.selectNodeContents(walk.currentNode);
+      [...range.getClientRects()].forEach(r => tops.push(Math.round(r.top)));
+    }
+    return new Set(tops).size;
+  };
+  out.settings = { present: visible(modal), overflow: modal ? Math.max(0, modal.scrollWidth - modal.clientWidth) : 999,
+    choices: [...document.querySelectorAll('[data-settings-choice]')].map(el => ({
+      id: el.getAttribute('data-settings-choice'), lines: choiceTextLines(el),
+      overflow: Math.max(0, el.scrollWidth - el.clientWidth), wrap: getComputedStyle(el).overflowWrap
+    })) };
   button(/^Close$/).click(); await sleep(250);
 
   button(/^Characters$/).click(); await sleep(500);
@@ -247,6 +263,9 @@ app.whenReady().then(async () => {
     check("Settings opens and fits", r.settings.present && r.settings.overflow <= 1,
       "overflow=" + r.settings.overflow + "px");
     if (size.w <= 760) {
+      check("Settings choices keep whole horizontal labels", r.settings.choices.length === 13 &&
+        r.settings.choices.every(item => item.lines === 1 && item.overflow <= 1 && item.wrap !== "anywhere"),
+        r.settings.choices.map(item => item.id + "=" + item.lines + " line(s)").join(", "));
       const widths = r.bottomNav.map(item => item.width);
       check("the Android bar has five equal destinations", r.bottomNav.length === 5 &&
         Math.max(...widths) - Math.min(...widths) <= 1 && r.bottomNav[0].left >= -1 &&
@@ -256,6 +275,11 @@ app.whenReady().then(async () => {
       check("every Android bar icon and label is centred", r.bottomNav.length === 5 &&
         r.bottomNav.every(item => Math.abs(item.iconOffset) <= 1 && Math.abs(item.labelOffset) <= 1),
         r.bottomNav.map(item => item.id + " icon=" + item.iconOffset.toFixed(1) + " label=" + item.labelOffset.toFixed(1)).join(", "));
+      check("mobile Spotlight preserves the whole picture", r.dashboard.spotlightObjectFit === "contain",
+        "object-fit=" + r.dashboard.spotlightObjectFit);
+    } else {
+      check("wide Spotlight remains edge-to-edge", r.dashboard.spotlightObjectFit === "cover",
+        "object-fit=" + r.dashboard.spotlightObjectFit);
     }
     check("backup is kept out of the Dashboard warning area", !r.dashboard.backupAtTop);
     const expectedPictures = Math.min(r.dashboard.galleryTotal,

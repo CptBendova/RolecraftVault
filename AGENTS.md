@@ -163,6 +163,11 @@ changing this protocol.
   Character and persona libraries both use `.grid-cards`, with the size control
   visible in each toolbar. The Android bar is exactly five equal cells; desktop
   branding and side tools must be forcibly hidden there despite inline styles.
+- Mobile Spotlight artwork uses `object-fit: contain`; never force portraits
+  through a shallow `cover` frame. Desktop Spotlight intentionally stays cover.
+- Mobile Settings choice buttons keep whole words. Use explicit responsive grids
+  for segmented choices; never apply `overflow-wrap: anywhere` to every modal
+  button.
 - CharSnap export and import formats differ. Import variants use snake_case and a
   bare variant object; do not reuse the export shape.
 - The Android release package may rename and recompress resources. Verify icons
