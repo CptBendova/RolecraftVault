@@ -988,6 +988,33 @@ function httpToFile(opts, body, destPath, report) {
   });
 }
 
+/* Request defaults belong to the target; a call's own timeout must win. Keeping
+   that merge in one place avoids a subtle Object.assign order bug where the
+   10-minute file timeout was silently replaced by the 3-minute default. */
+function transferOptions(base, extra) {
+  return Object.assign({}, base, extra);
+}
+
+/* Once /delta-start has accepted the request, the sender prepares the files in
+   the background. A vanished sender used to turn this poll into an infinite
+   loop because every failed status request was treated like "still working". */
+async function waitForDeltaReady(readProgress, applyProgress, sleep) {
+  let misses = 0;
+  for (;;) {
+    const st = await readProgress();
+    if (!st) {
+      misses++;
+      if (misses >= 5) throw new Error("Lost contact with the other device while it was gathering records.");
+    } else {
+      misses = 0;
+      applyProgress(st);
+      if (st.phase === "ready") return st;
+      if (st.phase === "error") throw new Error(st.error || "The other device failed while gathering records.");
+    }
+    await sleep(400);
+  }
+}
+
 /* Incremental sync: compare fingerprints, pull only what differs.
    With preview set, everything below is read-only: it reports what would change
    on THIS device and writes nothing. */
@@ -1015,7 +1042,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
   let remote;
   try {
     phase("asking", 0, 0);
-    const blob = await httpBuffer(Object.assign({ path: "/manifest", method: "GET" }, base));
+    const blob = await httpBuffer(transferOptions(base, { path: "/manifest", method: "GET" }));
     remote = JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
   } catch (e) {
     if (String(e.message).indexOf("timeout") >= 0)
@@ -1026,7 +1053,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
   // cannot be named on screen
   let them = null;
   try {
-    const blob = await httpBuffer(Object.assign({ path: "/whoami", method: "GET" }, base));
+    const blob = await httpBuffer(transferOptions(base, { path: "/whoami", method: "GET" }));
     them = JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
   } catch (e) {}
   const local = buildManifest((i, n) => phase("comparing", i, n));
@@ -1074,9 +1101,9 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
       const body = encryptPayload(Buffer.from(JSON.stringify({
         device: deviceName(), code: mine.code, added, updated, removed: removable.length
       }), "utf8"), target.secret);
-      /* base last would put its own 30 second timeout back, and this request is
+      /* base last would put its own three-minute timeout back, and this request is
          deliberately held open while a person reads a dialog, so ours has to win. */
-      const blob = await httpBuffer(Object.assign({}, base, {
+      const blob = await httpBuffer(transferOptions(base, {
         path: "/mirror-request", method: "POST",
         headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
         timeout: 4 * 60 * 1000
@@ -1116,7 +1143,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
       const body = encryptPayload(Buffer.from(JSON.stringify(needed), "utf8"), target.secret);
       const readShareProgress = async () => {
         try {
-          const blob = await httpBuffer(Object.assign({}, base, { path: "/progress", method: "GET", timeout: 8000 }));
+          const blob = await httpBuffer(transferOptions(base, { path: "/progress", method: "GET", timeout: 8000 }));
           return JSON.parse(decryptPayload(blob, target.secret).toString("utf8"));
         } catch (e) { return null; }
       };
@@ -1127,32 +1154,26 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
       };
       let started = false;
       try {
-        const startBlob = await httpBuffer(Object.assign({
+        const startBlob = await httpBuffer(transferOptions(base, {
           path: "/delta-start", method: "POST",
           headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
           timeout: 30000
-        }, base), body);
+        }), body);
         const msg = JSON.parse(decryptPayload(startBlob, target.secret).toString("utf8"));
         started = !!(msg && msg.ok);
         if (started) phase("packing", 0, msg.total || needed.length);
       } catch (e) { started = false; }
       if (started) {
-        for (;;) {
-          const st = await readShareProgress();
-          applyShareProgress(st);
-          if (st && st.phase === "ready") break;
-          if (st && st.phase === "error") throw new Error(st.error || "pack failed");
-          await new Promise(r => setTimeout(r, 400));
-        }
-        await httpToFile(Object.assign({ path: "/delta-file", method: "GET", timeout: 600000 }, base), null, encPath, (got, total) => phase("receiving", got, total));
+        await waitForDeltaReady(readShareProgress, applyShareProgress, ms => new Promise(r => setTimeout(r, ms)));
+        await httpToFile(transferOptions(base, { path: "/delta-file", method: "GET", timeout: 600000 }), null, encPath, (got, total) => phase("receiving", got, total));
       } else {
         phase("packing", 0, 0);
-        await httpToFile(Object.assign({
+        await httpToFile(transferOptions(base, {
           path: "/delta",
           method: "POST",
           headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
           timeout: 600000
-        }, base), body, encPath, (got, total) => phase("receiving", got, total));
+        }), body, encPath, (got, total) => phase("receiving", got, total));
       }
       bytes = fs.statSync(encPath).size;
       decryptTransferFile(encPath, plainPath, target.secret, (done, total) => phase("unpacking", done, total));

@@ -218,6 +218,26 @@
     return out;
   }
 
+  /* A sender that disappears after accepting /delta-start must fail the copy,
+     not leave the phone polling a dead address forever. Valid replies reset the
+     allowance so a brief Wi-Fi interruption can still recover. */
+  async function waitForDeltaReady(readProgress, applyProgress, sleep) {
+    let misses = 0;
+    for (;;) {
+      const st = await readProgress();
+      if (!st) {
+        misses++;
+        if (misses >= 5) throw new Error("Lost contact with the other device while it was gathering records.");
+      } else {
+        misses = 0;
+        applyProgress(st);
+        if (st.phase === "ready") return st;
+        if (st.phase === "error") throw new Error(st.error || "The other device failed while gathering records.");
+      }
+      await sleep(400);
+    }
+  }
+
   /* ---------- the local half ---------- */
   /* window.storage is the web edition's IndexedDB layer, already loaded. The
      manifest is built the same way the desktop builds its own: a short hash of
@@ -422,18 +442,8 @@
         if (started) phase("packing", 0, msg.total || needed.length);
       } catch (e) { started = false; }
       if (started) {
-        for (;;) {
-          const st = await readProgress();
-          applyProgress(st);
-          if (st && st.phase === "ready") {
-            if (Array.isArray(st.sizes) && st.sizes.length) batchSizes = st.sizes;
-            break;
-          }
-          if (st && st.phase === "error") {
-            return { ok: false, error: st.error || "The other device failed while gathering records." };
-          }
-          await wait(400);
-        }
+        const ready = await waitForDeltaReady(readProgress, applyProgress, wait);
+        if (Array.isArray(ready.sizes) && ready.sizes.length) batchSizes = ready.sizes;
         if (batchSizes) {
           const totalBytes = batchSizes.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
           let bytesDone = 0;

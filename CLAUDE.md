@@ -625,6 +625,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-device-limits.js` | phone vs tablet vs desktop limits, across reported and unreported memory |
 | `test-phone-image-guard.js` | the rule keeping full originals off a phone, including when a picture has never been measured |
 | `test-delta-slices.js`, `test-transfer.js` | the transfer wire format and what Android actually puts on the socket |
+| `test-transfer-resilience.js` | transfer timeouts staying as requested, and both receivers giving up when a sender vanishes during packing |
 | `test-transfer-panel.js` | what the panel *says* on both ends: that a received vault appears without a relaunch, and that the sender reports it finished. Needs Electron |
 | `test-section-clipboard.js` | copying a section between records: the clipboard surviving an unmount, fresh ids on paste, and the header not overflowing a phone. Covers both section editors. Needs Electron |
 | `test-phone-scrollbars.js` | drawn scrollbars on a phone (menu, library column, panels), the theme row wrapping instead of running off the panel, and that the deliberate desktop bars survive. Runs with OverlayScrollbar so this Chromium behaves like the WebView. Needs Electron |
