@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.235";
+const APP_VERSION = "1.236";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.235";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.235 — current",
+  heading: "1.236 — current",
+  notes: ["Performance mode now loads the Dashboard Spotlight picture on Android. It used to skip the large original to save memory but forgot to request the lightweight preview instead, leaving the frame blank forever. Dashboard previews now jump ahead of queued off-screen library cards, with Spotlight first and the visible gallery following in order.", "The Android Dashboard now scales to the device instead of treating every screen alike. Phones show exactly two smaller gallery pictures side by side in one compact row. Tablets show more pictures across their wider canvas and keep Spotlight's artwork beside the character details, even when Android display scaling reports a narrower browser viewport. Android users need the 1.236 APK; Windows carries the same loading priority and changelog."]
+}, {
+  heading: "1.235",
   notes: ["Mobile Spotlight no longer magnifies a character portrait into a shallow widescreen crop. The whole artwork is now visible at its real aspect ratio, whether the source is portrait, square or wide, with the character details kept directly beneath it. Tablet and desktop Spotlight remain edge-to-edge as before.", "Settings choices no longer split ordinary words into vertical fragments on a phone. Theme, reading size, card size and contrast use deliberate compact grids with whole labels, while longer action buttons still wrap normally between words. Android users need the 1.235 APK; the Windows app carries these notes but its layout is unchanged."]
 }, {
   heading: "1.234",
@@ -1872,14 +1875,33 @@ const timeAgo = ts => {
   if (days < 30) return days + "d ago";
   return new Date(ts).toLocaleDateString();
 };
-/* Gallery art is atmosphere, not the Dashboard's main job. A one-column phone
-   gets two pictures so the section still feels like a gallery; every wider
-   layout gets one row, capped at six so art cannot take over an ultrawide
-   screen. Kept as a named rule so the renderer audit can measure it. */
+/* Gallery art is atmosphere, not the Dashboard's main job. Phones deliberately
+   use two compact columns, tablets use smaller tiles across their wider canvas,
+   and every layout is capped at six so art cannot take over the page. Kept as a
+   named rule so the renderer audit can measure it. */
 function dashboardPictureLimit(columns, total) {
   const cols = Math.max(1, Number(columns) || 1);
   const available = Math.max(0, Number(total) || 0);
   return Math.min(available, cols === 1 ? 2 : Math.min(cols, 6));
+}
+
+/* A busy preview queue can contain hundreds of library cards when someone
+   returns to the Dashboard. Move its small visible set to the front as one
+   stable batch: Spotlight first, then the gallery in display order. */
+function prioritizeImageQueue(queue, ids) {
+  const first = [];
+  const seen = new Set();
+  (ids || []).forEach(id => {
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      first.push(id);
+    }
+  });
+  return first.concat((queue || []).filter(id => id && !seen.has(id)));
+}
+
+function dashboardImagePriority(spotlight, wallVisible) {
+  return prioritizeImageQueue([], [spotlight && spotlight.profileImg].concat((wallVisible || []).map(item => item && item.imgId)));
 }
 
 /* ---------- shared styles ---------- */
@@ -2142,6 +2164,14 @@ const CSS = `
     justify-content: center; background: rgba(5,7,14,.58); opacity: 0; transition: opacity .15s; z-index: 1; }
   .rcv .wtile:hover .wacts, .rcv .wtile:focus-within .wacts { opacity: 1; }
   .rcv .wtile:hover { border-color: var(--brass-line); }
+  /* Android tablets have room for a real picture row even when WebView scaling
+     reports a relatively narrow CSS viewport. Keep their tiles smaller than the
+     desktop minimum instead of showing fewer pictures than a phone. */
+  .rcv.phone.tablet [data-dashboard-gallery="true"] {
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)) !important;
+    gap: 10px !important; row-gap: 10px !important;
+  }
+  .rcv.phone.tablet .dashboard-spotlight .spotlight-image img { object-fit: contain !important; object-position: center; }
   /* The character and persona headers sit over artwork whose brightness cannot be
      known, so they are a dark surface in every theme — the same treatment the
      cards use. Redefining the palette on the container means every descendant
@@ -2498,6 +2528,16 @@ const CSS = `
     .rcv.phone .dashboard-spotlight .spotlight-image img { object-fit: contain !important; object-position: center; }
     .rcv.phone .dashboard-spotlight .spotlight-copy { min-width: 0 !important; padding: 18px !important; display: block !important; }
     .rcv.phone .dashboard-spotlight .spotlight-prose { max-height: 180px; margin-top: 10px; }
+    .rcv.phone:not(.tablet) [data-dashboard-gallery="true"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important; row-gap: 8px !important;
+    }
+    .rcv.phone:not(.tablet) [data-dashboard-gallery="true"] .wtile { aspect-ratio: 4 / 5; }
+    /* A tablet keeps the desktop-style split Spotlight even when its scaled
+       viewport falls under the phone breakpoint. */
+    .rcv.phone.tablet .dashboard-spotlight { height: 400px !important; flex-direction: row; }
+    .rcv.phone.tablet .dashboard-spotlight .spotlight-image { width: min(260px, 42%) !important; min-width: 180px !important; height: 100% !important; }
+    .rcv.phone.tablet .dashboard-spotlight .spotlight-copy { min-width: 0 !important; padding: 20px !important; display: flex !important; }
     .rcv.phone .wtile .tlab { opacity: 1; }
     .rcv.phone .wtile .wacts { display: none; }
     .rcv.phone .card-size-select { width: 100%; flex: 1 1 156px; }
@@ -12698,6 +12738,12 @@ function VaultBusyScreen({
   })));
 }
 function RolecraftVault() {
+  const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
+  /* Android uses the shortest physical screen edge so rotation and WebView text
+     scaling cannot turn a tablet back into a phone layout. */
+  const SHORT_EDGE = typeof window !== "undefined" && window.screen
+    ? Math.min(window.screen.width || 0, window.screen.height || 0) : 0;
+  const ON_TABLET = ON_PHONE && SHORT_EDGE >= 600;
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(null); // [damaged keys] — the vault refused to open
   const [authState, setAuthState] = useState({
@@ -13542,7 +13588,7 @@ function RolecraftVault() {
   const [wallTick, setWallTick] = useState(0);
   const wallHoverRef = useRef(false);
   const wallRef = useRef(null);
-  const [wallCols, setWallCols] = useState(6);
+  const [wallCols, setWallCols] = useState(() => ON_TABLET ? 4 : ON_PHONE ? 2 : 6);
   useEffect(() => {
     const measure = () => {
       const el = wallRef.current;
@@ -14016,16 +14062,12 @@ function RolecraftVault() {
   const imgOrder = useRef([]);
   const imgBytes = useRef({});
   const imgTotal = useRef(0);
-  const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
   /* ON_PHONE only means "running on Android", and a twelve inch tablet with
      eight gigabytes was being given a budget phone's limits. Android's own
      definition of a large screen is a shortest edge of 600dp, and the shortest
      edge is used because it does not change when the device is turned over.
      deviceMemory is reported in gigabytes and capped at 8 by the browser; when
      it is missing, assume modest rather than generous. */
-  const SHORT_EDGE = typeof window !== "undefined" && window.screen
-    ? Math.min(window.screen.width || 0, window.screen.height || 0) : 0;
-  const ON_TABLET = ON_PHONE && SHORT_EDGE >= 600;
   const DEVICE_GB = (typeof navigator !== "undefined" && Number(navigator.deviceMemory)) || (ON_TABLET ? 4 : 3);
   /* A picture with no thumbnail may still be drawn on a card from its
      original, but only on a phone if it is small. */
@@ -14139,6 +14181,18 @@ function RolecraftVault() {
     if (!imgId || imgLoading.current.has(imgId)) return;
     imgLoading.current.add(imgId);
     imgQueue.current.push(imgId);
+    pumpImg();
+  }, [pumpImg]);
+  const loadImagesFirst = useCallback(ids => {
+    const pending = [];
+    (ids || []).forEach(imgId => {
+      if (!imgId) return;
+      const queued = imgQueue.current.includes(imgId);
+      if (imgLoading.current.has(imgId) && !queued) return;
+      if (!imgLoading.current.has(imgId)) imgLoading.current.add(imgId);
+      pending.push(imgId);
+    });
+    imgQueue.current = prioritizeImageQueue(imgQueue.current, pending);
     pumpImg();
   }, [pumpImg]);
   const [fullCache, setFullCache] = useState({});
@@ -15475,7 +15529,7 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "");
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "");
   const sheetOpen = !!(viewCharId || viewPersonaId);
   const overlayOpen = !!(showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
   quietRef.current = overlayOpen;
@@ -15783,7 +15837,10 @@ function RolecraftVault() {
     const off = wall.length > 1 ? wallTick % wall.length : 0;
     const wallShow = wall.slice(off).concat(wall.slice(0, off)).slice(0, 18);
     const wallVisible = wallShow.slice(0, dashboardPictureLimit(wallCols, wallShow.length));
-    wallVisible.forEach(w => w.imgId && loadImage(w.imgId));
+    /* Even Performance must request the Spotlight preview. Queue every visible
+       Dashboard picture as one priority batch so returning from a large library
+       cannot leave the first screen waiting behind off-screen card thumbnails. */
+    loadImagesFirst(dashboardImagePriority(spotlight, wallVisible));
     if (!PERF && spotlight && spotlight.profileImg) requestFull(spotlight.profileImg, true);
     const reshuffle = () => setDashSeed(Date.now() & 0x7fffffff || 1);
     const quick = [{

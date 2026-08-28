@@ -663,9 +663,12 @@ panels, or Graphics setting.
   backup health together under **Backup & transfer**; reserve the Dashboard's
   health area for something the user can recover immediately, such as a draft.
 - Dashboard gallery art is deliberately bounded by `dashboardPictureLimit`:
-  two pictures in a one-column phone layout, otherwise one measured row capped
-  at six. The ResizeObserver must attach after `ready`, because the Dashboard
-  ref does not exist during the loading render.
+  phones use two compact columns and show exactly two pictures, tablets use a
+  smaller tile minimum and show more than a phone, and wider layouts keep one
+  measured row capped at six. Initialise the measured column count from the
+  device class so the first render does not briefly queue six phone pictures.
+  The ResizeObserver must attach after `ready`, because the Dashboard ref does
+  not exist during the loading render.
 - Character and persona card size controls live in both library toolbars. Both
   libraries must use `.grid-cards`; a local hard-coded persona grid silently
   ignored the shared `--card-min` preference.
@@ -678,6 +681,12 @@ panels, or Graphics setting.
   in 1.234. Dashboard counts use two columns and gallery labels remain visible
   without hover. Audit every primary screen, record, editor and Settings for
   page overflow as a set; they do not share all their layout rules.
+- Performance skips the full Spotlight original, not the picture. Its preview is
+  first in the Dashboard's stable priority batch, followed by the visible gallery
+  tiles, so returning from a large library cannot strand Dashboard art behind
+  off-screen card reads. Android tablets carry a `.tablet` root class derived
+  from their physical shortest screen edge; keep their Spotlight side by side
+  even when WebView scaling puts the CSS viewport under the phone breakpoint.
 - Do not use `overflow-wrap: anywhere` on mobile modal buttons. It breaks even
   short words into vertical fragments when a segmented row gets narrow. Settings
   choice groups use explicit phone grids and `.settings-choice` keeps each label

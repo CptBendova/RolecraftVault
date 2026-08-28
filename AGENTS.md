@@ -165,6 +165,10 @@ changing this protocol.
   branding and side tools must be forcibly hidden there despite inline styles.
 - Mobile Spotlight artwork uses `object-fit: contain`; never force portraits
   through a shallow `cover` frame. Desktop Spotlight intentionally stays cover.
+  Performance still queues the Spotlight preview, first in the visible Dashboard
+  batch; it only skips the full original. Phones show two compact gallery tiles
+  in one row. Android tablets are detected from the physical shortest edge, keep
+  Spotlight beside its prose, and show more gallery pictures than a phone.
 - Mobile Settings choice buttons keep whole words. Use explicit responsive grids
   for segmented choices; never apply `overflow-wrap: anywhere` to every modal
   button.

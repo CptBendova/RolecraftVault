@@ -11,8 +11,10 @@
    - record sheets stay inside their own scroller;
    - backup remains in Settings instead of impersonating an urgent Dashboard
      warning;
-   - the Dashboard gallery shows two pictures on a one-column phone and one
-     capped row on wider screens; and
+   - the Dashboard gallery shows two compact pictures in one phone row, gives a
+     tablet more pictures, and stays capped on wider screens;
+   - Performance mode still loads Spotlight first, and tablet Spotlight keeps
+     its picture beside the writing; and
    - character-card sizing is visible where character and persona cards live,
      and really changes the grid.
 
@@ -27,8 +29,15 @@ app.commandLine.appendSwitch("enable-features", "OverlayScrollbar");
 app.on("window-all-closed", () => {});
 
 const capPreload = path.join(tmp, "capacitor.js");
-fs.writeFileSync(capPreload,
-  'try { window.Capacitor = { isNativePlatform: () => true, Plugins: {} }; } catch (e) {}');
+fs.writeFileSync(capPreload, [
+  'try { window.Capacitor = { isNativePlatform: () => true, Plugins: {} }; } catch (e) {}',
+  'try {',
+  '  const width = Number((process.argv.find(v => v.startsWith("--rcv-screen-width=")) || "").split("=")[1]);',
+  '  const height = Number((process.argv.find(v => v.startsWith("--rcv-screen-height=")) || "").split("=")[1]);',
+  '  if (width > 0) Object.defineProperty(window.screen, "width", { value: width, configurable: true });',
+  '  if (height > 0) Object.defineProperty(window.screen, "height", { value: height, configurable: true });',
+  '} catch (e) {}'
+].join("\n"));
 
 const pixel = "data:image/svg+xml;base64," + Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="90" height="120"><rect width="90" height="120" fill="#59647d"/><circle cx="45" cy="45" r="24" fill="#d9b25c"/></svg>'
@@ -87,7 +96,7 @@ const SEED = `(async () => {
   ]));
   await s.set("ui:cardsize", "medium");
   await s.set("ui:onboarded", "1");
-  await s.set("ui:lastseenversion", ${JSON.stringify("1.235")});
+  await s.set("ui:lastseenversion", ${JSON.stringify("1.236")});
   await s.delete("ui:lastbackup");
 })()`;
 
@@ -132,15 +141,29 @@ const AUDIT = `(async () => {
   await sleep(1700);
 
   out.screens.push(fit("Dashboard"));
+  const root = document.querySelector(".rcv");
   const gallery = document.querySelector('[data-dashboard-gallery="true"]');
+  const galleryTiles = gallery ? [...gallery.querySelectorAll(".wtile")] : [];
+  const galleryRows = new Set(galleryTiles.map(el => Math.round(el.getBoundingClientRect().top))).size;
   const spotlightImage = document.querySelector(".dashboard-spotlight .spotlight-image img");
+  const spotlight = document.querySelector(".dashboard-spotlight");
+  const spotlightPicture = document.querySelector(".dashboard-spotlight .spotlight-image");
+  const spotlightCopy = document.querySelector(".dashboard-spotlight .spotlight-copy");
+  const pictureRect = spotlightPicture && spotlightPicture.getBoundingClientRect();
+  const copyRect = spotlightCopy && spotlightCopy.getBoundingClientRect();
   out.dashboard = {
     backupAtTop: [...document.querySelectorAll(".health-action")]
       .some(el => /Back up your latest work/.test(el.textContent || "")),
     galleryPictures: gallery ? gallery.querySelectorAll(".wtile").length : 0,
     galleryColumns: columns(gallery),
+    galleryRows,
+    largestGalleryTile: galleryTiles.length ? Math.max(...galleryTiles.map(el => el.getBoundingClientRect().width)) : 0,
     galleryTotal: 24,
-    spotlightObjectFit: spotlightImage ? getComputedStyle(spotlightImage).objectFit : "missing"
+    spotlightObjectFit: spotlightImage ? getComputedStyle(spotlightImage).objectFit : "missing",
+    spotlightLoaded: !!(spotlightImage && spotlightImage.complete && spotlightImage.naturalWidth > 0),
+    spotlightDirection: spotlight ? getComputedStyle(spotlight).flexDirection : "missing",
+    spotlightPictureBesideCopy: !!(pictureRect && copyRect && pictureRect.right <= copyRect.left + 1),
+    tabletClass: !!(root && root.classList.contains("tablet"))
   };
   const navItems = [...document.querySelectorAll(".sidebar .primary-nav")];
   const sidebarBrand = document.querySelector(".sidebar .brand");
@@ -232,11 +255,13 @@ const AUDIT = `(async () => {
   return out;
 })()`;
 
-async function at(width, height, android) {
+async function at(width, height, android, performance) {
   const win = new BrowserWindow({ show: false, width, height,
-    webPreferences: android ? { preload: capPreload, contextIsolation: false } : {} });
+    webPreferences: android ? { preload: capPreload, contextIsolation: false,
+      additionalArguments: [`--rcv-screen-width=${width}`, `--rcv-screen-height=${height}`] } : {} });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
   await wait(1500);
+  await win.webContents.executeJavaScript(`localStorage.setItem("rcv-perfmode", ${JSON.stringify(performance ? "performance" : "quality")})`);
   await win.webContents.executeJavaScript(SEED);
   await win.webContents.reload();
   await wait(2200);
@@ -247,13 +272,13 @@ async function at(width, height, android) {
 
 app.whenReady().then(async () => {
   for (const size of [
-    { name: "360px Android", w: 360, h: 740, android: true },
-    { name: "820px Android tablet", w: 820, h: 1050, android: true },
+    { name: "360px Android Performance", w: 360, h: 740, android: true, performance: true },
+    { name: "820px Android tablet", w: 820, h: 1050, android: true, performance: false },
     { name: "1280px desktop", w: 1280, h: 800, android: false },
     { name: "1920px wide desktop", w: 1920, h: 1080, android: false }
   ]) {
     console.log("\n" + size.name);
-    const r = await at(size.w, size.h, size.android);
+    const r = await at(size.w, size.h, size.android, size.performance);
     for (const screen of r.screens) {
       check(screen.label + " has no sideways page overflow",
         screen.documentOverflow <= 1 && screen.rootOverflow <= 1 && screen.mainOverflow <= 1,
@@ -277,6 +302,19 @@ app.whenReady().then(async () => {
         r.bottomNav.map(item => item.id + " icon=" + item.iconOffset.toFixed(1) + " label=" + item.labelOffset.toFixed(1)).join(", "));
       check("mobile Spotlight preserves the whole picture", r.dashboard.spotlightObjectFit === "contain",
         "object-fit=" + r.dashboard.spotlightObjectFit);
+      check("Performance mode loads the Spotlight picture", r.dashboard.spotlightLoaded,
+        "loaded=" + r.dashboard.spotlightLoaded);
+      check("the phone gallery is one compact two-picture row",
+        r.dashboard.galleryPictures === 2 && r.dashboard.galleryColumns === 2 && r.dashboard.galleryRows === 1 && r.dashboard.largestGalleryTile < 180,
+        `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns} rows=${r.dashboard.galleryRows} tile=${Math.round(r.dashboard.largestGalleryTile)}px`);
+    } else if (size.android) {
+      check("Android tablet is classified by its physical screen", r.dashboard.tabletClass);
+      check("tablet Spotlight keeps the picture beside its writing",
+        r.dashboard.spotlightDirection === "row" && r.dashboard.spotlightPictureBesideCopy,
+        `direction=${r.dashboard.spotlightDirection} beside=${r.dashboard.spotlightPictureBesideCopy}`);
+      check("tablet shows more gallery pictures than a phone",
+        r.dashboard.galleryPictures > 2 && r.dashboard.galleryColumns > 2,
+        `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns}`);
     } else {
       check("wide Spotlight remains edge-to-edge", r.dashboard.spotlightObjectFit === "cover",
         "object-fit=" + r.dashboard.spotlightObjectFit);

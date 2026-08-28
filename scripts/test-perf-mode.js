@@ -58,7 +58,8 @@ const gates = [
   ["fewer originals held", /FULL_CACHE_MAX = PERF \? 6/],
   ["previews budgeted", /IMG_CACHE_BYTES = PERF/],
   ["no reading ahead", /if \(!ready \|\| PERF\) return;/],
-  ["spotlight uses the preview", /if \(!PERF && spotlight/],
+  ["Dashboard previews are prioritised in every mode", /loadImagesFirst\(dashboardImagePriority\(spotlight, wallVisible\)\)/],
+  ["Performance skips only the full Spotlight original", /if \(!PERF && spotlight/],
   ["the setting is offered", /\[\["quality", "Quality"\], \["performance", "Performance"\]\]/]
 ];
 for (const [name, re] of gates) check(name, re.test(SRC));
