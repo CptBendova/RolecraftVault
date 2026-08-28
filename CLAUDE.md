@@ -514,6 +514,40 @@ A Capacitor HTTP response is read entirely into a Java byte array, then base64, 
 
 Since 1.166 the PC packs `/delta-file?i=N` batches. A picture larger than 4 MB of plaintext is its own batch, then sent in 1 MB slices (`off`/`n`). The phone decrypts each piece, saves it, and asks for the next. Both devices need 1.166. `/delta-file` with no query is still the combined file, so an older PC receiver still works.
 
+## PC-to-Android transfer fast path (1.229)
+
+The original batched protocol stayed compatible, but it did far more work than
+the receiver used. `/delta-start` built a combined encrypted file *and* every
+Android batch, PBKDF2 ran again for each batch on both devices, and an ordinary
+8 MB batch crossed Capacitor's native bridge in three HTTP calls. On a vault with
+hundreds of batches, encryption setup and round trips became a material part of
+the copy.
+
+Modern receivers now put their need in the query string:
+
+- Android asks for `/delta-start?mode=batches` and the PC never builds the
+  duplicate combined file.
+- Desktop asks for `/delta-start?mode=combined` and the PC never builds unused
+  Android batches.
+- No `mode` means compatibility: both are still built, so old receivers work
+  with a new sender. Old senders ignore the query and still work with new
+  receivers.
+
+Every batch in one pack shares a salt and PBKDF2-derived key but has its own
+random 96-bit AES-GCM IV. Reusing a key with unique IVs is the intended GCM
+model. New Android copies cache that key; older copies see a valid ordinary
+`RCVX2` file and merely repeat the derivation as before. The Android slice is
+12 MB now, which covers the base64 expansion of the normal 8 MB picture batch,
+so the common case takes one native request. An oversized picture is still
+sliced below Capacitor's response limit.
+
+After records have actually saved, both new receivers send an authenticated
+`/delta-complete`. Only then does the sender say Complete, and it deletes
+`delta.bin` / `delta-N.bin` immediately. Failure to acknowledge is harmless and
+kept out of the receive result because an older sender has no such route.
+`test-delta-slices.js` lifts the real mode, writer, key cache, slice downloader,
+and cleanup functions and exercises this compatibility matrix.
+
 ## Android: the two things that broke transfers (1.160)
 
 Both were found by reading Capacitor's own Android source in

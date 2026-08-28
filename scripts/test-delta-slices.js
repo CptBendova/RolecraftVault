@@ -1,89 +1,181 @@
-/* Prove batch splitting and HTTP slicing: a 12 MB "photo" is its own batch,
-   and concatenating 1 MB slices rebuilds the file exactly. */
-const http = require("http");
-const assert = require("assert");
+/* Exercise the real PC-to-Android fast path.
+
+   This proves four things that materially affect a large copy:
+     - modern receivers ask the PC to build only the representation they use;
+     - every batch shares one PBKDF2-derived key but keeps a unique GCM IV;
+     - Android reuses that key and crosses the native bridge in 12 MB slices;
+     - completion clears the PC's packed temporary files and reports done.
+
+   Functions are lifted from the shipped files rather than retyped here. */
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const nodeCrypto = require("crypto");
 
-const BATCH_PLAIN_MAX = 6 * 1024 * 1024;
-const SLICE = 1 << 20;
+const ROOT = path.join(__dirname, "..");
+const MAIN = fs.readFileSync(path.join(ROOT, "app", "main.js"), "utf8");
+const MOBILE = fs.readFileSync(path.join(ROOT, "mobile", "src", "rc-transfer.js"), "utf8");
 
-function splitKeysIntoBatches(keys, sizes) {
-  const batches = [];
-  let cur = [], size = 0;
-  for (const k of keys) {
-    const n = sizes[k] || 0;
-    if (cur.length && size + n > BATCH_PLAIN_MAX) {
-      batches.push(cur);
-      cur = [];
-      size = 0;
-    }
-    cur.push(k);
-    size += n;
+function lift(src, name) {
+  let start = src.indexOf("async function " + name);
+  if (start < 0) start = src.indexOf("function " + name);
+  if (start < 0) throw new Error("could not find " + name);
+  const open = src.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(start, i + 1);
   }
-  if (cur.length) batches.push(cur);
-  return batches;
+  throw new Error("could not find end of " + name);
 }
 
-let failed = 0;
-const check = (label, cond, detail) => {
-  console.log((cond ? "  PASS  " : "  FAIL  ") + label + (detail ? "   " + detail : ""));
-  if (!cond) failed++;
-};
+function numericConstant(src, name) {
+  const match = new RegExp("const\\s+" + name + "\\s*=\\s*([^;]+);").exec(src);
+  if (!match) throw new Error("could not find " + name);
+  return Function("return (" + match[1] + ");")();
+}
 
-const batches = splitKeysIntoBatches(
-  ["txt:a", "img:big", "txt:b", "img:small"],
-  { "txt:a": 100, "img:big": 12 * 1024 * 1024, "txt:b": 80, "img:small": 2000 }
-);
-check("a 12 MB photo is its own batch", batches.length === 3
-  && batches[0].join() === "txt:a"
-  && batches[1].join() === "img:big"
-  && batches[2].join() === "txt:b,img:small", JSON.stringify(batches));
+let failures = 0;
+function check(label, condition, detail) {
+  console.log((condition ? "  PASS  " : "  FAIL  ") + label + (detail ? "  " + detail : ""));
+  if (!condition) failures++;
+}
 
-const small = splitKeysIntoBatches(["a", "b", "c"], { a: 100, b: 100, c: 100 });
-check("tiny records share one batch", small.length === 1 && small[0].length === 3);
+async function run() {
+  const batchMax = numericConstant(MAIN, "BATCH_PLAIN_MAX");
+  const sliceBytes = numericConstant(MOBILE, "SLICE_BYTES");
+  check("PC batches are capped at 8 MB", batchMax === 8 * 1024 * 1024, String(batchMax));
+  check("Android slices are 12 MB", sliceBytes === 12 * 1024 * 1024, String(sliceBytes));
 
-const two = splitKeysIntoBatches(["p", "q"], { p: 4 * 1024 * 1024, q: 4 * 1024 * 1024 });
-check("two 4 MB pictures do not share a 6 MB batch", two.length === 2);
+  const modeFactory = new Function("URL",
+    lift(MAIN, "deltaPackMode") + "\n" + lift(MAIN, "deltaPackTargets")
+      + "\nreturn { deltaPackMode, deltaPackTargets };");
+  const { deltaPackMode, deltaPackTargets } = modeFactory(URL);
+  check("Android batch mode omits the duplicate combined file",
+    JSON.stringify(deltaPackTargets(deltaPackMode("/delta-start?mode=batches")))
+      === JSON.stringify({ combined: false, batches: true }));
+  check("desktop combined mode omits unused batch files",
+    JSON.stringify(deltaPackTargets(deltaPackMode("/delta-start?mode=combined")))
+      === JSON.stringify({ combined: true, batches: false }));
+  check("an old receiver still gets both representations",
+    JSON.stringify(deltaPackTargets(deltaPackMode("/delta-start")))
+      === JSON.stringify({ combined: true, batches: true }));
 
-const tmp = path.join(os.tmpdir(), "rcv-slice-test.bin");
-const payload = Buffer.alloc(SLICE * 2 + 12345);
-for (let i = 0; i < payload.length; i++) payload[i] = (i * 13 + 7) & 255;
-fs.writeFileSync(tmp, payload);
+  const sizes = {
+    "txt:a": 100,
+    "img:big": 12 * 1024 * 1024,
+    "txt:b": 80,
+    "img:one": 4 * 1024 * 1024,
+    "img:two": 4 * 1024 * 1024
+  };
+  const splitFactory = new Function("estimateKeyBytes", "BATCH_PLAIN_MAX",
+    lift(MAIN, "splitKeysIntoBatches") + "\nreturn splitKeysIntoBatches;");
+  const splitKeysIntoBatches = splitFactory(k => sizes[k] || 0, batchMax);
+  const batches = splitKeysIntoBatches(["txt:a", "img:big", "txt:b"]);
+  check("an oversized picture remains its own sliced batch",
+    batches.length === 3 && batches[1].join() === "img:big", JSON.stringify(batches));
+  const exact = splitKeysIntoBatches(["img:one", "img:two"]);
+  check("records filling exactly 8 MB share one PC batch", exact.length === 1, JSON.stringify(exact));
 
-const server = http.createServer((req, res) => {
-  const u = new URL(req.url, "http://127.0.0.1");
-  const off = Number(u.searchParams.get("off") || 0);
-  const n = Number(u.searchParams.get("n") || payload.length);
-  const start = Math.max(0, Math.min(payload.length, off));
-  const end = Math.max(start, Math.min(payload.length, start + n));
-  const slice = payload.subarray(start, end);
-  res.writeHead(200, { "Content-Length": slice.length, "Content-Type": "application/octet-stream" });
-  res.end(slice);
+  let pcDerivations = 0;
+  const keyFrom = (secret, salt) => {
+    pcDerivations++;
+    return nodeCrypto.createHash("sha256").update(Buffer.from(secret)).update(Buffer.from(salt)).digest();
+  };
+  const writerFactory = new Function("fs", "crypto", "Buffer", "JSON", "keyFrom",
+    lift(MAIN, "createRecordCrypto") + "\n" + lift(MAIN, "openRecordWriter")
+      + "\nreturn { createRecordCrypto, openRecordWriter };");
+  const { createRecordCrypto, openRecordWriter } = writerFactory(fs, nodeCrypto, Buffer, JSON, keyFrom);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-fast-transfer-"));
+  const onePath = path.join(tmp, "delta-0.bin");
+  const twoPath = path.join(tmp, "delta-1.bin");
+  const secret = Buffer.from("secret");
+  const shared = createRecordCrypto(secret);
+  const one = openRecordWriter(onePath, secret, shared);
+  one.writeRecord("txt:one", "first");
+  one.finish();
+  const two = openRecordWriter(twoPath, secret, shared);
+  two.writeRecord("txt:two", "second");
+  two.finish();
+  const oneBytes = fs.readFileSync(onePath);
+  const twoBytes = fs.readFileSync(twoPath);
+  check("PC derives the record key once for every batch", pcDerivations === 1, "derivations=" + pcDerivations);
+  check("batch salts match so Android can reuse the key",
+    oneBytes.subarray(5, 21).equals(twoBytes.subarray(5, 21)));
+  check("every batch keeps a unique AES-GCM IV",
+    !oneBytes.subarray(21, 33).equals(twoBytes.subarray(21, 33)));
+
+  let phoneDerivations = 0;
+  const phoneKeyFrom = async () => {
+    phoneDerivations++;
+    return nodeCrypto.webcrypto.subtle.importKey("raw", shared.key, "AES-GCM", false, ["decrypt"]);
+  };
+  const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const ascii = s => new TextEncoder().encode(s);
+  const decryptFactory = new Function("crypto", "Uint8Array", "TextDecoder", "JSON", "sameBytes", "ascii", "keyFrom",
+    lift(MOBILE, "recordKey") + "\n" + lift(MOBILE, "decryptAndSave")
+      + "\nreturn decryptAndSave;");
+  const decryptAndSave = decryptFactory(nodeCrypto.webcrypto, Uint8Array, TextDecoder, JSON, sameBytes, ascii, phoneKeyFrom);
+  const saved = [];
+  const phoneKeyCache = {};
+  await decryptAndSave(oneBytes, secret, async (k, v) => saved.push([k, v]), phoneKeyCache);
+  await decryptAndSave(twoBytes, secret, async (k, v) => saved.push([k, v]), phoneKeyCache);
+  check("Android derives a shared batch key only once", phoneDerivations === 1, "derivations=" + phoneDerivations);
+  check("both encrypted batches still authenticate and save",
+    JSON.stringify(saved) === JSON.stringify([["txt:one", "first"], ["txt:two", "second"]]), JSON.stringify(saved));
+
+  let requestPaths = [];
+  let payload = new Uint8Array(sliceBytes * 2 + 12345);
+  for (let i = 0; i < payload.length; i++) payload[i] = (i * 13 + 7) & 255;
+  const ask = async (target, requestPath) => {
+    requestPaths.push(requestPath);
+    const url = new URL(requestPath, "http://phone");
+    const off = Number(url.searchParams.get("off") || 0);
+    const n = Number(url.searchParams.get("n") || payload.length);
+    return payload.slice(off, Math.min(payload.length, off + n));
+  };
+  const downloadFactory = new Function("SLICE_BYTES", "Uint8Array", "Error", "ask",
+    lift(MOBILE, "downloadSliced") + "\nreturn downloadSliced;");
+  const downloadSliced = downloadFactory(sliceBytes, Uint8Array, Error, ask);
+  const downloaded = await downloadSliced({}, "/delta-file?i=0", payload.length, 1000);
+  check("a little over 24 MB needs only three native requests", requestPaths.length === 3,
+    "requests=" + requestPaths.length);
+  check("sliced bytes rebuild exactly", Buffer.from(downloaded).equals(Buffer.from(payload)));
+  /* An 8 MB binary picture is about 10.7 MB as a data URL in the record file. */
+  payload = new Uint8Array(11 * 1024 * 1024);
+  requestPaths = [];
+  await downloadSliced({}, "/delta-file?i=1", payload.length, 1000);
+  check("an ordinary 8 MB picture batch crosses the bridge once", requestPaths.length === 1,
+    "requests=" + requestPaths.length);
+
+  let cleared = 0, published = null;
+  const completeFactory = new Function("clearDeltaFiles", "publishShareProgress",
+    "let transferState = { deltaPath: 'combined', deltaBatches: [1, 2] };\n"
+      + lift(MAIN, "completeDeltaTransfer")
+      + "\nreturn { completeDeltaTransfer, state: () => transferState };");
+  const completion = completeFactory(() => { cleared++; }, p => { published = p; });
+  completion.completeDeltaTransfer();
+  check("completion removes packed temporary files", cleared === 1);
+  check("completion drops stale paths from transfer state",
+    completion.state().deltaPath === undefined && completion.state().deltaBatches === undefined);
+  check("completion tells the sender only after the receiver acknowledges",
+    published && published.phase === "done");
+
+  check("Android requests the batch-only fast path",
+    /ask\(target, "\/delta-start\?mode=batches"/.test(MOBILE));
+  check("desktop requests the combined-only fast path",
+    /path: "\/delta-start\?mode=combined"/.test(MAIN));
+  check("both receivers acknowledge a successfully saved copy",
+    /notifyTransferComplete\(target\)/.test(MOBILE)
+      && /notifyTransferComplete\(base, target\.secret\)/.test(MAIN));
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+run().then(() => {
+  console.log(failures === 0 ? "\nAll checks passed." : "\n" + failures + " FAILED");
+  process.exit(failures === 0 ? 0 : 1);
+}).catch(e => {
+  console.error(e);
+  process.exit(1);
 });
-
-(async () => {
-  await new Promise(r => server.listen(0, "127.0.0.1", r));
-  const port = server.address().port;
-  const out = Buffer.alloc(payload.length);
-  let got = 0;
-  while (got < payload.length) {
-    const n = Math.min(SLICE, payload.length - got);
-    const buf = await new Promise((resolve, reject) => {
-      http.get({ hostname: "127.0.0.1", port, path: "/delta-file?i=0&off=" + got + "&n=" + n }, resp => {
-        const cs = [];
-        resp.on("data", c => cs.push(c));
-        resp.on("end", () => resolve(Buffer.concat(cs)));
-      }).on("error", reject);
-    });
-    buf.copy(out, got);
-    got += buf.length;
-  }
-  check("sliced download equals the original file", out.equals(payload),
-    "got " + got + " of " + payload.length);
-  server.close();
-  try { fs.unlinkSync(tmp); } catch (e) {}
-  console.log(failed === 0 ? "\nAll checks passed." : "\n" + failed + " FAILED");
-  process.exit(failed === 0 ? 0 : 1);
-})();

@@ -21,7 +21,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.228";
+const FACTORY_BUILD = "1.229";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -276,12 +276,33 @@ function clearDeltaFiles() {
     }
   } catch (e) {}
 }
+function completeDeltaTransfer() {
+  clearDeltaFiles();
+  if (transferState) {
+    delete transferState.deltaPath;
+    delete transferState.deltaBatches;
+  }
+  publishShareProgress({ phase: "done", done: 1, total: 1, pct: 1 });
+}
 /* A phone cannot hold a whole vault in one Capacitor HTTP response: around
    130 MB the native layer stops. Batches stay modest, but one picture can be
-   larger than the cap — that picture is still its own file, and the phone
-   pulls it in 3 MB slices. 8 MB packs more records per round trip than 6 MB
+   larger than the cap — that picture is still its own file and the phone
+   slices it. 8 MB lets an ordinary batch cross the native bridge in one call
    without going near that cliff. */
 const BATCH_PLAIN_MAX = 8 * 1024 * 1024;
+
+/* New receivers say which representation they consume. An older receiver sends
+   no mode and still gets both, so this is compatible in both directions. */
+function deltaPackMode(requestUrl) {
+  try {
+    const mode = new URL(requestUrl || "", "http://127.0.0.1").searchParams.get("mode");
+    if (mode === "batches" || mode === "combined") return mode;
+  } catch (e) {}
+  return "compat";
+}
+function deltaPackTargets(mode) {
+  return { combined: mode !== "batches", batches: mode !== "combined" };
+}
 
 /* A short fingerprint per record lets the two devices work out exactly which
    records differ, so only those travel. Fingerprinting means reading and hashing
@@ -496,10 +517,20 @@ function splitKeysIntoBatches(keys) {
   return batches;
 }
 
-function openRecordWriter(outPath, secret) {
+function createRecordCrypto(secret) {
   const salt = crypto.randomBytes(16);
+  return { salt, key: keyFrom(secret, salt) };
+}
+
+function openRecordWriter(outPath, secret, sharedCrypto) {
+  /* PBKDF2 is deliberately expensive. A transfer used to run it once per
+     8 MB batch on both devices. Reusing the derived key is safe because every
+     AES-GCM file still gets its own random 96-bit IV. Older receivers already
+     accept repeated salts and simply derive the same key again. */
+  const recordCrypto = sharedCrypto || createRecordCrypto(secret);
+  const salt = recordCrypto.salt;
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", recordCrypto.key, iv);
   try { fs.unlinkSync(outPath); } catch (e) {}
   const fd = fs.openSync(outPath, "w");
   fs.writeSync(fd, Buffer.from("RCVX2"));
@@ -667,37 +698,47 @@ function startTransferServer() {
       writeEncryptedJson(res, transferState && transferState.pack || { phase: "idle", done: 0, total: 0 });
       return;
     }
-    const readWantedKeys = (onKeys) => {
-      const MAX_BODY = 4 << 20;
+    const readEncryptedJson = (maxBody, onValue) => {
       const chunks = [];
       let size = 0;
       req.on("data", d => {
         size += d.length;
-        if (size > MAX_BODY) { res.writeHead(413); res.end("too big"); req.destroy(); return; }
+        if (size > maxBody) { res.writeHead(413); res.end("too big"); req.destroy(); return; }
         chunks.push(d);
       });
       req.on("end", () => {
-        if (size > MAX_BODY) return;
+        if (size > maxBody) return;
         try {
-          const wanted = JSON.parse(decryptPayload(Buffer.concat(chunks), secret).toString("utf8"));
-          if (!Array.isArray(wanted)) throw new Error("bad request");
-          onKeys(wanted);
+          const value = JSON.parse(decryptPayload(Buffer.concat(chunks), secret).toString("utf8"));
+          onValue(value);
         } catch (e) {
           res.writeHead(400); res.end("bad");
         }
       });
       req.on("error", () => { try { res.destroy(); } catch (e) {} });
     };
-    const packWanted = async (wanted) => {
+    const readWantedKeys = onKeys => readEncryptedJson(4 << 20, wanted => {
+      if (!Array.isArray(wanted)) throw new Error("bad request");
+      onKeys(wanted);
+    });
+    const packWanted = async (wanted, mode) => {
       publishShareProgress({ phase: "packing", done: 0, total: wanted.length, pct: 0 });
-      const batches = splitKeysIntoBatches(wanted);
+      const targets = deltaPackTargets(mode);
+      const batches = targets.batches ? splitKeysIntoBatches(wanted) : [wanted];
       clearDeltaFiles();
-      const combined = openRecordWriter(deltaFilePath(), secret);
+      if (transferState) {
+        delete transferState.deltaPath;
+        delete transferState.deltaBatches;
+      }
+      /* One PBKDF2 derivation feeds every output file. Each writer still owns a
+         unique IV, so no AES-GCM nonce is reused. */
+      const sharedCrypto = createRecordCrypto(secret);
+      const combined = targets.combined ? openRecordWriter(deltaFilePath(), secret, sharedCrypto) : null;
       const sizes = [];
       let keysDone = 0, lastYield = Date.now();
       try {
         for (let b = 0; b < batches.length; b++) {
-          const w = openRecordWriter(deltaBatchPath(b), secret);
+          const w = targets.batches ? openRecordWriter(deltaBatchPath(b), secret, sharedCrypto) : null;
           try {
             for (let i = 0; i < batches[b].length; i++) {
               const k = batches[b][i];
@@ -705,8 +746,8 @@ function startTransferServer() {
               try { v = readValue(k); } catch (e) { v = null; }
               if (v !== null && v !== undefined) {
                 const s = String(v);
-                w.writeRecord(k, s);
-                combined.writeRecord(k, s);
+                if (w) w.writeRecord(k, s);
+                if (combined) combined.writeRecord(k, s);
               }
               keysDone++;
               publishShareProgress({ phase: "packing", done: keysDone, total: wanted.length, pct: wanted.length > 0 ? keysDone / wanted.length : 0 });
@@ -715,33 +756,49 @@ function startTransferServer() {
                 lastYield = Date.now();
               }
             }
-            sizes.push(w.finish().bytes);
+            if (w) sizes.push(w.finish().bytes);
           } catch (e) {
-            w.abort();
+            if (w) w.abort();
             throw e;
           }
         }
-        const built = combined.finish();
+        const built = combined
+          ? combined.finish()
+          : { path: null, bytes: sizes.reduce((sum, n) => sum + n, 0) };
         if (transferState) {
-          transferState.deltaPath = built.path;
-          transferState.deltaBatches = sizes.map((bytes, i) => ({ path: deltaBatchPath(i), bytes: bytes }));
+          if (built.path) transferState.deltaPath = built.path;
+          if (targets.batches) transferState.deltaBatches = sizes.map((bytes, i) => ({ path: deltaBatchPath(i), bytes: bytes }));
         }
         publishShareProgress({
           phase: "ready", done: wanted.length, total: wanted.length, pct: 1,
-          bytes: 0, byteTotal: built.bytes, batches: sizes.length, sizes: sizes
+          bytes: 0, byteTotal: built.bytes, batches: sizes.length,
+          sizes: targets.batches ? sizes : undefined
         });
         return built;
       } catch (e) {
-        combined.abort();
+        if (combined) combined.abort();
+        clearDeltaFiles();
+        if (transferState) {
+          delete transferState.deltaPath;
+          delete transferState.deltaBatches;
+        }
         throw e;
       }
     };
     if (req.method === "POST" && route === "/delta-start") {
       readWantedKeys(wanted => {
         writeEncryptedJson(res, { ok: true, total: wanted.length });
-        packWanted(wanted).catch(e => {
+        packWanted(wanted, deltaPackMode(req.url)).catch(e => {
           publishShareProgress({ phase: "error", done: 0, total: 0, error: String(e && e.message || e) });
         });
+      });
+      return;
+    }
+    if (req.method === "POST" && route === "/delta-complete") {
+      readEncryptedJson(64 << 10, message => {
+        if (!message || message.ok !== true) throw new Error("bad request");
+        completeDeltaTransfer();
+        writeEncryptedJson(res, { ok: true });
       });
       return;
     }
@@ -775,7 +832,7 @@ function startTransferServer() {
       /* Old clients: pack then send on this same request. Yields while packing
          so /progress can still be answered. */
       readWantedKeys(wanted => {
-        packWanted(wanted).then(built => {
+        packWanted(wanted, "combined").then(built => {
           sendFile(res, built.path, (sent, total) => {
             publishShareProgress({ phase: "sending", done: sent, total, pct: total > 0 ? sent / total : 0, bytes: sent, byteTotal: total });
           });
@@ -850,7 +907,9 @@ function startTransferServer() {
         last = now;
         sendToWindow("transfer-progress", { phase: "preparing", done, total, pct: total > 0 ? done / total : 0 });
       }).catch(() => {}).then(() => {
-        sendToWindow("transfer-progress", { phase: "done" });
+        /* Ready is not the same as a completed copy. The receiver sends an
+           authenticated /delta-complete only after its records are saved. */
+        sendToWindow("transfer-progress", { phase: "ready", done: 1, total: 1, pct: 1 });
         transferState = { secret, code, expiresAt: Date.now() + 10 * 60 * 1000 };
         transferState.timer = setTimeout(stopTransferServer, 10 * 60 * 1000);
         resolve({ ok: true, code, ip, port, expiresInMinutes: 10, device: deviceName() });
@@ -995,6 +1054,23 @@ function transferOptions(base, extra) {
   return Object.assign({}, base, extra);
 }
 
+/* Best effort and deliberately separate from transfer success: an older sender
+   has no acknowledgement route, but the receiver still saved everything. A
+   new sender uses this to remove packed temporary files immediately and tell
+   its own screen the copy really finished. */
+async function notifyTransferComplete(base, secret) {
+  try {
+    const body = encryptPayload(Buffer.from(JSON.stringify({ ok: true }), "utf8"), secret);
+    const reply = await httpBuffer(transferOptions(base, {
+      path: "/delta-complete", method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
+      timeout: 15000
+    }), body);
+    const message = JSON.parse(decryptPayload(reply, secret).toString("utf8"));
+    return !!(message && message.ok);
+  } catch (e) { return false; }
+}
+
 /* Once /delta-start has accepted the request, the sender prepares the files in
    the background. A vanished sender used to turn this poll into an infinite
    loop because every failed status request was treated like "still working". */
@@ -1081,6 +1157,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
   }
 
   if (!needed.length && !removable.length) {
+    await notifyTransferComplete(base, target.secret);
     return Object.assign({ ok: true, added: 0, updated: 0, removed: 0, unchanged, bytes: 0, upToDate: true }, who);
   }
 
@@ -1155,7 +1232,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
       let started = false;
       try {
         const startBlob = await httpBuffer(transferOptions(base, {
-          path: "/delta-start", method: "POST",
+          path: "/delta-start?mode=combined", method: "POST",
           headers: { "Content-Type": "application/octet-stream", "Content-Length": body.length },
           timeout: 30000
         }), body);
@@ -1195,6 +1272,7 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
     try { fs.unlinkSync(keyToFile(k)); removed++; } catch (e) {}
     phase("removing", removed, removable.length);
   }
+  if (removed === removable.length) await notifyTransferComplete(base, target.secret);
   phase("done", 1, 1);
   return Object.assign({ ok: true, added, updated, removed, unchanged, bytes }, who);
 }

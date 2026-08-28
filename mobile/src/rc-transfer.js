@@ -132,12 +132,24 @@
     if (head.app !== "rolecraft-vault") throw new Error("That file is not from Rolecraft Vault");
     return lines.slice(1).map(l => JSON.parse(l));
   }
-  /* Save one record at a time so a 6 MB batch of pictures is not all held as
+  async function recordKey(secret, salt, cache) {
+    if (cache && cache.key && cache.salt && sameBytes(cache.salt, salt)) return cache.key;
+    const key = await keyFrom(secret, salt);
+    if (cache) {
+      cache.salt = salt.slice();
+      cache.key = key;
+    }
+    return key;
+  }
+  /* Save one record at a time so an 8 MB batch of pictures is not all held as
      parsed JSON at once. That was blowing the phone's memory on a multi-GB copy. */
-  async function decryptAndSave(bytes, secret, saveOne) {
+  async function decryptAndSave(bytes, secret, saveOne, keyCache) {
     if (!sameBytes(bytes.slice(0, 5), ascii("RCVX2"))) throw new Error("Not a Rolecraft record file");
     const salt = bytes.slice(5, 21), iv = bytes.slice(21, 33);
-    const key = await keyFrom(secret, salt);
+    /* New senders reuse one PBKDF2-derived key with a fresh IV per batch.
+       Caching it removes hundreds of expensive derivations on a large vault;
+       old senders use different salts and naturally miss this cache. */
+    const key = await recordKey(secret, salt, keyCache);
     const plain = new Uint8Array(await crypto.subtle.decrypt(
       { name: "AES-GCM", iv, tagLength: 128 }, key, bytes.slice(33)));
     const text = new TextDecoder().decode(plain);
@@ -193,10 +205,22 @@
     return typeof res.data === "string" ? b64ToBytes(res.data) : new Uint8Array(res.data);
   }
 
+  async function notifyTransferComplete(target) {
+    try {
+      const body = await encryptPayload(new TextEncoder().encode(JSON.stringify({ ok: true })), target.secret);
+      const reply = await ask(target, "/delta-complete", "POST", body, 15000);
+      const message = JSON.parse(new TextDecoder().decode(await decryptPayload(reply, target.secret)));
+      return !!(message && message.ok);
+    } catch (e) { return false; }
+  }
+
   /* CapacitorHttp loads a whole response into JS as base64. Around 130 MB the
-     phone stops. Slices stay at 2 MB, so a 12 MB picture is six calls that
-     are joined here, never one giant native payload. */
-  const SLICE_BYTES = 3 * 1024 * 1024;
+     phone stops. A 12 MB slice covers the base64 expansion of an ordinary
+     8 MB picture batch in one native bridge call; an
+     unusually large picture is still sliced and never becomes one giant native
+     response. The WebView already allocates the complete encrypted batch below,
+     so smaller slices only added round trips without reducing peak JS memory. */
+  const SLICE_BYTES = 12 * 1024 * 1024;
   async function downloadSliced(target, path, totalBytes, timeoutMs, onBytes) {
     if (!totalBytes || totalBytes <= SLICE_BYTES) {
       const blob = await ask(target, path, "GET", null, timeoutMs);
@@ -341,6 +365,7 @@
         upToDate: !needed.length && !removable.length }, who);
     }
     if (!needed.length && !removable.length) {
+      await notifyTransferComplete(target);
       return Object.assign({ ok: true, added: 0, updated: 0, removed: 0, unchanged, bytes: 0, upToDate: true }, who);
     }
 
@@ -435,9 +460,10 @@
       let blob = null;
       let started = false;
       let batchSizes = null;
+      const batchKeyCache = {};
       try {
         const msg = JSON.parse(new TextDecoder().decode(
-          await decryptPayload(await ask(target, "/delta-start", "POST", body, 30000), target.secret)));
+          await decryptPayload(await ask(target, "/delta-start?mode=batches", "POST", body, 30000), target.secret)));
         started = !!(msg && msg.ok);
         if (started) phase("packing", 0, msg.total || needed.length);
       } catch (e) { started = false; }
@@ -459,7 +485,7 @@
             bytes += piece.length;
             bytesDone += want || piece.length;
             phase("unpacking", i + 1, batchSizes.length);
-            await decryptAndSave(piece, target.secret, persistOne);
+            await decryptAndSave(piece, target.secret, persistOne, batchKeyCache);
             piece = null;
           }
         } else {
@@ -494,6 +520,7 @@
       await window.storage.delete(removable[i]);
       phase("removing", i + 1, removable.length);
     }
+    if (saveFailed === 0) await notifyTransferComplete(target);
     cachedLocal = null;
     phase("done", 1, 1);
     return Object.assign({

@@ -58,7 +58,10 @@ check("the web and phone edition matches it", /var ITER = 210000/.test(R("web/js
 
 group("the transfer");
 check("every reply is encrypted, even who is on the end", /encryptPayload\(Buffer\.from\(JSON\.stringify\(\{\s*\n?\s*device/.test(main) || /whoami[\s\S]{0,400}encryptPayload/.test(main));
-check("a request body cannot be used to exhaust memory", /MAX_BODY/.test(main));
+check("a request body cannot be used to exhaust memory",
+  /readEncryptedJson\s*=\s*\(maxBody,[\s\S]{0,350}size\s*>\s*maxBody/.test(main)
+    && /readWantedKeys[\s\S]{0,100}4\s*<<\s*20/.test(main)
+    && /\/delta-complete[\s\S]{0,120}64\s*<<\s*10/.test(main));
 check("the pairing secret is random, not derived from anything guessable", /crypto\.randomBytes\(6\)/.test(main));
 
 group("the installer, which runs elevated");

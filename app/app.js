@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.228";
+const APP_VERSION = "1.229";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.228";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.228 — current",
+  heading: "1.229 — current",
+  notes: ["Copying a vault from a computer to Android is faster, especially when there are many pictures. The computer used to build and encrypt both a phone-sized set of batches and a second whole-vault file even though the phone only used the batches. It now prepares only what the receiving device needs.", "Large copies spend much less time repeating security work. The pairing key is derived once for the transfer instead of again for every small batch, while every batch still has its own fresh encryption IV and authentication. Ordinary batches also cross Android's native bridge in one request instead of several smaller requests.", "The sending computer now says Complete only after the receiving device confirms that its records were saved, rather than when the vault merely became ready to share. Its temporary packed files are removed immediately after that confirmation instead of waiting for the sharing screen to close or expire.", "Windows needs the full installer because the sending code is part of the app itself. Android needs the new APK to use the faster receiving path. Older versions remain compatible and can still copy in either pairing."]
+}, {
+  heading: "1.228",
   notes: ["A transfer no longer waits forever when the sending device disappears while it is gathering records. Windows and Android now allow a brief interruption to recover, then stop with a clear message if contact is really gone.", "Large transfers on Windows now get the ten minutes they were meant to have. The download asked for ten, but the ordinary three-minute connection limit was being applied over it, so a slow copy could be cut off even though it was still moving.", "Windows needs the full installer for this release because its transfer code is part of the app itself. Android needs the new APK. Both install over the version you have and keep the vault and settings in place."]
 }, {
   heading: "1.227",
@@ -10859,6 +10862,7 @@ function SettingsModal({
     asking: "Asking the other device what it has",
     comparing: "Working out what is different here",
     packing: xfer ? "Gathering records to send" : "The other device is gathering the records",
+    ready: xfer ? "Ready for the other device" : "The other device is ready",
     sending: "Sending to the other device",
     receiving: "Copying across",
     unpacking: "Unpacking",
