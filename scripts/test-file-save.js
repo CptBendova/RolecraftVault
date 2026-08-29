@@ -42,13 +42,16 @@ const lifted = [
   lift("setSaveNotice"),
   lift("writeSomewhere", "async function "),
   lift("phoneSave"),
+  lift("appendJsonText"),
+  lift("streamJsonSomewhere"),
+  lift("phoneJsonStream"),
   lift("saveFile"),
 ].join("\n");
 console.log("lifted " + lifted.length + " chars of the real saving code");
 
 const build = env => new Function("window", "document", "URL", "FileReader", "Blob", "setTimeout",
   "let saveNotice = null;\n" + lifted +
-  "\nreturn { saveFile, setSaveNotice };")(
+  "\nreturn { saveFile, phoneJsonStream, setSaveNotice };")(
   env.window, env.document, env.URL, env.FileReader, env.Blob, env.setTimeout);
 
 /* a Blob and FileReader good enough for the real code to use */
@@ -134,6 +137,26 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     api.saveFile(new FakeBlob(["hello"]), "backup.json");
     await wait();
     check("a failure is said out loud, not swallowed", notices.length === 1 && /Couldn't save/.test(notices[0]), notices[0] || "(silent)");
+  }
+
+  /* ---- a large Android backup: bounded UTF-8 bridge calls ---- */
+  {
+    const written = [];
+    const cap = { nativePromise: async (plugin, method, opts) => { written.push({ plugin, method, opts }); return {}; } };
+    const { env } = makeEnv(cap);
+    const api = build(env);
+    const huge = "x".repeat(700000);
+    const where = await api.phoneJsonStream("large.json", async append => {
+      await append("{\"images\":\"");
+      await append(huge);
+      await append("\"}");
+    });
+    const writes = written.filter(x => x.method === "writeFile" || x.method === "appendFile");
+    check("large phone backups are streamed instead of passed as one bridge value", writes.length >= 4,
+      "calls=" + writes.length);
+    check("the first piece creates the file and later pieces append", writes[0].method === "writeFile" && writes.slice(1).every(x => x.method === "appendFile"));
+    check("every bridge value stays bounded", writes.every(x => String(x.opts.data).length <= 256 * 1024));
+    check("streamed JSON is written as UTF-8", writes.every(x => x.opts.encoding === "utf8") && where === "Documents");
   }
 
   console.log("");

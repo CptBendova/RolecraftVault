@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.239";
+const APP_VERSION = "1.240";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.239";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.239 — current",
+  heading: "1.240 — current",
+  notes: ["Backups and restores are safer on every edition. A character, persona, lore or prompt export can no longer be mistaken for a full-vault backup, and a restore is staged before anything changes, so running out of room cannot leave half of one vault mixed with half of another. On Android, full backups now stream straight to a file in small pieces instead of making several complete copies in memory, which makes large libraries far less likely to close the app while exporting.", "Android no longer locks itself in the middle of a Windows-to-phone copy when the screen dims or you briefly switch apps. Password changes on Android also commit the records, password information and protected picture key together, so an interrupted change always leaves one complete password state. Large-copy progress and the existing resume path are unchanged.", "Picture removal now records the changed character, persona, book or collection before deleting the picture bytes, and every storage deletion is awaited. Whole-lore and whole-prompt exports include their original pictures, thumbnails and blur choices. Windows now writes its security record atomically, and the installer requirement inside an update package is covered by the package signature. This release changes the Windows shell, so install the full Windows setup; Android users need the new APK." ]
+}, {
+  heading: "1.239",
   notes: ["Large Windows-to-Android vault copies now stream while the computer is still preparing them instead of waiting for the whole vault to be packed first. Each copy has its own isolated session, active traffic renews the sender automatically, and saved batches are acknowledged and removed from the computer as the copy proceeds, so a ten-minute cutoff or a full temporary folder can no longer end a healthy transfer.", "Pictures use a new authenticated binary frame between current Windows and Android builds. They no longer travel as base64 text inside JSON, reducing picture traffic by about a quarter before encryption. Android downloads through a native temporary file instead of asking the WebView bridge to hold and base64-copy a complete network response, retries brief Wi-Fi failures in place, checks free space before each batch and keeps both CPU and high-performance Wi-Fi awake while copying.", "Android now commits a replacement file before removing the previous encrypted copy. A failed save in Mirror mode also prevents all deletions, so an incomplete incoming copy cannot remove local-only records. Completed batches remain resumable by record if a device disconnects. Older versions can still merge through the compatible transfer path, but both devices need 1.239 for the streamed binary path. Windows needs the full installer and Android needs the new APK; the guide and changelog are included in both."]
 }, {
   heading: "1.238",
@@ -621,6 +624,12 @@ async function sDel(key) {
     return null;
   }
 }
+async function sReplace(values, spec) {
+  if (!window.storage || typeof window.storage.replace !== "function") {
+    throw new Error("This restore needs the current app shell");
+  }
+  return window.storage.replace(values, spec);
+}
 function compressImage(file, maxDim = 1000, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -789,6 +798,49 @@ function phoneSave(filename, blob) {
     r.readAsDataURL(blob);
   });
 }
+/* A backup can be many gigabytes. Turning its Blob into one data URL makes a
+   second full copy in the WebView and then asks the Capacitor bridge to carry
+   that copy in one message. Write JSON as UTF-8 pieces instead, so only one
+   picture and one small bridge call are live at a time. */
+function appendJsonText(C, filename, dir, state, text) {
+  const s = String(text);
+  let off = 0;
+  function next() {
+    if (off >= s.length) return Promise.resolve();
+    const method = state.first ? "writeFile" : "appendFile";
+    state.first = false;
+    const data = s.slice(off, off + 256 * 1024);
+    off += data.length;
+    return C.nativePromise("Filesystem", method, {
+      path: filename,
+      data,
+      directory: dir,
+      encoding: "utf8",
+      recursive: true
+    }).then(next);
+  }
+  return next();
+}
+function streamJsonSomewhere(C, filename, produce) {
+  let last = null, spot = 0;
+  function tryNext() {
+    if (spot >= SAVE_SPOTS.length) return Promise.reject(last || new Error("nowhere to write"));
+    const [dir, where] = SAVE_SPOTS[spot++];
+    const state = { first: true };
+    const append = text => appendJsonText(C, filename, dir, state, text);
+    return Promise.resolve().then(() => produce(append)).then(() => where, e => {
+      last = e;
+      return C.nativePromise("Filesystem", "deleteFile", { path: filename, directory: dir })
+        .catch(() => true).then(tryNext);
+    });
+  }
+  return tryNext();
+}
+function phoneJsonStream(filename, produce) {
+  const C = typeof window !== "undefined" && window.Capacitor;
+  if (!C || typeof C.nativePromise !== "function") return null;
+  return streamJsonSomewhere(C, filename, produce);
+}
 function saveFile(blob, filename) {
   const onPhone = phoneSave(filename, blob);
   if (onPhone) {
@@ -823,7 +875,12 @@ function backupInspection(data) {
   const fatal = [], warnings = [];
   if (!data || data.app !== "rolecraft-vault") fatal.push("Not a Rolecraft Vault backup");
   const lists = ["chars", "personas", "lore", "prompts"];
-  lists.forEach(k => { if (data && data[k] != null && !Array.isArray(data[k])) fatal.push(k + " is damaged"); });
+  if (data && data.type && lists.some(k => !Array.isArray(data[k]))) {
+    fatal.push("This is a " + data.type + " export, not a full vault backup");
+  }
+  lists.forEach(k => {
+    if (data && !Array.isArray(data[k])) fatal.push(k + (data[k] == null ? " is missing" : " is damaged"));
+  });
   const safeList = k => Array.isArray(data && data[k]) ? data[k] : [];
   const counts = Object.fromEntries(lists.map(k => [k, safeList(k).length]));
   const images = data && data.images && typeof data.images === "object" ? data.images : {};
@@ -3105,14 +3162,14 @@ const GUIDE = [
       [
         "Export JSON is this app's own format and includes pictures. This is the one to keep as a backup.",
         "Export text only leaves the pictures out, which makes it small enough to read or paste elsewhere. For characters, any linked lore travels with it.",
-        "Exporting all lorebooks at once leaves the pictures behind. Export a single book to keep them.",
+        "Exporting all lorebooks or all prompt collections includes the original pictures, thumbnails and blur choices. A single-book export does the same for just that book.",
         "Import accepts this app's own files, CharSnap files, and Tavern v1 and v2 character cards. A file holding several characters at once, sometimes called a bot pack, is read as all of them.",
         "If something you are importing is already in the vault, you are asked what to do with it before anything is written: bring it in as a copy, overwrite what is here, or skip it.",
         "Download a sample file gives you a blank file listing every field an import will accept."
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
-      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. The app records when a backup succeeds and reminds you when recent work needs another copy.",
-      "Import backup checks the file first and shows its date, app version, record counts, picture count and any missing pictures before it offers to replace the vault.",
+      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. On Android it writes that file in small pieces, so a large vault does not need to fit in memory twice. The app records when a backup succeeds and reminds you when recent work needs another copy.",
+      "Import backup accepts only a complete vault backup, checks it first, and shows its date, app version, record counts, picture count and any missing pictures before it offers to replace the vault. The replacement is staged and committed together, so a failed restore leaves the vault you already had untouched.",
       "While an editor is open, unsaved writing is kept as a private draft inside the encrypted vault. If the app closes unexpectedly, the dashboard and the editor offer to restore it."
     ]
   },
@@ -9114,7 +9171,6 @@ function CharacterEditor({
     const stillUsed = orphan && (c.profileImg === orphan || c.banner === orphan
       || (c.gallery || []).some(g => g.imgId === orphan)
       || variants.some((v, j) => j !== i && v.profileImg === orphan));
-    if (orphan && !stillUsed) dropImage(orphan);
     setC(p => ({
       ...p,
       variants: (p.variants || []).filter((_, j) => j !== i),
@@ -9242,7 +9298,6 @@ function CharacterEditor({
       return;
     }
     if (c.banner) {
-      dropImage(c.banner);
       set("imgMeta", withoutImgMeta(c.imgMeta, new Set([c.banner])));
     }
     set("banner", imgId);
@@ -9566,7 +9621,6 @@ function CharacterEditor({
     label: "Remove banner",
     armedLabel: "Click again — the banner is gone",
     onConfirm: () => {
-      dropImage(c.banner);
       setC(p => ({ ...p, banner: null, imgMeta: withoutImgMeta(p.imgMeta, new Set([c.banner])) }));
     }
   })), /*#__PURE__*/React.createElement("div", {
@@ -12914,10 +12968,10 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshItems.map(it => it.char)];
+    await sendManyToTrash("character", replaced);
     charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    await sendManyToTrash("character", replaced);
     const parts = [];
     if (freshItems.length) parts.push(freshItems.length + " imported");
     if (overwrites.length) parts.push(overwrites.length + " overwritten, the old " + (overwrites.length === 1 ? "one is" : "ones are") + " in the bin");
@@ -12949,10 +13003,10 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshItems.map(it => it.persona)];
+    await sendManyToTrash("persona", replaced);
     personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
-    await sendManyToTrash("persona", replaced);
     const parts = [];
     if (freshItems.length) parts.push(freshItems.length + " imported");
     if (overwrites.length) parts.push(overwrites.length + " overwritten, the old " + (overwrites.length === 1 ? "one is" : "ones are") + " in the bin");
@@ -12968,6 +13022,7 @@ function RolecraftVault() {
     await writeImportedImages(payload.images, payload.thumbs);
     await applyImportedBlur(payload.blurred);
     let next = lore;
+    const replacedImages = [];
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.entry]));
       next = next.map(e => {
@@ -12977,9 +13032,7 @@ function RolecraftVault() {
            strip the entry's existing images — the text is being updated, not the
            artwork — so old images are only discarded when new ones replace them. */
         const bringsImages = (inc.images || []).length > 0;
-        if (bringsImages) (e.images || []).forEach(im => {
-          dropImage(im.imgId);
-        });
+        if (bringsImages) (e.images || []).forEach(im => im && im.imgId && replacedImages.push(im.imgId));
         return {
           ...inc,
           id: e.id,
@@ -12990,8 +13043,11 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshEntries];
+    loreRef.current = next;
     setLore(next);
     await sSet("lore:all", JSON.stringify(next));
+    const loreHeld = heldImageIds();
+    await Promise.all([...new Set(replacedImages)].filter(id => !loreHeld.has(id)).map(dropImage));
     const parts = [];
     if (freshEntries.length) parts.push(freshEntries.length + " imported");
     if (overwrites.length) parts.push(overwrites.length + " updated");
@@ -13004,6 +13060,7 @@ function RolecraftVault() {
     await writeImportedImages(payload.images, payload.thumbs);
     await applyImportedBlur(payload.blurred);
     let next = prompts;
+    const replacedImages = [];
     if (overwrites.length) {
       const byId = new Map(overwrites.map(d => [d.existingId, d.entry]));
       next = next.map(p => {
@@ -13011,9 +13068,7 @@ function RolecraftVault() {
         if (!inc) return p;
         // as with lore: a file carrying no pictures updates the words, not the artwork
         const bringsImages = (inc.images || []).length > 0;
-        if (bringsImages) (p.images || []).forEach(im => {
-          dropImage(im.imgId);
-        });
+        if (bringsImages) (p.images || []).forEach(im => im && im.imgId && replacedImages.push(im.imgId));
         return {
           ...inc,
           id: p.id,
@@ -13024,8 +13079,11 @@ function RolecraftVault() {
       });
     }
     next = [...next, ...freshEntries];
+    promptsRef.current = next;
     setPrompts(next);
     await sSet("prompts:all", JSON.stringify(next));
+    const promptHeld = heldImageIds();
+    await Promise.all([...new Set(replacedImages)].filter(id => !promptHeld.has(id)).map(dropImage));
     const parts = [];
     if (freshEntries.length) parts.push(freshEntries.length + " imported");
     if (overwrites.length) parts.push(overwrites.length + " updated");
@@ -13042,10 +13100,10 @@ function RolecraftVault() {
     const idSet = new Set(ids);
     const going = chars.filter(c => idSet.has(c.id));
     const next = chars.filter(c => !idSet.has(c.id));
+    const entries = await sendManyToTrash("character", going);
     charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    const entries = await sendManyToTrash("character", going);
     setSelected({});
     setConfirmBulkDel(false);
     setSelectMode(false);
@@ -13057,6 +13115,8 @@ function RolecraftVault() {
   }, [selected, selectMode]);
   const [bulkBucket, setBulkBucket] = useState("");
   const [bucketMeta, setBucketMeta] = useState({}); // { name: { cover: imgId } }
+  const bucketMetaRef = useRef(bucketMeta);
+  bucketMetaRef.current = bucketMeta;
   const [newBucketOpen, setNewBucketOpen] = useState(false);
   const createEmptyBucket = async name => {
     const n = (name || "").trim();
@@ -13069,6 +13129,7 @@ function RolecraftVault() {
       ...bucketMeta,
       [n]: {}
     };
+    bucketMetaRef.current = next;
     setBucketMeta(next);
     await sSet("buckets:meta", JSON.stringify(next));
     setNewBucketOpen(false);
@@ -13082,18 +13143,19 @@ function RolecraftVault() {
        picture stayed in the vault forever with nothing pointing at it — and
        travelled in every backup from then on. */
     const cover = next[name] && next[name].cover;
-    if (cover) {
-      forgetBlur([cover]);
-      dropImage(cover);
-    }
     delete next[name];
+    bucketMetaRef.current = next;
     setBucketMeta(next);
     await sSet("buckets:meta", JSON.stringify(next));
+    if (cover) await dropImage(cover);
     if (bucketFilter === name) setBucketFilter(null);
     toast("Bucket deleted");
   };
   const [loreMeta, setLoreMeta] = useState({}); // { world: { cover: imgId } } — presence also keeps empty books alive
+  const loreMetaRef = useRef(loreMeta);
+  loreMetaRef.current = loreMeta;
   const persistLoreMeta = async next => {
+    loreMetaRef.current = next;
     setLoreMeta(next);
     await sSet("lore:meta", JSON.stringify(next));
   };
@@ -13101,7 +13163,10 @@ function RolecraftVault() {
   const [newBookOpen, setNewBookOpen] = useState(false);
   const [newBookName, setNewBookName] = useState("");
   const [promptMeta, setPromptMeta] = useState({}); // { collection: { cover: imgId } }
+  const promptMetaRef = useRef(promptMeta);
+  promptMetaRef.current = promptMeta;
   const persistPromptMeta = async next => {
+    promptMetaRef.current = next;
     setPromptMeta(next);
     await sSet("prompts:meta", JSON.stringify(next));
   };
@@ -13129,9 +13194,10 @@ function RolecraftVault() {
       delete m.cover;
       next[name] = m;
     }
+    bucketMetaRef.current = next;
     setBucketMeta(next);
     await sSet("buckets:meta", JSON.stringify(next));
-    if (old && old !== imgId) dropImage(old); // only once the new one is safely recorded
+    if (old && old !== imgId) await dropImage(old); // only once the new one is safely recorded
   };
   const exitSelect = () => {
     setSelectMode(false);
@@ -13538,12 +13604,10 @@ function RolecraftVault() {
      blur list, and most of them did not — so the list only ever grew, and it
      travels in every backup. One helper now does both, so forgetting is no
      longer possible. */
-  const dropImage = useCallback(id => {
+  const dropImage = useCallback(async id => {
     if (!id) return;
+    await Promise.all(["img:", "th:", "sz:"].map(prefix => window.storage.delete(prefix + id)));
     forgetBlur([id]);
-    sDel("img:" + id);
-    sDel("th:" + id);
-    sDel("sz:" + id);
     imgLoading.current.delete(id);
     fullLoading.current.delete(id);
     delete imgBuf.current[id];
@@ -13926,6 +13990,8 @@ function RolecraftVault() {
   const [pConfirmDel, setPConfirmDel] = useState(false);
   const [pBucketFilter, setPBucketFilter] = useState(null);
   const [pBucketMeta, setPBucketMeta] = useState({});
+  const pBucketMetaRef = useRef(pBucketMeta);
+  pBucketMetaRef.current = pBucketMeta;
   const [pBulkBucket, setPBulkBucket] = useState("");
   const [pNewBucketOpen, setPNewBucketOpen] = useState(false);
   const createEmptyPersonaBucket = async name => {
@@ -13939,6 +14005,7 @@ function RolecraftVault() {
       ...pBucketMeta,
       [n]: {}
     };
+    pBucketMetaRef.current = next;
     setPBucketMeta(next);
     await sSet("pbuckets:meta", JSON.stringify(next));
     setPNewBucketOpen(false);
@@ -13949,13 +14016,11 @@ function RolecraftVault() {
       ...pBucketMeta
     };
     const cover = next[name] && next[name].cover; // same leak as character buckets
-    if (cover) {
-      forgetBlur([cover]);
-      dropImage(cover);
-    }
     delete next[name];
+    pBucketMetaRef.current = next;
     setPBucketMeta(next);
     await sSet("pbuckets:meta", JSON.stringify(next));
+    if (cover) await dropImage(cover);
     if (pBucketFilter === name) setPBucketFilter(null);
     toast("Bucket deleted");
   };
@@ -13987,10 +14052,10 @@ function RolecraftVault() {
     const idSet = new Set(ids);
     const going = personas.filter(p => idSet.has(p.id));
     const next = personas.filter(p => !idSet.has(p.id));
+    const entries = await sendManyToTrash("persona", going);
     personasRef.current = next;
     setPersonas(next);
     await sSet("personas:all", JSON.stringify(next));
-    const entries = await sendManyToTrash("persona", going);
     setPSelected({});
     setPConfirmDel(false);
     setPSelMode(false);
@@ -14582,7 +14647,14 @@ function RolecraftVault() {
     return persistChar(fn(cur));
   };
   const saveChar = async c => {
+    const before = charsRef.current.find(x => x.id === c.id);
     await persistChar(c);
+    if (before) {
+      const now = new Set(charImgIds(c));
+      const held = heldImageIds();
+      const removed = charImgIds(before).filter(id => !now.has(id) && !held.has(id));
+      await Promise.all(removed.map(dropImage));
+    }
     setEditingChar(null);
     toast("Character saved");
   };
@@ -14631,6 +14703,9 @@ function RolecraftVault() {
     (trashRef.current || []).forEach(t => {
       if (!skip.has(t.tid)) add(imageIdsOf(t.type, t.record));
     });
+    [bucketMetaRef.current, pBucketMetaRef.current, loreMetaRef.current, promptMetaRef.current].forEach(meta => {
+      Object.values(meta || {}).forEach(item => item && item.cover && held.add(item.cover));
+    });
     return held;
   };
   /* `held` is passed in by the sweep below, which purges several at once and
@@ -14638,10 +14713,7 @@ function RolecraftVault() {
   const purgeTrashEntry = async (entry, held) => {
     const keep = held || heldImageIds([entry.tid]);
     const gone = imageIdsOf(entry.type, entry.record).filter(id => !keep.has(id));
-    forgetBlur(gone);
-    gone.forEach(id => {
-      dropImage(id);
-    });
+    await Promise.all(gone.map(dropImage));
   };
   const restoreFromTrash = async entry => {
     const rest = trashRef.current.filter(t => t.tid !== entry.tid);
@@ -14705,11 +14777,11 @@ function RolecraftVault() {
     ]);
   };
   const emptyFromTrash = async entry => {
-    await purgeTrashEntry(entry);
     const rest = trashRef.current.filter(t => t.tid !== entry.tid);
     trashRef.current = rest;
     setTrash(rest);
     await sSet("trash:all", JSON.stringify(rest));
+    await purgeTrashEntry(entry);
     toast("Deleted for good");
   };
   /* Sweep anything past its 30 days, once the vault is open. Runs off the stored
@@ -14723,7 +14795,6 @@ function RolecraftVault() {
       // what survives the whole sweep, worked out once before any of it goes
       const held = heldImageIds(stale.map(t => t.tid));
       const swept = new Set(stale.map(t => t.tid));
-      for (const e of stale) await purgeTrashEntry(e, held);
       /* Take the list as it is now rather than the one this started with.
          Deleting or restoring something while the purge was running used to be
          overwritten by a list computed before it happened, which meant a record
@@ -14733,14 +14804,15 @@ function RolecraftVault() {
       trashRef.current = rest;
       setTrash(rest);
       await sSet("trash:all", JSON.stringify(rest));
+      for (const e of stale) await purgeTrashEntry(e, held);
     })();
   }, [ready, trash]);
   const deleteChar = async c => {
     const next = charsRef.current.filter(x => x.id !== c.id);
+    const entries = await sendManyToTrash("character", [c]);
     charsRef.current = next;
     setChars(next);
     await sSet("chars:all", JSON.stringify(next));
-    const entries = await sendManyToTrash("character", [c]);
     setEditingChar(null);
     setViewCharId(null);
     showUndo("Character moved to the bin", () => restoreTrashEntries(entries));
@@ -15269,24 +15341,44 @@ function RolecraftVault() {
     toast("Personas exported as text");
   };
   const exportPromptsJson = async () => {
-    downloadJSON({
+    const ids = [...new Set(prompts.flatMap(p => (p.images || []).map(im => im && im.imgId)).filter(Boolean))];
+    const images = {}, thumbs = {};
+    for (const id of ids) {
+      const full = await sGet("img:" + id), thumb = await sGet("th:" + id);
+      if (full) images[id] = full;
+      if (thumb) thumbs[id] = thumb;
+    }
+    const saved = await downloadJSON({
       app: "rolecraft-vault",
       type: "prompts",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
-      prompts
+      prompts,
+      images,
+      thumbs,
+      blurred: ids.filter(id => blurred[id])
     }, "rolecraft-prompts.json");
-    toast("Prompts exported");
+    if (saved) toast("Prompts exported with their images");
   };
   const exportLoreJson = async () => {
-    downloadJSON({
+    const ids = [...new Set(lore.flatMap(e => (e.images || []).map(im => im && im.imgId)).filter(Boolean))];
+    const images = {}, thumbs = {};
+    for (const id of ids) {
+      const full = await sGet("img:" + id), thumb = await sGet("th:" + id);
+      if (full) images[id] = full;
+      if (thumb) thumbs[id] = thumb;
+    }
+    const saved = await downloadJSON({
       app: "rolecraft-vault",
       type: "lore",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
-      lore
+      lore,
+      images,
+      thumbs,
+      blurred: ids.filter(id => blurred[id])
     }, "rolecraft-lorebooks.json");
-    toast("Lorebooks exported");
+    if (saved) toast("Lorebooks exported with their images");
   };
   const zipSelectedImages = async (items, zipName) => {
     // items: [{imgId, label}]
@@ -15407,11 +15499,9 @@ function RolecraftVault() {
   };
   const exportAll = async () => {
     toast("Preparing backup…");
-    const images = {};
     const imgIds = [];
     for (const c of chars) imgIds.push(...charImgIds(c));
     for (const p of personas) imgIds.push(...personaImgIds(p));
-    const thumbs = {};
     Object.values(bucketMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
@@ -15431,37 +15521,90 @@ function RolecraftVault() {
       if (m && m.cover) imgIds.push(m.cover);
     });
     trash.forEach(t => imageIdsOf(t.type, t.record).forEach(id => imgIds.push(id)));
-    for (const id of imgIds.filter(Boolean)) {
-      images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
-      const t = await sGet("th:" + id);
-      if (t) thumbs[id] = t;
-    }
-    const backup = {
+    const uniqueIds = [...new Set(imgIds.filter(Boolean))];
+    const exportedAt = new Date().toISOString();
+    const filename = "rolecraft-backup-" + exportedAt.slice(0, 10) + ".json";
+    const base = {
       app: "rolecraft-vault",
       version: 4,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       chars,
       personas,
       lore,
       prompts,
-      images,
-      thumbs,
       blurred: Object.keys(blurred),
       buckets: bucketMeta,
       personaBuckets: pBucketMeta,
       loreBooks: loreMeta,
       promptBooks: promptMeta,
-      trash,
-      manifest: {
+      trash
+    };
+    const check = backupInspection({ ...base, images: {} });
+    if (!check.ok) { toast("Backup validation failed — nothing was exported"); recordDiag("backup validation failed"); return; }
+    const stream = phoneJsonStream(filename, async append => {
+      let first = true, imageCount = 0;
+      const prop = async (name, value) => {
+        await append((first ? "" : ",") + JSON.stringify(name) + ":" + JSON.stringify(value));
+        first = false;
+      };
+      await append("{");
+      for (const name of ["app", "version", "exportedAt", "chars", "personas", "lore", "prompts"]) await prop(name, base[name]);
+      await append(",\"images\":{");
+      let comma = false;
+      for (const id of uniqueIds) {
+        const value = (await sGet("img:" + id)) || imgCache[id] || null;
+        if (!value) continue;
+        await append((comma ? "," : "") + JSON.stringify(id) + ":" + JSON.stringify(value));
+        comma = true;
+        imageCount++;
+      }
+      await append("},\"thumbs\":{");
+      comma = false;
+      for (const id of uniqueIds) {
+        const value = await sGet("th:" + id);
+        if (!value) continue;
+        await append((comma ? "," : "") + JSON.stringify(id) + ":" + JSON.stringify(value));
+        comma = true;
+      }
+      await append("}");
+      first = false;
+      for (const name of ["blurred", "buckets", "personaBuckets", "loreBooks", "promptBooks", "trash"]) await prop(name, base[name]);
+      await prop("manifest", {
         appVersion: APP_VERSION,
         formatVersion: 4,
         counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length },
-        images: Object.values(images).filter(Boolean).length
+        images: imageCount
+      });
+      await append("}");
+    });
+    let saved = false;
+    if (stream) {
+      try {
+        const where = await stream;
+        saveNotice && saveNotice("Saved as " + filename + " in " + where);
+        saved = true;
+      } catch (e) {
+        saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e));
       }
-    };
-    const check = backupInspection(backup);
-    if (!check.ok) { toast("Backup validation failed — nothing was exported"); recordDiag("backup validation failed"); return; }
-    const saved = await downloadJSON(backup, "rolecraft-backup-" + new Date().toISOString().slice(0, 10) + ".json");
+    } else {
+      const images = {}, thumbs = {};
+      for (const id of uniqueIds) {
+        images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
+        const thumb = await sGet("th:" + id);
+        if (thumb) thumbs[id] = thumb;
+      }
+      saved = await downloadJSON({
+        ...base,
+        images,
+        thumbs,
+        manifest: {
+          appVersion: APP_VERSION,
+          formatVersion: 4,
+          counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length },
+          images: Object.values(images).filter(Boolean).length
+        }
+      }, filename);
+    }
     if (saved) {
       const at = Date.now();
       setLastBackup(at);
@@ -15470,68 +15613,90 @@ function RolecraftVault() {
     }
   };
   const importAll = async source => {
+    let data;
     try {
-      const data = source && typeof source.text === "function" ? JSON.parse(await source.text()) : source;
+      data = source && typeof source.text === "function" ? JSON.parse(await source.text()) : source;
+    } catch (e) {
+      toast("That backup is not valid JSON");
+      return;
+    }
+    try {
       const inspected = backupInspection(data);
       if (!inspected.ok) {
         toast(inspected.fatal[0] || "That file isn't a Rolecraft Vault backup");
         return;
       }
-      setChars(data.chars || []);
-      setPersonas(data.personas || []);
-      setLore(data.lore || []);
-      setPrompts(data.prompts || []);
-      await Promise.all([sSet("chars:all", JSON.stringify(data.chars || [])), sSet("personas:all", JSON.stringify(data.personas || [])), sSet("lore:all", JSON.stringify(data.lore || [])), sSet("prompts:all", JSON.stringify(data.prompts || []))]);
+      const nextChars = data.chars;
+      const nextPersonas = data.personas;
+      const nextLore = data.lore;
+      const nextPrompts = data.prompts;
       const imgs = data.images || {};
       const thumbs = data.thumbs || {};
-      setImgCache({
-        ...imgs,
-        ...thumbs
-      });
-      setFullCache({});
-      // the restored vault's pictures are a different set; forget what was loaded
-      imgLoading.current = new Set(Object.keys(imgs).concat(Object.keys(thumbs)));
-      imgBuf.current = {};
-      fullLoading.current.clear();
-      fullOrder.current = [];
-      for (const [id, v] of Object.entries(imgs)) {
-        if (v) await sSet("img:" + id, v);
-      }
-      for (const [id, v] of Object.entries(thumbs)) {
-        if (v) await sSet("th:" + id, v);
-      }
       const blObj = {};
       (data.blurred || []).forEach(id => blObj[id] = true);
-      setBlurred(blObj);
-      await sSet("blurset", JSON.stringify(Object.keys(blObj)));
-      setBucketMeta(data.buckets || {});
-      await sSet("buckets:meta", JSON.stringify(data.buckets || {}));
-      setLoreMeta(data.loreBooks || {});
-      await sSet("lore:meta", JSON.stringify(data.loreBooks || {}));
-      setPromptMeta(data.promptBooks || {});
-      await sSet("prompts:meta", JSON.stringify(data.promptBooks || {}));
       /* Set even when the file does not carry them, so a restore replaces the
          vault rather than blending into it. Left alone, persona buckets and the
          bin survived from whatever was here before, and a backup from another
          machine came back with a stranger's groupings and a bin full of records
          that had nothing to do with it. */
       const pb = data.personaBuckets || {};
-      setPBucketMeta(pb);
-      await sSet("pbuckets:meta", JSON.stringify(pb));
       const tr = Array.isArray(data.trash) ? data.trash : [];
-      setTrash(tr);
-      await sSet("trash:all", JSON.stringify(tr));
-      const draftKeys = (await sList()).keys.filter(k => k.startsWith("draft:"));
-      await Promise.all(draftKeys.map(k => sDel(k).catch(() => {})));
-      setDrafts([]);
       const verifiedAt = Date.now();
+      const values = {
+        "chars:all": JSON.stringify(nextChars),
+        "personas:all": JSON.stringify(nextPersonas),
+        "lore:all": JSON.stringify(nextLore),
+        "prompts:all": JSON.stringify(nextPrompts),
+        "blurset": JSON.stringify(Object.keys(blObj)),
+        "buckets:meta": JSON.stringify(data.buckets || {}),
+        "pbuckets:meta": JSON.stringify(pb),
+        "lore:meta": JSON.stringify(data.loreBooks || {}),
+        "prompts:meta": JSON.stringify(data.promptBooks || {}),
+        "trash:all": JSON.stringify(tr),
+        "ui:lastbackup": String(verifiedAt)
+      };
+      for (const [id, value] of Object.entries(imgs)) if (value) {
+        values["img:" + id] = value;
+        values["sz:" + id] = String(dataUrlSize(value));
+      }
+      for (const [id, value] of Object.entries(thumbs)) if (value) values["th:" + id] = value;
+      /* The storage layer stages every value, then commits all pointers/files at
+         once. Until that commit succeeds the live vault is untouched. */
+      await sReplace(values, {
+        exact: ["chars:all", "personas:all", "lore:all", "prompts:all", "blurset", "buckets:meta", "pbuckets:meta", "lore:meta", "prompts:meta", "trash:all", "ui:lastbackup"],
+        prefixes: ["img:", "th:", "sz:", "draft:"]
+      });
+      charsRef.current = nextChars;
+      personasRef.current = nextPersonas;
+      loreRef.current = nextLore;
+      promptsRef.current = nextPrompts;
+      trashRef.current = tr;
+      blurredRef.current = blObj;
+      setChars(nextChars);
+      setPersonas(nextPersonas);
+      setLore(nextLore);
+      setPrompts(nextPrompts);
+      setImgCache(ON_PHONE ? { ...thumbs } : { ...imgs, ...thumbs });
+      setFullCache({});
+      // the restored vault's pictures are a different set; forget what was loaded
+      imgLoading.current = new Set(ON_PHONE ? Object.keys(thumbs) : Object.keys(imgs).concat(Object.keys(thumbs)));
+      imgBuf.current = {};
+      fullLoading.current.clear();
+      fullOrder.current = [];
+      setBlurred(blObj);
+      setBucketMeta(data.buckets || {});
+      setPBucketMeta(pb);
+      setLoreMeta(data.loreBooks || {});
+      setPromptMeta(data.promptBooks || {});
+      setTrash(tr);
+      setDrafts([]);
       setLastBackup(verifiedAt);
-      await sSet("ui:lastbackup", String(verifiedAt));
       setShowSettings(false);
       setRestoreFile(null);
       toast("Backup restored");
-    } catch {
-      toast("Couldn't read that file");
+    } catch (e) {
+      recordDiag("backup restore failed");
+      toast("Couldn't restore the backup: " + ((e && e.message) || "storage error"));
     }
   };
 
@@ -18056,10 +18221,6 @@ function RolecraftVault() {
       },
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
-        idSet.forEach(id => {
-          dropImage(id);
-        });
-        forgetBlur(idSet);
         const patch = {
           ...vp,
           gallery: (vp.gallery || []).filter(g => !idSet.has(g.imgId)),
@@ -18068,6 +18229,8 @@ function RolecraftVault() {
         };
         if (idSet.has(vp.avatar)) patch.avatar = null;
         await persistPersona(patch);
+        const held = heldImageIds();
+        await Promise.all([...idSet].filter(id => !held.has(id)).map(dropImage));
         toast(imgIds.length + (imgIds.length === 1 ? " image deleted" : " images deleted"));
       },
       onCreateAlbum: async name => {
@@ -18143,10 +18306,6 @@ function RolecraftVault() {
     onDownloadSelected: items => askExport("the selected portraits", () => zipSelectedImages(items, "persona-portraits.zip")),
     onDeleteSelected: async imgIds => {
       const idSet = new Set(imgIds);
-      idSet.forEach(id => {
-        dropImage(id);
-      });
-      forgetBlur(idSet);
       const next = personas.map(p => {
         const hitAvatar = idSet.has(p.avatar);
         const hitGallery = (p.gallery || []).some(g => idSet.has(g.imgId));
@@ -18159,8 +18318,11 @@ function RolecraftVault() {
           updatedAt: Date.now()
         };
       });
+      personasRef.current = next;
       setPersonas(next);
       await sSet("personas:all", JSON.stringify(next));
+      const held = heldImageIds();
+      await Promise.all([...idSet].filter(id => !held.has(id)).map(dropImage));
       toast(imgIds.length + (imgIds.length === 1 ? " image deleted" : " images deleted"));
     },
     onClose: () => setPersonaGrid(false),
@@ -18183,9 +18345,7 @@ function RolecraftVault() {
       onSetCover: async files => {
         try {
           const imgId = await readThenSave(files[0]);
-          if (meta.cover) {
-            dropImage(meta.cover);
-          }
+          const old = meta.cover;
           await persistLoreMeta({
             ...loreMeta,
             [viewLoreBook]: {
@@ -18193,6 +18353,7 @@ function RolecraftVault() {
               cover: imgId
             }
           });
+          if (old && old !== imgId && !heldImageIds().has(old)) await dropImage(old);
           requestFull(imgId);
           toast("Cover updated");
         } catch (e) {
@@ -18200,9 +18361,7 @@ function RolecraftVault() {
         }
       },
       onRemoveCover: async () => {
-        if (meta.cover) {
-          dropImage(meta.cover);
-        }
+        const old = meta.cover;
         const nm = {
           ...loreMeta
         };
@@ -18212,6 +18371,7 @@ function RolecraftVault() {
         delete m2.cover;
         if (Object.keys(m2).length) nm[viewLoreBook] = m2;else if (entries.length) delete nm[viewLoreBook];else nm[viewLoreBook] = {};
         await persistLoreMeta(nm);
+        if (old && !heldImageIds().has(old)) await dropImage(old);
       },
       onDownloadBookImages: () => askExport("this lorebook's images", () => zipSelectedImages(bookImageItems(), sanitizeName(viewLoreBook || "unfiled") + "-images.zip")),
       onClose: () => setViewLoreBook(null),
@@ -18257,18 +18417,16 @@ function RolecraftVault() {
         toast("Book renamed" + (moved ? " · " + moved + (moved === 1 ? " record follows it" : " records follow it") : ""));
       },
       onDeleteBook: async () => {
-        entries.forEach(e => (e.images || []).forEach(im => {
-          dropImage(im.imgId);
-        }));
-        if (meta.cover) {
-          dropImage(meta.cover);
-        }
+        const removedImages = entries.flatMap(e => (e.images || []).map(im => im && im.imgId)).filter(Boolean);
+        if (meta.cover) removedImages.push(meta.cover);
         const metaNext = {
           ...loreMeta
         };
         delete metaNext[viewLoreBook];
         await persistLoreMeta(metaNext);
         await persistLore(lore.filter(e => (e.world || "").trim() !== viewLoreBook));
+        const held = heldImageIds();
+        await Promise.all([...new Set(removedImages)].filter(id => !held.has(id)).map(dropImage));
         setViewLoreBook(null);
         toast("Lorebook deleted");
       },
@@ -18365,15 +18523,12 @@ function RolecraftVault() {
       },
       onRemoveImage: async idx => {
         const im = (ve.images || [])[idx];
-        if (im) {
-          forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
-          dropImage(im.imgId);
-        }
         await persistLore(lore.map(e => e.id === ve.id ? {
           ...e,
           images: (e.images || []).filter((_, j) => j !== idx),
           updatedAt: Date.now()
         } : e));
+        if (im && !heldImageIds().has(im.imgId)) await dropImage(im.imgId);
       },
       onDownloadOne: (imgId, i) => askExport("this image", async () => {
         const v = await sGet("img:" + imgId);
@@ -18414,9 +18569,7 @@ function RolecraftVault() {
       onSetCover: async files => {
         try {
           const imgId = await readThenSave(files[0]);
-          if (meta.cover) {
-            dropImage(meta.cover);
-          }
+          const old = meta.cover;
           await persistPromptMeta({
             ...promptMeta,
             [viewPromptBook]: {
@@ -18424,6 +18577,7 @@ function RolecraftVault() {
               cover: imgId
             }
           });
+          if (old && old !== imgId && !heldImageIds().has(old)) await dropImage(old);
           requestFull(imgId);
           toast("Cover updated");
         } catch (e) {
@@ -18431,9 +18585,7 @@ function RolecraftVault() {
         }
       },
       onRemoveCover: async () => {
-        if (meta.cover) {
-          dropImage(meta.cover);
-        }
+        const old = meta.cover;
         const nm = {
           ...promptMeta
         };
@@ -18443,6 +18595,7 @@ function RolecraftVault() {
         delete m2.cover;
         if (Object.keys(m2).length) nm[viewPromptBook] = m2;else if (entries.length) delete nm[viewPromptBook];else nm[viewPromptBook] = {};
         await persistPromptMeta(nm);
+        if (old && !heldImageIds().has(old)) await dropImage(old);
       },
       onDownloadBookImages: () => askExport("this collection's images", () => zipSelectedImages(bookImageItems(), sanitizeName(viewPromptBook || "unfiled") + "-images.zip")),
       onClose: () => setViewPromptBook(null),
@@ -18494,18 +18647,16 @@ function RolecraftVault() {
         toast("Collection renamed");
       },
       onDeleteBook: async () => {
-        entries.forEach(p => (p.images || []).forEach(im => {
-          dropImage(im.imgId);
-        }));
-        if (meta.cover) {
-          dropImage(meta.cover);
-        }
+        const removedImages = entries.flatMap(p => (p.images || []).map(im => im && im.imgId)).filter(Boolean);
+        if (meta.cover) removedImages.push(meta.cover);
         const metaNext = {
           ...promptMeta
         };
         delete metaNext[viewPromptBook];
         await persistPromptMeta(metaNext);
         await persistPrompts(prompts.filter(p => (p.collection || "").trim() !== viewPromptBook));
+        const held = heldImageIds();
+        await Promise.all([...new Set(removedImages)].filter(id => !held.has(id)).map(dropImage));
         setViewPromptBook(null);
         toast("Collection deleted");
       },
@@ -18582,15 +18733,12 @@ function RolecraftVault() {
       },
       onRemoveImage: async idx => {
         const im = (ve.images || [])[idx];
-        if (im) {
-          forgetBlur([im.imgId]); // the last two places still leaving dead ids on the blur list
-          dropImage(im.imgId);
-        }
         await persistPrompts(prompts.map(p => p.id === ve.id ? {
           ...p,
           images: (p.images || []).filter((_, j) => j !== idx),
           updatedAt: Date.now()
         } : p));
+        if (im && !heldImageIds().has(im.imgId)) await dropImage(im.imgId);
       },
       onDownloadOne: (imgId, i) => askExport("this image", async () => {
         const v = await sGet("img:" + imgId);
@@ -18850,10 +18998,6 @@ function RolecraftVault() {
       })),
       onDeleteImages: async imgIds => {
         const idSet = new Set(imgIds);
-        idSet.forEach(id => {
-          dropImage(id);
-        });
-        forgetBlur(idSet);
         await patchChar(vc.id, cur => {
           const patch = {
             ...cur,
@@ -18866,6 +19010,8 @@ function RolecraftVault() {
           if (idSet.has(cur.banner)) patch.banner = null;
           return patch;
         });
+        const held = heldImageIds();
+        await Promise.all([...idSet].filter(id => !held.has(id)).map(dropImage));
         toast(imgIds.length + (imgIds.length === 1 ? " image deleted" : " images deleted"));
       },
       onCreateAlbum: async name => {

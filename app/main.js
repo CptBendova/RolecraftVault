@@ -4,8 +4,9 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 
-let dataDir, boundsFile, securityFile, rewrapFile;
+let dataDir, boundsFile, securityFile, rewrapFile, restoreJournalFile;
 let masterKey = null; // Buffer(32) in memory only while unlocked
+let activeRestore = null;
 
 const ITER = 210000;
 const kdf = (secret, salt) => crypto.pbkdf2Sync(secret, salt, ITER, 32, "sha256");
@@ -14,7 +15,7 @@ function loadSecurity() {
   try { return JSON.parse(fs.readFileSync(securityFile, "utf8")); } catch { return null; }
 }
 function saveSecurity(s) {
-  if (s) fs.writeFileSync(securityFile, JSON.stringify(s));
+  if (s) writeFileAtomic(securityFile, JSON.stringify(s));
   else if (fs.existsSync(securityFile)) fs.unlinkSync(securityFile);
 }
 /* ---------- signed update system ----------
@@ -22,7 +23,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.239";
+const FACTORY_BUILD = "1.240";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -46,13 +47,17 @@ function verifyUpdatePackage(pkg) {
       crypto.createPublicKey(UPDATE_PUBKEY), Buffer.from(pkg.sig, "base64"));
   } catch { sigOk = false; }
   if (!sigOk) return { ok: false, error: "Signature check failed — not an authentic update" };
-  /* Outside the signature deliberately: the signed form is {version, hashes} and
-     always has been, so adding to it would stop every installed copy from being
-     able to verify any future patch. These two steer a helpful refusal rather
-     than a security decision, and nothing installs without a valid signature. */
+  /* New packages put their routing decision inside hashes, which is already
+     signed and remains compatible with older verifiers. Keep accepting legacy
+     top-level fields so old authentic packages still install, but never let an
+     unsigned top-level field override signed routing metadata. */
+  const signedNeedsShell = pkg.hashes["meta:needsShell"];
+  const hasSignedRouting = signedNeedsShell === "0" || signedNeedsShell === "1";
   return { ok: true, appJs, version: pkg.version, notes: typeof pkg.notes === "string" ? pkg.notes : "",
-    needsShell: pkg.needsShell === true,
-    shellBuild: typeof pkg.shellBuild === "string" ? pkg.shellBuild : "" };
+    needsShell: hasSignedRouting ? signedNeedsShell === "1" : pkg.needsShell === true,
+    shellBuild: hasSignedRouting && typeof pkg.hashes["meta:shellBuild"] === "string"
+      ? pkg.hashes["meta:shellBuild"]
+      : typeof pkg.shellBuild === "string" ? pkg.shellBuild : "" };
 }
 function activeUpdate() {
   try {
@@ -1550,6 +1555,94 @@ function writeValue(key, value) {
   writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
   rememberHash(key, value);
 }
+function restoreTargets(spec) {
+  const exact = new Set(Array.isArray(spec && spec.exact) ? spec.exact.filter(k => typeof k === "string") : []);
+  const prefixes = Array.isArray(spec && spec.prefixes) ? spec.prefixes.filter(k => typeof k === "string") : [];
+  if (!exact.size && !prefixes.length) throw new Error("restore has no target keys");
+  return { exact, prefixes, has: key => exact.has(key) || prefixes.some(p => key.startsWith(p)) };
+}
+function beginVaultRestore(spec) {
+  if (isLocked()) throw new Error("locked");
+  if (activeRestore) throw new Error("another restore is already running");
+  const targets = restoreTargets(spec);
+  const token = crypto.randomBytes(16).toString("hex");
+  const stage = dataDir + ".restore-" + token;
+  fs.mkdirSync(stage, { recursive: false });
+  try {
+    for (const key of allKeys()) {
+      if (!targets.has(key)) fs.copyFileSync(keyToFile(key), path.join(stage, encodeURIComponent(key) + ".dat"));
+    }
+  } catch (e) {
+    try { fs.rmSync(stage, { recursive: true, force: true }); } catch (e2) {}
+    throw e;
+  }
+  activeRestore = { token, stage, targets };
+  return token;
+}
+function setVaultRestoreValue(token, key, value) {
+  if (isLocked()) throw new Error("locked");
+  const tx = activeRestore;
+  if (!tx || tx.token !== token) throw new Error("restore session expired");
+  if (typeof key !== "string" || !tx.targets.has(key)) throw new Error("key is outside the restore");
+  writeFileAtomic(path.join(tx.stage, encodeURIComponent(key) + ".dat"), encodeValue(value, masterKey));
+}
+function abortVaultRestore(token) {
+  const tx = activeRestore;
+  if (!tx || tx.token !== token) return false;
+  activeRestore = null;
+  try { fs.rmSync(tx.stage, { recursive: true, force: true }); } catch (e) {}
+  return true;
+}
+function commitVaultRestore(token) {
+  if (isLocked()) throw new Error("locked");
+  const tx = activeRestore;
+  if (!tx || tx.token !== token) throw new Error("restore session expired");
+  const old = dataDir + ".before-restore-" + token;
+  writeFileAtomic(restoreJournalFile, JSON.stringify({ stage: tx.stage, old }));
+  try {
+    fs.renameSync(dataDir, old);
+    fs.renameSync(tx.stage, dataDir);
+  } catch (e) {
+    let rolledBack = fs.existsSync(dataDir);
+    try {
+      if (!fs.existsSync(dataDir) && fs.existsSync(old)) {
+        fs.renameSync(old, dataDir);
+        rolledBack = true;
+      }
+    } catch (e2) {}
+    if (rolledBack) {
+      try { fs.unlinkSync(restoreJournalFile); } catch (e2) {}
+      try { fs.rmSync(tx.stage, { recursive: true, force: true }); } catch (e2) {}
+    }
+    throw e;
+  } finally {
+    activeRestore = null;
+  }
+  hashCache = null;
+  try { fs.unlinkSync(restoreJournalFile); } catch (e) {}
+  try { fs.rmSync(old, { recursive: true, force: true }); } catch (e) {}
+  return true;
+}
+function finishPendingRestore() {
+  let journal = null;
+  try { journal = JSON.parse(fs.readFileSync(restoreJournalFile, "utf8")); } catch (e) {}
+  const parent = path.dirname(dataDir), base = path.basename(dataDir);
+  const safe = (p, marker) => typeof p === "string" && path.dirname(p) === parent && path.basename(p).startsWith(base + marker);
+  if (journal && safe(journal.stage, ".restore-") && safe(journal.old, ".before-restore-")) {
+    try {
+      if (!fs.existsSync(dataDir)) {
+        if (fs.existsSync(journal.stage)) fs.renameSync(journal.stage, dataDir);
+        else if (fs.existsSync(journal.old)) fs.renameSync(journal.old, dataDir);
+      }
+      if (fs.existsSync(dataDir)) {
+        try { fs.rmSync(journal.stage, { recursive: true, force: true }); } catch (e) {}
+        try { fs.rmSync(journal.old, { recursive: true, force: true }); } catch (e) {}
+      }
+    } finally {
+      try { fs.unlinkSync(restoreJournalFile); } catch (e) {}
+    }
+  }
+}
 function readValue(key) {
   const f = keyToFile(key);
   if (!fs.existsSync(f)) return null;
@@ -2079,7 +2172,9 @@ app.whenReady().then(() => {
   boundsFile = path.join(app.getPath("userData"), "window.json");
   securityFile = path.join(app.getPath("userData"), "security.json");
   rewrapFile = path.join(app.getPath("userData"), "rewrap.json");
+  restoreJournalFile = path.join(app.getPath("userData"), "restore.json");
   updatesDir = path.join(app.getPath("userData"), "updates");
+  finishPendingRestore();
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(updatesDir, { recursive: true });
   // anything a transfer left behind when it did not get to finish
@@ -2092,6 +2187,10 @@ app.whenReady().then(() => {
   // vault that could still have records removed is not locked
   ipcMain.handle("vault-delete", (e, key) => { if (isLocked()) throw new Error("locked"); const f = keyToFile(key); if (fs.existsSync(f)) fs.unlinkSync(f); forgetHash(key); return true; });
   ipcMain.handle("vault-list", (e, prefix) => allKeys().filter(k => !prefix || k.startsWith(prefix)));
+  ipcMain.handle("vault-restore-begin", (e, spec) => beginVaultRestore(spec));
+  ipcMain.handle("vault-restore-set", (e, token, key, value) => { setVaultRestoreValue(token, key, value); return true; });
+  ipcMain.handle("vault-restore-commit", (e, token) => commitVaultRestore(token));
+  ipcMain.handle("vault-restore-abort", (e, token) => abortVaultRestore(token));
   /* Nothing here asks the browser for anything except the camera, and that is
      only the QR scanner in the transfer panel. With no handler set, Electron
      grants what is asked for, so a renderer that ever got away from us could

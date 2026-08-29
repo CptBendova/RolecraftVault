@@ -100,15 +100,20 @@ if (forced !== null) {
 }
 
 const appJs = fs.readFileSync(appJsPath);
-const hashes = { "app.js": crypto.createHash("sha256").update(appJs).digest("hex") };
-/* The signed form stays {version, hashes} exactly as it has always been. Adding
-   fields to it would change what every installed copy computes, so no existing
-   build could verify any future patch. shellBuild and needsShell therefore ride
-   outside the signature: they steer a helpful refusal, not a security decision,
-   and a package still cannot be installed at all without a valid signature. */
+/* Routing metadata lives inside hashes because that object has always been part
+   of the signature. Older builds still verify it without needing to understand
+   the reserved keys, while current builds no longer trust mutable top-level
+   fields to decide whether a patch requires the installer. */
+const hashes = {
+  "app.js": crypto.createHash("sha256").update(appJs).digest("hex"),
+  "meta:needsShell": needsShell ? "1" : "0",
+  "meta:shellBuild": shellBuild,
+};
 const canon = JSON.stringify({ version, hashes });
 const sig = crypto.sign(null, Buffer.from(canon, "utf8"), crypto.createPrivateKey(fs.readFileSync(keyPath))).toString("base64");
 
+/* Keep the top-level copies for old installed shells. New shells derive both
+   values from the signed entries above. */
 const pkg = { version, notes, shellBuild, needsShell, files: { "app.js": appJs.toString("base64") }, hashes, sig };
 const out = outArg || path.join(distDir, "Rolecraft-update-" + version + ".rcvup");
 fs.writeFileSync(out, JSON.stringify(pkg));

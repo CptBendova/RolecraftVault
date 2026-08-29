@@ -443,6 +443,7 @@
     return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
   }
 
+  let receiveActive = false;
   async function receive(code, mirror, preview, onProgress) {
     const phase = (name, done, total) => {
       if (onProgress) onProgress({ phase: name, done, total, pct: total > 0 ? done / total : 0 });
@@ -546,7 +547,10 @@
         await C.nativePromise("Filesystem", "mkdir", { path: "vault", directory: "DATA", recursive: true });
       } catch (e) {}
     }
-    if (!preview) await keepAlive(true);
+    if (!preview) {
+      receiveActive = true;
+      await keepAlive(true);
+    }
     const persistOne = async (k, v) => {
       try {
         if (window.storage.setWithHash && remote[k]) await window.storage.setWithHash(k, v, remote[k]);
@@ -725,7 +729,10 @@
       return Object.assign({ ok: false, error: e && e.message ? e.message : String(e) }, who);
     } finally {
       if (leaseTimer) clearInterval(leaseTimer);
-      if (!preview) await keepAlive(false);
+      if (!preview) {
+        await keepAlive(false);
+        receiveActive = false;
+      }
     }
   }
 
@@ -735,7 +742,7 @@
        honestly so the interface can hide the half it cannot offer rather than
        showing a button that fails. */
     canShare: false,
-    status: () => Promise.resolve({ active: false, device: "This device" }),
+    status: () => Promise.resolve({ active: receiveActive, device: "This device" }),
     start: () => Promise.resolve({ ok: false, error: "This device can receive a vault, but cannot share one. Start the transfer on the computer and type its code here." }),
     stop: () => Promise.resolve({ ok: true }),
     preview: (code, mirror) => receive(code, mirror, true, p => progressHandlers.forEach(h => h(p))),

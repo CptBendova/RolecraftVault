@@ -72,7 +72,11 @@ for (const e of edits) {
     failed = true;
     continue;
   }
-  const after = before.replace(e.find, e.to);
+  let after = before.replace(e.find, e.to);
+  /* main.js is deliberately all-CRLF. Patch tools can leave only the edited
+     lines as LF, so the version owner also restores its required line endings
+     before a build. */
+  if (e.file === "app/main.js") after = after.replace(/\r?\n/g, "\r\n");
   if (after === before) console.log(`  ok    ${e.file} (already ${version})`);
   else { fs.writeFileSync(p, after); console.log(`  set   ${e.file}`); }
 }

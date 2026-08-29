@@ -30,18 +30,20 @@
   function idbSet(k, v) {
     return db().then(function (d) {
       return new Promise(function (res, rej) {
-        var t = d.transaction(STORE, "readwrite").objectStore(STORE).put(v, k);
-        t.onsuccess = function () { res(true); };
-        t.onerror = function () { rej(t.error); };
+        var tx = d.transaction(STORE, "readwrite");
+        tx.oncomplete = function () { res(true); };
+        tx.onabort = tx.onerror = function () { rej(tx.error || new Error("storage transaction failed")); };
+        tx.objectStore(STORE).put(v, k);
       });
     });
   }
   function idbDel(k) {
     return db().then(function (d) {
       return new Promise(function (res, rej) {
-        var t = d.transaction(STORE, "readwrite").objectStore(STORE).delete(k);
-        t.onsuccess = function () { res(true); };
-        t.onerror = function () { rej(t.error); };
+        var tx = d.transaction(STORE, "readwrite");
+        tx.oncomplete = function () { res(true); };
+        tx.onabort = tx.onerror = function () { rej(tx.error || new Error("storage transaction failed")); };
+        tx.objectStore(STORE).delete(k);
       });
     });
   }
@@ -500,11 +502,26 @@
       return v == null ? null : sha16plain(v);
     });
   }
-  function rewrapAll(oldRaw, newRaw) {
+  function commitAuthReplacement(prepared, newSecurity, wrappedKey) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(STORE, "readwrite"), os = tx.objectStore(STORE);
+        tx.oncomplete = function () { res(true); };
+        tx.onabort = tx.onerror = function () { rej(tx.error || new Error("password change did not commit")); };
+        prepared.forEach(function (item) {
+          os.put(item.stored, "v:" + item.key);
+          os.put(item.hash, "h:" + item.key);
+        });
+        if (newSecurity) os.put(JSON.stringify(newSecurity), SEC_KEY); else os.delete(SEC_KEY);
+        if (wrappedKey != null) os.put(wrappedKey, WRAP_KEY_ID);
+      });
+    });
+  }
+  function rewrapAll(oldRaw, newRaw, newSecurity) {
     var oldKeyP = oldRaw ? importAesKey(oldRaw) : Promise.resolve(null);
     var newKeyP = newRaw ? importAesKey(newRaw) : Promise.resolve(null);
     return Promise.all([oldKeyP, newKeyP, dataKeys(), ensureWrapKey()]).then(function (r) {
-      var oldKey = r[0], newKey = r[1], keys = r[2];
+      var oldKey = r[0], newKey = r[1], keys = r[2], prepared = [];
       var chain = Promise.resolve();
       keys.forEach(function (k) {
         chain = chain.then(function () {
@@ -515,12 +532,94 @@
             }
             return plainFromStored(stored, oldKey).then(function (plain) {
               if (plain == null) return null;
-              return putPlain(k, plain, newKey);
+              var payloadP = newKey
+                ? aesEncrypt(String(plain), newKey).then(function (b) { return "pwd:" + b; })
+                : Promise.resolve("raw:" + String(plain));
+              return Promise.all([payloadP, sha16plain(plain)]).then(function (made) {
+                prepared.push({ key: k, stored: made[0], hash: made[1] });
+              });
             });
           });
         });
       });
+      return chain.then(function () {
+        if (!nativeFs() || !wrapRaw) return null;
+        return newKey
+          ? aesEncrypt(b64encode(wrapRaw), newKey).then(function (b) { return WRAP_ENC + b; })
+          : b64encode(wrapRaw);
+      }).then(function (wrapped) {
+        return commitAuthReplacement(prepared, newSecurity, wrapped);
+      }).then(function () {
+        securityCache = newSecurity || null;
+      });
+    });
+  }
+
+  function replacementTargets(spec) {
+    var exact = Array.isArray(spec && spec.exact) ? spec.exact.filter(function (k) { return typeof k === "string"; }) : [];
+    var prefixes = Array.isArray(spec && spec.prefixes) ? spec.prefixes.filter(function (k) { return typeof k === "string"; }) : [];
+    if (!exact.length && !prefixes.length) throw new Error("restore has no target keys");
+    return function (key) { return exact.indexOf(key) >= 0 || prefixes.some(function (p) { return key.indexOf(p) === 0; }); };
+  }
+  function prepareReplacementValue(key, value) {
+    var text = String(value), bytes = nativeFs() && text.length > FS_LARGE ? te.encode(text) : null;
+    if (bytes) {
+      if (!wrapKey) return Promise.reject(new Error("locked"));
+      var path = vaultPath(key) + ".restore-" + randomHex(8);
+      return Promise.all([encryptBytes(bytes, wrapKey).then(function (sealed) { return writeBin(path, sealed); }), sha16bytes(bytes)])
+        .then(function (r) { return { key: key, stored: BIN_MARK + path, hash: r[1], staged: BIN_MARK + path }; })
+        .catch(function (e) { return dropPayloadFile(BIN_MARK + path).then(function () { throw e; }); });
+    }
+    var payloadP = masterKey
+      ? aesEncrypt(text, masterKey).then(function (b) { return "pwd:" + b; })
+      : Promise.resolve("raw:" + text);
+    return Promise.all([payloadP, sha16plain(text)]).then(function (r) {
+      return { key: key, stored: r[0], hash: r[1], staged: null };
+    });
+  }
+  function commitStorageReplacement(prepared, removed) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(STORE, "readwrite"), os = tx.objectStore(STORE);
+        tx.oncomplete = function () { res(true); };
+        tx.onabort = tx.onerror = function () { rej(tx.error || new Error("restore did not commit")); };
+        removed.forEach(function (key) { os.delete("v:" + key); os.delete("h:" + key); });
+        prepared.forEach(function (item) {
+          os.put(item.stored, "v:" + item.key);
+          os.put(item.hash, "h:" + item.key);
+        });
+      });
+    });
+  }
+  function replaceStorage(values, spec) {
+    var has = replacementTargets(spec), incoming = Object.keys(values || {});
+    if (incoming.some(function (key) { return !has(key); })) return Promise.reject(new Error("key is outside the restore"));
+    var affected = [], oldStored = [], prepared = [];
+    return loadSecurity().then(function (s) {
+      if (s && !masterKey) throw new Error("locked");
+      return ensureWrapKey();
+    }).then(ensureVaultDir).then(dataKeys).then(function (keys) {
+      affected = keys.filter(has);
+      var chain = Promise.resolve();
+      affected.forEach(function (key) {
+        chain = chain.then(function () { return idbGet("v:" + key); }).then(function (stored) { if (stored != null) oldStored.push(stored); });
+      });
       return chain;
+    }).then(function () {
+      var chain = Promise.resolve();
+      incoming.forEach(function (key) {
+        chain = chain.then(function () { return prepareReplacementValue(key, values[key]); }).then(function (item) { prepared.push(item); });
+      });
+      return chain;
+    }).then(function () {
+      return commitStorageReplacement(prepared, affected);
+    }).then(function () {
+      return Promise.all(oldStored.map(dropPayloadFile));
+    }).then(function () {
+      return { replaced: prepared.length };
+    }).catch(function (e) {
+      return Promise.all(prepared.map(function (item) { return item.staged ? dropPayloadFile(item.staged) : null; }))
+        .then(function () { throw e; });
     });
   }
   function setMaster(raw) {
@@ -586,6 +685,9 @@
         });
       }).then(function () { return { key: key, deleted: true }; });
     },
+    replace: function (values, spec) {
+      return replaceStorage(values, spec);
+    },
     /* Tiny 16-char fingerprint. Used by a phone copy to skip records already
        here without reading every picture off disk again. Written when a value
        is saved; computed once and remembered if an older copy is missing it.
@@ -633,20 +735,12 @@
         if (!pw || pw.length < 8) return { ok: false, error: "Use at least 8 characters" };
         var salt = randomHex(16);
         return deriveFor(pw, salt).then(function (d) {
-          /* On Android, pictures are already sealed with a device wrap key.
-             The password wraps that key instead of rewriting every picture —
-             a multi-gigabyte vault used to sit on “Working…” then die. Small
-             IndexedDB values still go under the password the usual way.
-             Security record first: if we wrap values and then crash before
-             the salt is stored, they cannot be read again. */
-          return ensureWrapKey().then(function () {
-            return saveSecurity({ salt: salt, verifier: d.verifier });
-          }).then(function () {
+          /* Small records, the security descriptor and the wrapped picture key
+             commit in one IndexedDB transaction. A killed WebView therefore
+             sees either the old password state or the new one, never half of
+             each. */
+          return rewrapAll(null, d.keyRaw, { salt: salt, verifier: d.verifier }).then(function () {
             return setMaster(d.keyRaw);
-          }).then(function () {
-            return persistWrapKey();
-          }).then(function () {
-            return rewrapAll(null, d.keyRaw);
           }).then(function () { return { ok: true }; });
         });
       });
@@ -657,12 +751,8 @@
         if (!newPw || newPw.length < 8) return { ok: false, error: "Use at least 8 characters" };
         var salt = randomHex(16);
         return deriveFor(newPw, salt).then(function (d) {
-          return rewrapAll(oldRaw, d.keyRaw).then(function () {
-            return saveSecurity({ salt: salt, verifier: d.verifier }); // PIN invalidated
-          }).then(function () {
+          return rewrapAll(oldRaw, d.keyRaw, { salt: salt, verifier: d.verifier }).then(function () {
             return setMaster(d.keyRaw);
-          }).then(function () {
-            return persistWrapKey();
           }).then(function () {
             return nativeFs() ? deviceUnlockCall("remove", {}).catch(function () {}) : null;
           }).then(function () { return { ok: true }; });
@@ -672,14 +762,10 @@
     removePassword: function (pw) {
       return verifyPassword(pw).then(function (raw) {
         if (!raw) return { ok: false, error: "Password is incorrect" };
-        return rewrapAll(raw, null).then(function () {
-          return saveSecurity(null);
-        }).then(function () {
+        return rewrapAll(raw, null, null).then(function () {
           return nativeFs() ? deviceUnlockCall("remove", {}).catch(function () {}) : null;
         }).then(function () {
           return setMaster(null);
-        }).then(function () {
-          return persistWrapKey();
         }).then(function () { return { ok: true }; });
       });
     },

@@ -9,6 +9,7 @@
 const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 const root = path.join(__dirname, "..");
 const p = (...a) => path.join(root, ...a);
@@ -67,7 +68,11 @@ for (const f of fs.readdirSync(p("scripts")).filter(f => /^test-.*\.js$/.test(f)
   jobs.push({
     name: f.replace(/\.js$/, ""),
     cmd: el ? exe : process.execPath,
-    args: [p("scripts", f)],
+    /* CI and restricted Windows sessions often cannot start Electron's GPU or
+       Chromium sandbox even though the page itself is fine. These are test
+       processes over local files only; isolate their profile and keep those
+       host limitations from turning every UI assertion into a false failure. */
+    args: el ? ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-test-" + process.pid + "-" + f), p("scripts", f)] : [p("scripts", f)],
     skip: el && !exe ? "Electron is not installed (npm approve-scripts electron)" : null,
   });
 }
@@ -77,7 +82,7 @@ for (const mode of [null, "1"]) {
     name: "test-update-assets" + (mode ? " (NO_BASE=1)" : ""),
     what: mode ? "a shell older than 1.192, where a bare path must fail" : "the crest under an active patch",
     cmd: exe,
-    args: [p("scripts", "test-update-assets.js")],
+    args: ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-assets-" + process.pid + "-" + (mode || "base")), p("scripts", "test-update-assets.js")],
     env: mode ? { NO_BASE: mode } : {},
     skip: exe ? null : "Electron is not installed (npm approve-scripts electron)",
   });

@@ -51,10 +51,18 @@ const missing = backupInspection({
   chars: [{ profileImg: "gone" }], personas: [], lore: [], prompts: [], images: {}
 });
 const wrong = backupInspection({ app: "some-other-app", chars: {} });
+const characterExport = backupInspection({
+  app: "rolecraft-vault", type: "character", version: 4,
+  character: { id: "one", name: "Not a whole vault" }, images: {}
+});
 
 check("a complete backup passes its real preview validator", sound.ok && !sound.warnings.length && sound.counts.chars === 1);
 check("missing pictures are reported before restore", missing.ok && missing.warnings.length === 1);
 check("the wrong format and damaged arrays fail closed", !wrong.ok && wrong.fatal.length >= 2);
+check("a single-record export can never be mistaken for a full backup",
+  !characterExport.ok && /not a full vault backup/.test(characterExport.fatal[0] || ""));
+check("full restore uses the atomic storage replacement contract",
+  /await sReplace\(values,/.test(app) && /vault-restore-commit/.test(preload));
 check("all four editors use encrypted recoverable drafts", /useRecoverableDraft\("character"/.test(app) && /draftType: "persona"/.test(app) && /draftType: "lore"/.test(app) && /draftType: "prompt"/.test(app));
 check("first-run, What's New, transfer and command surfaces ship together", ["OnboardingModal", "WhatsNewModal", "TransferWizard", "CommandPalette"].every(n => app.includes("function " + n)));
 check("Ctrl+K and favourites are persisted", app.includes('e.key.toLowerCase() === "k"') && app.includes('sSet("ui:favorites"'));

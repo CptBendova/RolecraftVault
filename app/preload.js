@@ -17,6 +17,19 @@ contextBridge.exposeInMainWorld("storage", {
   set: async (key, value) => { await ipcRenderer.invoke("vault-set", key, value); return { key, value }; },
   delete: async (key) => { await ipcRenderer.invoke("vault-delete", key); return { key, deleted: true }; },
   list: async (prefix) => ({ keys: await ipcRenderer.invoke("vault-list", prefix || ""), prefix }),
+  replace: async (values, spec) => {
+    const token = await ipcRenderer.invoke("vault-restore-begin", spec || {});
+    try {
+      for (const [key, value] of Object.entries(values || {})) {
+        await ipcRenderer.invoke("vault-restore-set", token, key, value);
+      }
+      await ipcRenderer.invoke("vault-restore-commit", token);
+      return { replaced: Object.keys(values || {}).length };
+    } catch (e) {
+      try { await ipcRenderer.invoke("vault-restore-abort", token); } catch (e2) {}
+      throw e;
+    }
+  },
 });
 
 contextBridge.exposeInMainWorld("auth", {
