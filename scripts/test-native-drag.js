@@ -50,6 +50,11 @@ app.whenReady().then(async () => {
   })()`);
   await win.webContents.reload();
   await new Promise(r => setTimeout(r, 3000));
+  /* Native mouse input is focus-sensitive on hosted Windows desktops. The
+     first drag can otherwise work while a later one is silently discarded. */
+  win.show();
+  win.focus();
+  await new Promise(r => setTimeout(r, 500));
 
   const open = async where => await win.webContents.executeJavaScript(`(async () => {
     const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -78,7 +83,18 @@ app.whenReady().then(async () => {
     };
     // drag the first movable tile onto the last one
     const grips = [...document.querySelectorAll(".draghandle")];
-    const movable = sel === ".card" ? tiles : tiles.filter(t => t.draggable);
+    let movable = sel === ".card" ? tiles : tiles.filter(t => t.draggable);
+    if (sel === ".cpage-aside .tile") {
+      /* Small virtual displays can clip the bottom of the aside. Drive only
+         tiles whose centres can actually receive native pointer input. */
+      movable = movable.filter(t => {
+        const r = t.getBoundingClientRect();
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        const hit = x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+          ? document.elementFromPoint(x, y) : null;
+        return r.width > 0 && r.height > 0 && hit && (hit === t || t.contains(hit));
+      });
+    }
     if (movable.length < 2) return { fail: "not enough movable in " + sel };
     // sections are dragged by their grip; tiles by themselves
     const src = sel === ".card" ? grips[0] : movable[0];

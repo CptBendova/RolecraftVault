@@ -17,6 +17,8 @@ const mobileLock = read("mobile/package-lock.json");
 const nsi = read("build/installer.nsi");
 const builder = read("scripts/build-installer.js");
 const runner = read("scripts/run-tests.js");
+const workflow = read(".github/workflows/release-checks.yml");
+const pinnedActions = [...workflow.matchAll(/uses:\s+actions\/(?:checkout|setup-node)@([0-9a-f]+)/g)];
 check("the Windows runtime is Electron 44 or newer", Number(pkg.devDependencies.electron.split(".")[0]) >= 44);
 check("the Android lockfile no longer includes vulnerable xcode", !/node_modules\/xcode/.test(mobileLock));
 check("the Android lockfile no longer includes vulnerable uuid 7", !/node_modules\/uuid/.test(mobileLock));
@@ -25,6 +27,9 @@ check("the final public installer passes through Authenticode signing", /signWin
 check("the packaged app is rebuilt from the installed Electron runtime", /fs\.rmSync\(staged/.test(builder) && /copyDir\(electronDist, staged\)/.test(builder));
 check("Electron tests run from a disposable directory", /cwd: j\.electron \? runRoot : root/.test(runner));
 check("release checks run on GitHub", fs.existsSync(path.join(root, ".github", "workflows", "release-checks.yml")));
+check("third-party CI actions are pinned to immutable revisions",
+  !/uses:\s+actions\/(?:checkout|setup-node)@v\d/.test(workflow) &&
+  pinnedActions.length === 4 && pinnedActions.every(match => match[1].length === 40));
 check("private vulnerability guidance is public", fs.existsSync(path.join(root, "SECURITY.md")));
 check("a checksum generator is owned by npm scripts", pkg.scripts.checksums === "node scripts/write-checksums.js");
 
