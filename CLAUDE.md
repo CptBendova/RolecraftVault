@@ -510,6 +510,28 @@ Holding those files as UTF-8 data-URL strings and then `get()`-ing them back int
 
 Since 1.172, large records on Capacitor are AES-256-GCM files under `Directory.DATA/vault/` (`RCVS1` + iv + ciphertext). The wrap key is a device key in IDB when no master password is set, or the master key when one is. IDB only keeps a `bin:` pointer and the 16-char fingerprint. `hash()` of old `file:` leftovers reads bytes, not a JavaScript string. The interface on a phone loads thumbnails only, at most three at a time, and keeps 64 thumbs / 4 full pictures. `kv/` files from 1.168–1.171 still read. The browser edition is unchanged.
 
+### Cross-edition integrity boundaries (1.241)
+
+Streaming text is stateful even when the surrounding JSON and encryption are
+correct. Android Filesystem calls encode each JavaScript string separately, so
+the backup writer must not split a UTF-16 surrogate pair between calls. Windows
+reads decrypted transfer NDJSON with `StringDecoder`; decoding independent 1 MiB
+buffers corrupts a UTF-8 sequence that crosses the buffer boundary.
+
+Android storage treats the encrypted file as staged data. Its `v:` pointer and
+`h:` transfer fingerprint are one IndexedDB transaction, and only that commit
+makes the new file live. Deletion commits removal of both metadata keys before
+best-effort file cleanup. Password changes migrate the legacy `file:` payloads
+from 1.168-1.171 into `bin:` files before committing the new security record and
+wrapped file key; skipping those pointers either left plaintext behind or left
+old-password ciphertext unreadable.
+
+Full-backup verification is about the payload actually written, not only the
+four top-level arrays. Covers and bin records contribute image references,
+missing bytes abort export, and every array element is checked before restore.
+Lorebook and prompt exports carry book metadata as well as entry pictures so
+empty books and covers survive a round trip.
+
 1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
 
 ## Phone copies dying around 130 MB (1.166)

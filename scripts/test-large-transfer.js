@@ -114,7 +114,7 @@ async function run() {
   check("a partial mirror cannot delete local-only records",
     /if \(saveFailed === 0\) \{[\s\S]{0,220}window\.storage\.delete/.test(MOBILE));
   check("Android commits a new unique file before removing the old one",
-    /vaultPath\(key\) \+ "\." \+ randomHex\(8\)[\s\S]{0,260}idbSet\("v:" \+ key[\s\S]{0,180}dropPayloadFile\(stored\)/.test(PLATFORM));
+    /vaultPath\(key\) \+ "\." \+ randomHex\(8\)[\s\S]{0,420}idbCommitValue\(key,[\s\S]{0,260}dropPayloadFile\(stored\)/.test(PLATFORM));
   check("large downloads stream through a native temporary file",
     /BufferedInputStream/.test(TRANSPORT) && /FileOutputStream/.test(TRANSPORT)
       && !/ByteArrayOutputStream/.test(TRANSPORT));

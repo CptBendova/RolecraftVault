@@ -539,6 +539,13 @@
         ]);
       } catch (e) {}
     };
+    /* The Android permission sheet pauses the activity. Mark the receive active
+       before opening it so lifecycle locking cannot discard the vault key while
+       the first transfer is still being prepared. */
+    if (!preview) {
+      receiveActive = true;
+      await keepAlive(true);
+    }
     if (C && typeof C.nativePromise === "function") {
       try {
         await C.nativePromise("Filesystem", "requestPermissions", {});
@@ -546,10 +553,6 @@
       try {
         await C.nativePromise("Filesystem", "mkdir", { path: "vault", directory: "DATA", recursive: true });
       } catch (e) {}
-    }
-    if (!preview) {
-      receiveActive = true;
-      await keepAlive(true);
     }
     const persistOne = async (k, v) => {
       try {

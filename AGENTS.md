@@ -137,6 +137,17 @@ Android transfer behavior must follow Capacitor's actual bridge contract:
 - large payloads stay batched and sliced; and
 - receiver polling must eventually stop when the sender disappears.
 
+Streaming text must preserve decoder state across chunks. On Android, never end
+a Filesystem string write between the two halves of a UTF-16 surrogate pair. On
+Windows, decode transfer files with `StringDecoder`, not independent
+`Buffer.toString("utf8")` calls.
+
+On Android, commit each `v:` pointer and its `h:` transfer fingerprint in the
+same IndexedDB transaction. The encrypted replacement file is written first;
+the old file is removed only after that combined commit. Background locking may
+wait for an active receive, but it must keep checking and lock as soon as the
+receive or permission sheet finishes while the app remains hidden.
+
 Modern receivers declare what the PC should pack: Android uses
 `/delta-start?mode=stream-batches&id=<random>` with binary `RCVX3` frames,
 desktop uses `?mode=combined`, and no mode must keep building both legacy
@@ -159,6 +170,9 @@ changing this protocol.
 - Pasted sections always receive a fresh `uid()`.
 - Stored data can be damaged or from a future version. Rendering should tolerate
   missing records and unknown kinds; fixed groups need a catch-all.
+- A backup is verified only after every referenced live, cover, and bin picture
+  has actually been read. Array-shaped record lists still need every element
+  validated before an atomic restore is allowed to replace the vault.
 - `GUIDE` is shared by all editions. Mark Windows-only features clearly, and do
   not use em dashes anywhere inside the guide text.
 - Runtime asset paths in `app.js` use `ASSET_BASE`, never bare relative paths.

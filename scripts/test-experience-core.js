@@ -30,9 +30,10 @@ function liftFunction(source, name) {
   throw new Error("Unclosed " + name);
 }
 
-const backupInspection = new Function("charImgIds", "personaImgIds",
+const backupInspection = new Function("charImgIds", "personaImgIds", "imageIdsOf",
   liftFunction(app, "backupInspection") + "; return backupInspection;"
-)(c => c.profileImg ? [c.profileImg] : [], p => p.avatar ? [p.avatar] : []);
+)(c => c.profileImg ? [c.profileImg] : [], p => p.avatar ? [p.avatar] : [],
+  (_type, record) => record && record.profileImg ? [record.profileImg] : []);
 
 let bad = 0;
 function check(label, ok) {
@@ -55,10 +56,19 @@ const characterExport = backupInspection({
   app: "rolecraft-vault", type: "character", version: 4,
   character: { id: "one", name: "Not a whole vault" }, images: {}
 });
+const malformed = backupInspection({
+  app: "rolecraft-vault", chars: [null], personas: [], lore: [], prompts: [], images: {}
+});
+const missingCover = backupInspection({
+  app: "rolecraft-vault", chars: [], personas: [], lore: [], prompts: [],
+  loreBooks: { World: { cover: "lost-cover" } }, images: {}
+});
 
 check("a complete backup passes its real preview validator", sound.ok && !sound.warnings.length && sound.counts.chars === 1);
 check("missing pictures are reported before restore", missing.ok && missing.warnings.length === 1);
 check("the wrong format and damaged arrays fail closed", !wrong.ok && wrong.fatal.length >= 2);
+check("damaged records inside valid arrays fail closed", !malformed.ok && /damaged records/.test(malformed.fatal[0] || ""));
+check("book and collection covers are included in backup health", missingCover.warnings.length === 1);
 check("a single-record export can never be mistaken for a full backup",
   !characterExport.ok && /not a full vault backup/.test(characterExport.fatal[0] || ""));
 check("full restore uses the atomic storage replacement contract",

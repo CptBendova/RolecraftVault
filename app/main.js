@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
+const { StringDecoder } = require("string_decoder");
 
 let dataDir, boundsFile, securityFile, rewrapFile, restoreJournalFile;
 let masterKey = null; // Buffer(32) in memory only while unlocked
@@ -23,7 +24,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.240";
+const FACTORY_BUILD = "1.241";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1198,6 +1199,7 @@ function eachTransferLine(plainPath, onLine) {
   const size = fs.statSync(plainPath).size;
   const fd = fs.openSync(plainPath, "r");
   const buf = Buffer.alloc(1 << 20);
+  const decoder = new StringDecoder("utf8");
   let pos = 0, rest = "", stop = false;
   const feed = chunk => {
     rest += chunk;
@@ -1213,8 +1215,9 @@ function eachTransferLine(plainPath, onLine) {
       const got = fs.readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
       if (got <= 0) break;
       pos += got;
-      feed(buf.slice(0, got).toString("utf8"));
+      feed(decoder.write(buf.slice(0, got)));
     }
+    if (!stop) feed(decoder.end());
     if (!stop && rest.trim()) onLine(rest);
   } finally {
     fs.closeSync(fd);
@@ -1265,17 +1268,33 @@ function httpToFile(opts, body, destPath, report) {
   return new Promise((resolve, reject) => {
     try { fs.unlinkSync(destPath); } catch (e) {}
     const file = fs.createWriteStream(destPath);
-    const req = http.request(opts, res => {
-      if (res.statusCode !== 200) { res.resume(); file.close(); reject(new Error("status " + res.statusCode)); return; }
+    let req = null, settled = false;
+    const fail = err => {
+      if (settled) return;
+      settled = true;
+      if (req) req.destroy();
+      file.destroy();
+      try { fs.unlinkSync(destPath); } catch (e) {}
+      reject(err);
+    };
+    file.on("error", fail);
+    req = http.request(opts, res => {
+      if (res.statusCode !== 200) { res.resume(); fail(new Error("status " + res.statusCode)); return; }
       // the sender sets Content-Length, so this is a real fraction rather than a guess
       const total = parseInt(res.headers["content-length"], 10) || 0;
       let got = 0;
       if (report) res.on("data", d => { got += d.length; report(got, total); });
+      res.on("error", fail);
       res.pipe(file);
-      file.on("finish", () => file.close(() => resolve(destPath)));
+      file.on("finish", () => file.close(err => {
+        if (err) { fail(err); return; }
+        if (settled) return;
+        settled = true;
+        resolve(destPath);
+      }));
     });
-    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
-    req.on("error", reject);
+    req.on("timeout", () => fail(new Error("timeout")));
+    req.on("error", fail);
     if (body) req.write(body);
     req.end();
   });
@@ -1502,11 +1521,16 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
     cleanup();
   }
   let removed = 0;
+  const removalFailures = [];
   for (const k of removable) {
-    try { fs.unlinkSync(keyToFile(k)); removed++; } catch (e) {}
+    try { fs.unlinkSync(keyToFile(k)); forgetHash(k); removed++; } catch (e) { removalFailures.push(k); }
     phase("removing", removed, removable.length);
   }
-  if (removed === removable.length) await notifyTransferComplete(base, target.secret);
+  if (removalFailures.length) {
+    return Object.assign({ ok: false, partial: true, added, updated, removed, unchanged, bytes,
+      error: "The incoming records were saved, but " + removalFailures.length + " local record" + (removalFailures.length === 1 ? " could" : "s could") + " not be removed. Close anything using the vault and run Mirror again." }, who);
+  }
+  await notifyTransferComplete(base, target.secret);
   phase("done", 1, 1);
   return Object.assign({ ok: true, added, updated, removed, unchanged, bytes }, who);
 }
