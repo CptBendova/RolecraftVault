@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.246";
+const APP_VERSION = "1.247";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.246";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.246 — current",
+  heading: "1.247 — current",
+  notes: ["Android 15 and 16 now keep the whole vault interface outside the status bar, navigation controls and display cutouts using explicit native safe-area handling. This replaces an Android setting that current versions are allowed to ignore, so bottom navigation, editors and other touch controls remain reachable across gesture navigation, three-button navigation, rotations and cutout shapes. Keyboard inset updates still reach the WebView, avoiding hidden editor fields.", "Android exports now identify JSON, text and zip files consistently in every device language, and pre-Android 12 system backups are explicitly disabled as well as blocked by the existing privacy setting. The Android build now passes its full release lint gate. Android users need the 1.247 APK; Windows includes the audited interface, current guide and changelog and can use the smaller update file."]
+}, {
+  heading: "1.246",
   notes: ["The new public CodeQL audit found three Windows file-handling race windows. Update packages and large transfer files are now opened once, inspected through that exact descriptor, read to the validated bound, and closed on every path, so another process cannot swap a checked path for a different file before Rolecraft reads it. Windows users need the full 1.246 setup because this hardening is in the app shell.", "Release tests now create unpredictable private temporary directories, adapt real animation, window and drag checks to hosted display constraints without weakening their assertions, and pin current GitHub Actions to immutable revisions. Extended CodeQL scanning now covers Rolecraft's Java/Kotlin, JavaScript and workflow code. Android users receive the same updated changelog in the 1.246 APK."]
 }, {
   heading: "1.245",

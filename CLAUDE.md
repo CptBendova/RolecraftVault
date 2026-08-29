@@ -778,6 +778,17 @@ panels, or Graphics setting.
   exactly 4/3/2. The whole tile already opens the image, so Android hides the
   duplicate corner open button and keeps Select and Blur in opposite corners.
 
+### Android 15/16 system bars (1.247)
+
+Target SDK 35 made edge-to-edge mandatory and target SDK 36 removed the opt-out.
+`WindowCompat.setDecorFitsSystemWindows(window, true)` is therefore not a safe
+way to protect the WebView on current Android. `MainActivity` applies system-bar
+and display-cutout insets to the native content container on API 35+, then zeros
+only those handled inset types before they reach the WebView. Do not return
+`WindowInsetsCompat.CONSUMED`: keyboard inset changes still need to reach the
+WebView or focused editor fields can disappear behind the IME. Older supported
+Android versions keep the reliable fitted-window behavior.
+
 ## Testing notes
 
 `npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits

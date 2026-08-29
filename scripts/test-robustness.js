@@ -38,8 +38,10 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1400, height: 1000 });
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const errors = [];
-  win.webContents.on("console-message", (e, lvl, m) => {
-    if (lvl >= 2 && !/Content-Security/.test(String(m))) errors.push(String(m).slice(0, 140));
+  win.webContents.on("console-message", details => {
+    const lvl = details && details.level;
+    const m = details && details.message;
+    if ((lvl === "warning" || lvl === "error") && !/Content-Security/.test(String(m))) errors.push(String(m).slice(0, 140));
   });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
   await wait(2600);

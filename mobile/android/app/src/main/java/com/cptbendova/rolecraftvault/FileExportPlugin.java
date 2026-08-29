@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,7 +62,7 @@ public class FileExportPlugin extends Plugin {
 
     private String mimeFor(String name, String asked) {
         if (asked != null && !asked.trim().isEmpty()) return asked;
-        String lower = name.toLowerCase();
+        String lower = name.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".json")) return "application/json";
         if (lower.endsWith(".txt") || lower.endsWith(".md")) return "text/plain";
         if (lower.endsWith(".zip")) return "application/zip";
