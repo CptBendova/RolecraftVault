@@ -546,7 +546,9 @@ JSON, text, backups and ZIP archives go through `MediaStore.Downloads` in
 bounded writes. Individual pictures go through `MediaStore.Images` with
 `Pictures/Rolecraft Vault` as their relative path so Gallery apps can see them.
 Android 8 and 9 use the matching public directory and must run the media scanner
-after finishing a picture. Keep the requested collection explicit in the JS
+after finishing a picture. They also require the native `FileExportPlugin` to
+request `WRITE_EXTERNAL_STORAGE` before opening that public directory; declaring
+the permission in the manifest does not grant it at runtime. Keep the requested collection explicit in the JS
 bridge, accept it only for an `image/*` MIME type natively, and leave the
 app-private Filesystem path as a failure fallback rather than the advertised
 destination.

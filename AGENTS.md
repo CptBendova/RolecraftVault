@@ -194,6 +194,8 @@ changing this protocol.
 - The Android release package may rename and recompress resources. Verify icons
   by decoded image dimensions and visual inspection, not archive path or source
   PNG hash.
+- Android 8 and 9 public exports need a runtime `WRITE_EXTERNAL_STORAGE`
+  request in `FileExportPlugin`; a manifest declaration alone is not enough.
 - Exercise the locked Android screen with `deviceUnlockSet: true`. `LockScreen`
   cannot read platform constants local to `RolecraftVault`; a clean unprotected
   profile never renders that branch and will miss a release-blocking crash.

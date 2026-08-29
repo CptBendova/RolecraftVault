@@ -12,10 +12,13 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -36,7 +39,15 @@ import java.util.concurrent.Executors;
  * pieces instead of crossing the WebView bridge as one giant value. Individual
  * images use MediaStore.Images so Android Gallery apps can index them.
  */
-@CapacitorPlugin(name = "FileExport")
+@CapacitorPlugin(
+    name = "FileExport",
+    permissions = {
+        @Permission(
+            strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE },
+            alias = "storage"
+        )
+    }
+)
 public class FileExportPlugin extends Plugin {
 
     private static final class ExportState {
@@ -137,6 +148,24 @@ public class FileExportPlugin extends Plugin {
 
     @PluginMethod
     public void begin(final PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && getPermissionState("storage") != PermissionState.GRANTED) {
+            requestPermissionForAlias("storage", call, "afterStoragePermission");
+            return;
+        }
+        beginExport(call);
+    }
+
+    @PermissionCallback
+    private void afterStoragePermission(PluginCall call) {
+        if (getPermissionState("storage") != PermissionState.GRANTED) {
+            call.reject("Android has not allowed access to Downloads");
+            return;
+        }
+        beginExport(call);
+    }
+
+    private void beginExport(final PluginCall call) {
         executor.submit(() -> {
             try {
                 String filename = safeName(call.getString("filename"));
