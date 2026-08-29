@@ -537,6 +537,20 @@ empty books and covers survive a round trip.
 
 1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
 
+## Public Android exports (1.243, 1.248)
+
+An HTML download link is swallowed by the Capacitor WebView, and Capacitor's
+Filesystem enum does not expose modern public Downloads or Pictures
+collections. `FileExportPlugin` is therefore the owner of user-visible exports.
+JSON, text, backups and ZIP archives go through `MediaStore.Downloads` in
+bounded writes. Individual pictures go through `MediaStore.Images` with
+`Pictures/Rolecraft Vault` as their relative path so Gallery apps can see them.
+Android 8 and 9 use the matching public directory and must run the media scanner
+after finishing a picture. Keep the requested collection explicit in the JS
+bridge, accept it only for an `image/*` MIME type natively, and leave the
+app-private Filesystem path as a failure fallback rather than the advertised
+destination.
+
 ## Phone copies dying around 130 MB (1.166)
 
 A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.

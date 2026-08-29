@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.247";
+const APP_VERSION = "1.248";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.247";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.247 — current",
+  heading: "1.248 — current",
+  notes: ["Picture downloads no longer force everything into a ZIP. Every multi-picture download now offers Save individual files or Create ZIP, from a character or persona gallery through lorebooks, prompt collections and the whole-vault picture export. Individual files keep their original bytes and receive readable, collision-safe names; ZIP remains available when one portable archive and its folder structure are more useful.", "On Android, individual pictures are written to the public Pictures/Rolecraft Vault album through Android's image collection and older devices explicitly ask the media scanner to index them, so they appear in Gallery apps instead of being hidden inside a Downloads archive. Single-picture saves use the same Gallery-visible route. Android users need the 1.248 APK for the public Pictures integration; Windows includes the new format choice in both the update file and full installer."]
+}, {
+  heading: "1.247",
   notes: ["Android 15 and 16 now keep the whole vault interface outside the status bar, navigation controls and display cutouts using explicit native safe-area handling. This replaces an Android setting that current versions are allowed to ignore, so bottom navigation, editors and other touch controls remain reachable across gesture navigation, three-button navigation, rotations and cutout shapes. Keyboard inset updates still reach the WebView, avoiding hidden editor fields.", "Android exports now identify JSON, text and zip files consistently in every device language, and pre-Android 12 system backups are explicitly disabled as well as blocked by the existing privacy setting. The Android build now passes its full release lint gate. Android users need the 1.247 APK; Windows includes the audited interface, current guide and changelog and can use the smaller update file."]
 }, {
   heading: "1.246",
@@ -816,9 +819,13 @@ function createFilePickerLockGate(now = () => Date.now()) {
   };
 }
 const SAVE_SPOTS = [["DOCUMENTS", "Documents"], ["EXTERNAL", "the app's storage"], ["DATA", "the app's private files"]];
-function downloadExport(C, filename, data, encoding, mime) {
+function downloadExport(C, filename, data, encoding, mime, collection) {
   let token = null;
-  return C.nativePromise("FileExport", "begin", { filename, mime: mime || "application/octet-stream" }).then(opened => {
+  return C.nativePromise("FileExport", "begin", {
+    filename,
+    mime: mime || "application/octet-stream",
+    collection: collection || "downloads"
+  }).then(opened => {
     token = opened && opened.token;
     if (!token) throw new Error("Android did not open the download");
     return C.nativePromise("FileExport", "append", { token, data, encoding });
@@ -841,9 +848,10 @@ async function writeSomewhere(C, filename, data) {
   }
   throw last || new Error("nowhere to write");
 }
-function phoneSave(filename, blob) {
+function phoneSave(filename, blob, options) {
   const C = typeof window !== "undefined" && window.Capacitor;
   if (!C || typeof C.nativePromise !== "function") return null;
+  const opts = options || {};
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onerror = () => reject(new Error("could not read the file"));
@@ -851,7 +859,7 @@ function phoneSave(filename, blob) {
       const s = String(r.result || "");
       const comma = s.indexOf(",");
       const data = comma >= 0 ? s.slice(comma + 1) : s;
-      downloadExport(C, filename, data, "base64", blob.type).catch(() => writeSomewhere(C, filename, data)).then(resolve, reject);
+      downloadExport(C, filename, data, "base64", blob.type, opts.collection).catch(() => writeSomewhere(C, filename, data)).then(resolve, reject);
     };
     r.readAsDataURL(blob);
   });
@@ -934,14 +942,15 @@ function phoneJsonStream(filename, produce) {
   if (!C || typeof C.nativePromise !== "function") return null;
   return streamJsonDownload(C, filename, produce).catch(() => streamJsonSomewhere(C, filename, produce));
 }
-function saveFile(blob, filename) {
-  const onPhone = phoneSave(filename, blob);
+function saveFile(blob, filename, options) {
+  const opts = options || {};
+  const onPhone = phoneSave(filename, blob, opts);
   if (onPhone) {
     return onPhone.then(where => {
-      saveNotice && saveNotice("Saved as " + filename + " in " + where);
-      return true;
+      if (!opts.quiet) saveNotice && saveNotice("Saved as " + filename + " in " + where);
+      return where || true;
     }, e => {
-      saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e));
+      if (!opts.quiet) saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e));
       return false;
     });
   }
@@ -954,7 +963,7 @@ function saveFile(blob, filename) {
      small one has finished, and revoking it mid-download can cut it off. Hold
      it for a minute per 200 MB, and never less than the original minute. */
   revokeSoon(url, Math.max(60000, Math.ceil((blob.size || 0) / 2e8) * 60000));
-  return Promise.resolve(true);
+  return Promise.resolve("Downloads");
 }
 function downloadJSON(obj, filename) {
   return saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }), filename);
@@ -3232,7 +3241,7 @@ const GUIDE = [
         "Open a picture from the grid to see it full screen. Pinch or double-tap to zoom in. Swipe to the next one. On a phone there are no arrows at the sides, because the swipe is the way.",
         "Albums group pictures inside one character: a set of outfits, a set of expressions.",
         "Blur hides a picture behind a frosted panel until you click it. It is remembered per picture and travels in your backups.",
-        "Download all images saves the originals, at full quality, as a zip: a folder per character, one for personas, and folders for bucket covers, lorebook covers and the pictures inside lore entries and prompts. Large libraries are written to disk as they go, so there is no practical size limit."
+        "Download images always uses the originals at full quality and now gives you two choices. Save individual files puts normal picture files in Downloads on Windows, or in Pictures/Rolecraft Vault on Android so Gallery apps can see them. Create ZIP keeps everything in one portable archive, with folders for characters, personas, covers, lore entries and prompts; large archives are written to disk as they go."
       ],
       "Removing a picture is immediate and cannot be undone. Unlike a character, a picture does not go to the bin. That is why every button that removes one asks twice.",
       "Pictures are never inside a CharSnap file. CharSnap cannot read images out of a file at all, so you upload your art there after importing. They are inside this app's own exports, which is why those files are large."
@@ -15243,6 +15252,12 @@ function RolecraftVault() {
     fn,
     warning
   });
+  const askImageExport = (what, filesFn, zipFn) => setExportConfirm({
+    what,
+    fn: filesFn,
+    altFn: zipFn,
+    pictures: true
+  });
   /* Tags CharSnap does not know are dropped silently at their end, so say so
      while the export can still be cancelled. Never blocks: the list is recovered
      from their published PDF, not a live feed, so it can be out of date. */
@@ -15729,6 +15744,54 @@ function RolecraftVault() {
       track.clear();
     }
   };
+  const saveImageFiles = async plan => {
+    if (!plan.length) {
+      toast("No images to download");
+      return;
+    }
+    const track = zipTracker("Saving pictures", plan.length);
+    const usedNames = new Set();
+    let saved = 0, failed = 0, location = "";
+    try {
+      for (const it of plan) {
+        const v = await sGet("img:" + it.id);
+        if (!v) {
+          failed++;
+          track.step();
+          continue;
+        }
+        const ext = extOf(v);
+        const parts = String(it.path || it.base + "-" + String(it.n).padStart(2, "0"))
+          .split(/[\\/]+/).map(safeFileName).filter(Boolean);
+        const stem = parts.join("-") || "picture";
+        let filename = stem + "." + ext, copy = 2;
+        while (usedNames.has(filename.toLowerCase())) filename = stem + "-" + copy++ + "." + ext;
+        usedNames.add(filename.toLowerCase());
+        const match = /^data:([^;,]+)/.exec(v);
+        const where = await saveFile(new Blob([dataUrlBytes(v)], {
+          type: match ? match[1] : "application/octet-stream"
+        }), filename, { collection: "pictures", quiet: true });
+        if (where) {
+          saved++;
+          location = typeof where === "string" ? where : location;
+        } else failed++;
+        track.step();
+      }
+      if (!saved) {
+        toast(failed ? "Pictures could not be saved" : "No images to download");
+        return;
+      }
+      toast(saved + (saved === 1 ? " picture saved" : " pictures saved") +
+        (location ? " in " + location : "") +
+        (failed ? "; " + failed + (failed === 1 ? " could not be saved" : " could not be saved") : ""));
+    } finally {
+      track.clear();
+    }
+  };
+  const saveSelectedImages = items => saveImageFiles((items || []).filter(it => it && it.imgId).map((it, i) => ({
+    id: it.imgId,
+    path: String(i + 1).padStart(2, "0") + (it.label ? "-" + sanitizeName(it.label) : "")
+  })));
   const [personaGrid, setPersonaGrid] = useState(false);
   /* One picture on its own. Reads the same record the zip reads, so what lands
      on disk is the original rather than the thumbnail shown on the card. */
@@ -15739,10 +15802,13 @@ function RolecraftVault() {
       toast("That picture is no longer in the vault");
       return;
     }
-    downloadBlob(new Blob([dataUrlBytes(v)]), safeFileName(name) + "." + extOf(v));
-    toast("Picture saved");
+    const match = /^data:([^;,]+)/.exec(v);
+    const where = await saveFile(new Blob([dataUrlBytes(v)], {
+      type: match ? match[1] : "application/octet-stream"
+    }), safeFileName(name) + "." + extOf(v), { collection: "pictures", quiet: true });
+    toast(where ? "Picture saved in " + where : "Picture could not be saved");
   };
-  const downloadImagesZip = async (scopeChars, scopePersonas, zipName, extras) => {
+  const imageDownloadPlan = (scopeChars, scopePersonas, extras) => {
     /* Which pictures to fetch is worked out first. It touches no storage, so
        the total is known before the slow part starts and the bar can be honest
        about how far along it is. */
@@ -15793,6 +15859,12 @@ function RolecraftVault() {
       for (const g of p.gallery || []) push(g.imgId, base, n++);
     }
     for (const e of extras || []) pushAt(e.id, e.path);
+    return plan;
+  };
+  const downloadImagesFiles = (scopeChars, scopePersonas, extras) =>
+    saveImageFiles(imageDownloadPlan(scopeChars, scopePersonas, extras));
+  const downloadImagesZip = async (scopeChars, scopePersonas, zipName, extras) => {
+    const plan = imageDownloadPlan(scopeChars, scopePersonas, extras);
     if (!plan.length) {
       toast("No images to download");
       return;
@@ -18625,10 +18697,14 @@ function RolecraftVault() {
         toast(albumName ? touched + (touched === 1 ? " image added to " : " images added to ") + "\u201c" + albumName + "\u201d"
           : touched + (touched === 1 ? " image removed from its album" : " images removed from their albums"));
       },
-      onDownloadImages: () => askExport("this persona's images", () => downloadImagesZip([], [vp], sanitizeName(vp.name) + "-images.zip")),
+      onDownloadImages: () => askImageExport("this persona's images",
+        () => downloadImagesFiles([], [vp]),
+        () => downloadImagesZip([], [vp], sanitizeName(vp.name) + "-images.zip")),
       onExportJson: () => askExport("this persona (including images)", () => exportPersonaJson(vp)),
       onExportText: () => askExport("this persona as text, with no pictures", () => exportPersonaTextJson(vp)),
-      onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vp.name) + "-" + sanitizeName(albumName || "selected") + ".zip"))
+      onDownloadSelected: (items, albumName) => askImageExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images",
+        () => saveSelectedImages(items),
+        () => zipSelectedImages(items, sanitizeName(vp.name) + "-" + sanitizeName(albumName || "selected") + ".zip"))
     });
   })(), personaGrid && /*#__PURE__*/React.createElement(ImageGridView, {
     title: "Persona images",
@@ -18652,7 +18728,9 @@ function RolecraftVault() {
     requestFull: requestFull,
     blurred: blurred,
     onToggleBlur: toggleBlur,
-    onDownloadSelected: items => askExport("the selected portraits", () => zipSelectedImages(items, "persona-portraits.zip")),
+    onDownloadSelected: items => askImageExport("the selected portraits",
+      () => saveSelectedImages(items),
+      () => zipSelectedImages(items, "persona-portraits.zip")),
     onDeleteSelected: async imgIds => {
       const idSet = new Set(imgIds);
       const next = personas.map(p => {
@@ -18722,7 +18800,11 @@ function RolecraftVault() {
         await persistLoreMeta(nm);
         if (old && !heldImageIds().has(old)) await dropImage(old);
       },
-      onDownloadBookImages: () => askExport("this lorebook's images", () => zipSelectedImages(bookImageItems(), sanitizeName(viewLoreBook || "unfiled") + "-images.zip")),
+      onDownloadBookImages: () => {
+        const items = bookImageItems();
+        askImageExport("this lorebook's images", () => saveSelectedImages(items),
+          () => zipSelectedImages(items, sanitizeName(viewLoreBook || "unfiled") + "-images.zip"));
+      },
       onClose: () => setViewLoreBook(null),
       onOpenEntry: r => setViewLoreEntryId(r.id),
       onNewEntry: () => setEditingRecord({
@@ -18885,21 +18967,16 @@ function RolecraftVault() {
         } : e));
         if (im && !heldImageIds().has(im.imgId)) await dropImage(im.imgId);
       },
-      onDownloadOne: (imgId, i) => askExport("this image", async () => {
-        const v = await sGet("img:" + imgId);
-        if (!v) {
-          toast("Image not found");
-          return;
-        }
-        downloadBlob(new Blob([dataUrlBytes(v)], {
-          type: "application/octet-stream"
-        }), sanitizeName(ve.title || "entry") + "-" + (i + 1) + "." + extOf(v));
-        toast("Image exported at original quality");
-      }),
-      onDownloadAll: () => askExport("this entry's images", () => zipSelectedImages((ve.images || []).map((im, i) => ({
-        imgId: im.imgId,
-        label: sanitizeName(ve.title || "entry") + "-" + (i + 1)
-      })), sanitizeName(ve.title || "entry") + "-images.zip"))
+      onDownloadOne: (imgId, i) => askExport("this image", () =>
+        downloadOneImage(imgId, sanitizeName(ve.title || "entry") + "-" + (i + 1))),
+      onDownloadAll: () => {
+        const items = (ve.images || []).map((im, i) => ({
+          imgId: im.imgId,
+          label: sanitizeName(ve.title || "entry") + "-" + (i + 1)
+        }));
+        askImageExport("this entry's images", () => saveSelectedImages(items),
+          () => zipSelectedImages(items, sanitizeName(ve.title || "entry") + "-images.zip"));
+      }
     });
   })(), viewPromptBook !== null && (() => {
     const entries = prompts.filter(p => (p.collection || "").trim() === viewPromptBook);
@@ -18952,7 +19029,11 @@ function RolecraftVault() {
         await persistPromptMeta(nm);
         if (old && !heldImageIds().has(old)) await dropImage(old);
       },
-      onDownloadBookImages: () => askExport("this collection's images", () => zipSelectedImages(bookImageItems(), sanitizeName(viewPromptBook || "unfiled") + "-images.zip")),
+      onDownloadBookImages: () => {
+        const items = bookImageItems();
+        askImageExport("this collection's images", () => saveSelectedImages(items),
+          () => zipSelectedImages(items, sanitizeName(viewPromptBook || "unfiled") + "-images.zip"));
+      },
       onClose: () => setViewPromptBook(null),
       onOpenEntry: r => setViewPromptEntryId(r.id),
       onNewEntry: () => setEditingRecord({
@@ -19101,21 +19182,16 @@ function RolecraftVault() {
         } : p));
         if (im && !heldImageIds().has(im.imgId)) await dropImage(im.imgId);
       },
-      onDownloadOne: (imgId, i) => askExport("this image", async () => {
-        const v = await sGet("img:" + imgId);
-        if (!v) {
-          toast("Image not found");
-          return;
-        }
-        downloadBlob(new Blob([dataUrlBytes(v)], {
-          type: "application/octet-stream"
-        }), sanitizeName(ve.title || "prompt") + "-" + (i + 1) + "." + extOf(v));
-        toast("Image exported at original quality");
-      }),
-      onDownloadAll: () => askExport("this prompt's images", () => zipSelectedImages((ve.images || []).map((im, i) => ({
-        imgId: im.imgId,
-        label: sanitizeName(ve.title || "prompt") + "-" + (i + 1)
-      })), sanitizeName(ve.title || "prompt") + "-images.zip"))
+      onDownloadOne: (imgId, i) => askExport("this image", () =>
+        downloadOneImage(imgId, sanitizeName(ve.title || "prompt") + "-" + (i + 1))),
+      onDownloadAll: () => {
+        const items = (ve.images || []).map((im, i) => ({
+          imgId: im.imgId,
+          label: sanitizeName(ve.title || "prompt") + "-" + (i + 1)
+        }));
+        askImageExport("this prompt's images", () => saveSelectedImages(items),
+          () => zipSelectedImages(items, sanitizeName(ve.title || "prompt") + "-images.zip"));
+      }
     });
   })(), newPBookOpen && /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
@@ -19327,8 +19403,12 @@ function RolecraftVault() {
       onEdit: () => {
         setEditingChar(vc);
       },
-      onDownloadImages: () => askExport("this character's images", () => downloadImagesZip([vc], [], sanitizeName(vc.name) + "-images.zip")),
-      onDownloadSelected: (items, albumName) => askExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images", () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
+      onDownloadImages: () => askImageExport("this character's images",
+        () => downloadImagesFiles([vc], []),
+        () => downloadImagesZip([vc], [], sanitizeName(vc.name) + "-images.zip")),
+      onDownloadSelected: (items, albumName) => askImageExport(albumName ? "the \u201c" + albumName + "\u201d album" : "the selected images",
+        () => saveSelectedImages(items),
+        () => zipSelectedImages(items, sanitizeName(vc.name) + "-" + sanitizeName(albumName || "selected") + ".zip")),
       onExportJson: scope => askExport(scope === "all" || scope === undefined ? "this character (including images)" : "the \u201c" + (scope === null ? "Default" : (((vc.variants || []).find(v => v.id === scope) || {}).name || "variant")) + "\u201d version (including its images)", () => exportCharJson(vc, scope)), // no tag warning: this export is not necessarily bound for CharSnap
       onExportText: scope => askExport("this character as text, with no pictures", () => exportCharTextJson(vc, scope)),
       onExportCharSnapVariant: (scope, hide) => askExport("this version as a CharSnap variant file" + (hide ? ", with its guts hidden" : ""), () => exportCharSnapVariant(vc, scope, hide)),
@@ -19724,7 +19804,7 @@ function RolecraftVault() {
     onExport: () => askExport("a full vault backup", exportAll),
     onImport: importAll,
     toast: toast,
-    onDownloadImages: () => askExport("every image in the vault", () => {
+    onDownloadImages: () => {
         /* This said "every image in the vault" while collecting only what hung
            off a character or a persona. Bucket covers, book covers and the
            pictures inside lore entries and prompts were left behind. */
@@ -19746,8 +19826,10 @@ function RolecraftVault() {
         });
         entryPics(lore, "lorebooks", e => e.title, e => e.world);
         entryPics(prompts, "prompts", e => e.title, e => e.collection);
-        return downloadImagesZip(chars, personas, "rolecraft-images.zip", extras);
-      }),
+        askImageExport("every image in the vault",
+          () => downloadImagesFiles(chars, personas, extras),
+          () => downloadImagesZip(chars, personas, "rolecraft-images.zip", extras));
+      },
     theme: theme,
     setTheme: setTheme,
     authState: authState,
@@ -19862,11 +19944,11 @@ function RolecraftVault() {
       lineHeight: 1.65,
       marginBottom: 16
     }
-  }, "Inside the vault, your data is encrypted at rest. The file you're about to create — ", exportConfirm.what, " — is", /*#__PURE__*/React.createElement("b", {
+  }, "Inside the vault, your data is encrypted at rest. The export you're about to create — ", exportConfirm.what, " — is", /*#__PURE__*/React.createElement("b", {
     style: {
       color: "var(--text)"
     }
-  }, " not encrypted"), ": anyone who gets hold of the file can open and read it. Save it somewhere you trust, and delete copies you no longer need."), exportConfirm.warning && /*#__PURE__*/React.createElement("div", {
+  }, " not encrypted"), ": anyone who gets hold of the files can open and view them. Save them somewhere you trust, and delete copies you no longer need."), exportConfirm.warning && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       lineHeight: 1.6,
@@ -19877,10 +19959,18 @@ function RolecraftVault() {
       padding: "10px 12px",
       marginBottom: 16
     }
-  }, exportConfirm.warning), /*#__PURE__*/React.createElement("div", {
+  }, exportConfirm.warning), exportConfirm.pictures && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      lineHeight: 1.6,
+      color: "var(--mut)",
+      marginBottom: 16
+    }
+  }, "Individual files go to Downloads on Windows. On Android they go to Pictures/Rolecraft Vault so they appear in Gallery apps. Choose ZIP when you want one portable archive instead."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 10
+      gap: 10,
+      flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
@@ -19889,7 +19979,14 @@ function RolecraftVault() {
       setExportConfirm(null);
       fn();
     }
-  }, "Export anyway"), /*#__PURE__*/React.createElement("button", {
+  }, exportConfirm.pictures ? "Save individual files" : "Export anyway"), exportConfirm.altFn && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => {
+      const fn = exportConfirm.altFn;
+      setExportConfirm(null);
+      fn();
+    }
+  }, "Create ZIP"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setExportConfirm(null)
   }, "Cancel")))), zipProg && /*#__PURE__*/React.createElement("div", {

@@ -65,7 +65,11 @@ const build = env => new Function("window", "document", "URL", "FileReader", "Bl
 function makeEnv(capacitor) {
   const log = { anchorClicks: [], writes: [], revoked: 0, notices: [] };
   class FakeBlob {
-    constructor(parts) { this.parts = parts || []; this.size = String(parts && parts[0] || "").length; }
+    constructor(parts, options) {
+      this.parts = parts || [];
+      this.size = String(parts && parts[0] || "").length;
+      this.type = options && options.type || "";
+    }
   }
   class FakeReader {
     readAsDataURL(blob) {
@@ -93,6 +97,15 @@ const wait = () => new Promise(r => setTimeout(r, 30));
   check("current Android exports use the public Downloads collection",
     /MediaStore\.Downloads\.EXTERNAL_CONTENT_URI/.test(EXPORT_PLUGIN) &&
     /Environment\.DIRECTORY_DOWNLOADS/.test(EXPORT_PLUGIN) && /IS_PENDING/.test(EXPORT_PLUGIN));
+  check("individual Android pictures use a public Gallery-visible collection",
+    /MediaStore\.Images\.Media\.EXTERNAL_CONTENT_URI/.test(EXPORT_PLUGIN) &&
+    /Environment\.DIRECTORY_PICTURES/.test(EXPORT_PLUGIN) &&
+    /Pictures\/Rolecraft Vault/.test(EXPORT_PLUGIN) &&
+    /MediaScannerConnection\.scanFile/.test(EXPORT_PLUGIN));
+  check("picture downloads offer files or a ZIP instead of forcing an archive",
+    /const askImageExport =/.test(SRC) &&
+    /Save individual files/.test(SRC) && /Create ZIP/.test(SRC) &&
+    /collection: "pictures", quiet: true/.test(SRC));
   check("Android's picker accepts JSON files as labelled by common Downloads apps",
     /const JSON_FILE_ACCEPT = "\.json,application\/json,text\/json,text\/plain,application\/octet-stream"/.test(SRC) &&
     (SRC.match(/accept: JSON_FILE_ACCEPT/g) || []).length >= 4);
@@ -105,6 +118,32 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     await wait();
     check("desktop still saves through the download link", log.anchorClicks.length === 1, "clicks=" + log.anchorClicks.length);
     check("and with the right filename", log.anchorClicks[0] === "backup.json", String(log.anchorClicks[0]));
+  }
+
+  /* ---- a picture on the phone: public Pictures, not a zip in Downloads ---- */
+  {
+    const written = [];
+    const cap = { nativePromise: async (plugin, method, opts) => {
+      written.push({ plugin, method, opts });
+      if (method === "begin") return { token: "picture-1", location: "Pictures/Rolecraft Vault" };
+      if (method === "finish") return { location: "Pictures/Rolecraft Vault" };
+      return {};
+    } };
+    const { env, log, FakeBlob } = makeEnv(cap);
+    const api = build(env);
+    const notices = [];
+    api.setSaveNotice(m => notices.push(m));
+    const where = await api.saveFile(new FakeBlob(["jpeg"], { type: "image/jpeg" }), "portrait.jpg", {
+      collection: "pictures"
+    });
+    const begin = written.find(x => x.method === "begin");
+    check("phone picture saves request the Pictures collection",
+      begin && begin.opts.collection === "pictures" && begin.opts.mime === "image/jpeg",
+      begin && JSON.stringify(begin.opts));
+    check("the picture does not fall back to a swallowed download link", log.anchorClicks.length === 0);
+    check("the result names the Gallery-visible album",
+      where === "Pictures/Rolecraft Vault" && notices.length === 1 && /Pictures\/Rolecraft Vault/.test(notices[0]),
+      notices[0] || "(silent)");
   }
 
   /* ---- the phone: the plugin is used and the link is never touched ---- */
