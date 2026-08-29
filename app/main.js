@@ -24,7 +24,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.242";
+const FACTORY_BUILD = "1.243";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -421,14 +421,21 @@ function forgetHash(key) {
 function hashOfRecord(k) {
   const f = keyToFile(k);
   let st;
-  try { st = fs.statSync(f); } catch (e) { return null; }
+  try { st = fs.statSync(f); } catch (e) {
+    if (e && e.code === "ENOENT") return null;
+    throw new Error("Couldn't inspect vault record " + k + ": " + e.message);
+  }
   const rec = loadHashCache()[path.basename(f)];
   if (rec && rec.size === st.size && rec.mtimeMs === st.mtimeMs && rec.hash) return rec.hash;
   try {
     const v = readValue(k);
-    if (v === null || v === undefined) return null;
-    return rememberHash(k, v);
-  } catch (e) { return null; }
+    if (v === null || v === undefined) throw new Error("record disappeared");
+    const hash = rememberHash(k, v);
+    if (!hash) throw new Error("couldn't cache its fingerprint");
+    return hash;
+  } catch (e) {
+    throw new Error("Couldn't read vault record " + k + ": " + e.message);
+  }
 }
 function buildManifest(report) {
   const sig = vaultSignature();
@@ -504,6 +511,16 @@ function countRecords(manifest) {
 }
 const transferPlainPath = () => path.join(updatesDir, "transfer.plain");
 
+function writeAllSync(fd, value) {
+  const buf = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  let at = 0;
+  while (at < buf.length) {
+    const written = fs.writeSync(fd, buf, at, buf.length - at);
+    if (!written) throw new Error("The transfer file could not be fully written");
+    at += written;
+  }
+}
+
 /* Streams the vault to disk one record at a time as encrypted NDJSON.
    Never builds a whole-vault string, so big image libraries can't blow
    V8's max string length (the "Invalid string length" failure). */
@@ -513,23 +530,21 @@ async function buildRecordFile(secret, keys, outPath, report) {
   const cipher = crypto.createCipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
   try { fs.unlinkSync(outPath); } catch (e) {}
   const fd = fs.openSync(outPath, "w");
-  const put = buf => { if (buf && buf.length) fs.writeSync(fd, buf); };
+  const put = buf => { if (buf && buf.length) writeAllSync(fd, buf); };
   try {
-    fs.writeSync(fd, Buffer.from("RCVX2"));
-    fs.writeSync(fd, salt);
-    fs.writeSync(fd, iv);
+    writeAllSync(fd, Buffer.from("RCVX2"));
+    writeAllSync(fd, salt);
+    writeAllSync(fd, iv);
     put(cipher.update(Buffer.from(JSON.stringify({
       app: "rolecraft-vault", kind: "lan-delta", at: new Date().toISOString()
     }) + "\n", "utf8")));
     let count = 0;
     let lastYield = Date.now();
     for (let i = 0; i < keys.length; i++) {
-      let v;
-      try { v = readValue(keys[i]); } catch (e) { v = null; }
-      if (v !== null && v !== undefined) {
-        put(cipher.update(Buffer.from(JSON.stringify({ k: keys[i], v: String(v) }) + "\n", "utf8")));
-        count++;
-      }
+      const v = readValue(keys[i]);
+      if (v === null || v === undefined) throw new Error("Vault record disappeared while packing: " + keys[i]);
+      put(cipher.update(Buffer.from(JSON.stringify({ k: keys[i], v: String(v) }) + "\n", "utf8")));
+      count++;
       if (report) report(i + 1, keys.length);
       if (Date.now() - lastYield > 40) {
         await new Promise(r => setImmediate(r));
@@ -537,7 +552,7 @@ async function buildRecordFile(secret, keys, outPath, report) {
       }
     }
     put(cipher.final());
-    fs.writeSync(fd, cipher.getAuthTag());
+    writeAllSync(fd, cipher.getAuthTag());
     fs.closeSync(fd);
     return { count, bytes: fs.statSync(outPath).size, path: outPath };
   } catch (e) {
@@ -548,7 +563,9 @@ async function buildRecordFile(secret, keys, outPath, report) {
 }
 
 function estimateKeyBytes(k) {
-  const m = /^(?:img|th):(.+)$/.exec(k);
+  /* sz: records the original. A thumbnail is deliberately much smaller and
+     must be measured from its own value or compatibility batches become tiny. */
+  const m = /^img:(.+)$/.exec(k);
   if (m) {
     try {
       const n = Number(readValue("sz:" + m[1]));
@@ -558,7 +575,7 @@ function estimateKeyBytes(k) {
   try {
     const v = readValue(k);
     if (v === null || v === undefined) return 0;
-    return String(v).length;
+    return Buffer.byteLength(String(v), "utf8");
   } catch (e) { return 0; }
 }
 
@@ -642,12 +659,12 @@ function openRecordWriter(outPath, secret, sharedCrypto) {
   const cipher = crypto.createCipheriv("aes-256-gcm", recordCrypto.key, iv);
   try { fs.unlinkSync(outPath); } catch (e) {}
   const fd = fs.openSync(outPath, "w");
-  fs.writeSync(fd, Buffer.from("RCVX2"));
-  fs.writeSync(fd, salt);
-  fs.writeSync(fd, iv);
+  writeAllSync(fd, Buffer.from("RCVX2"));
+  writeAllSync(fd, salt);
+  writeAllSync(fd, iv);
   const putPlain = buf => {
     const out = cipher.update(buf);
-    if (out && out.length) fs.writeSync(fd, out);
+    if (out && out.length) writeAllSync(fd, out);
   };
   putPlain(Buffer.from(JSON.stringify({
     app: "rolecraft-vault", kind: "lan-delta", at: new Date().toISOString()
@@ -659,8 +676,8 @@ function openRecordWriter(outPath, secret, sharedCrypto) {
     },
     finish() {
       const last = cipher.final();
-      if (last && last.length) fs.writeSync(fd, last);
-      fs.writeSync(fd, cipher.getAuthTag());
+      if (last && last.length) writeAllSync(fd, last);
+      writeAllSync(fd, cipher.getAuthTag());
       fs.closeSync(fd);
       return { path: outPath, bytes: fs.statSync(outPath).size };
     },
@@ -683,11 +700,11 @@ function openFramedWriter(outPath, secret, sharedCrypto) {
   const fd = fs.openSync(outPath, "w");
   const put = buf => {
     const out = cipher.update(buf);
-    if (out && out.length) fs.writeSync(fd, out);
+    if (out && out.length) writeAllSync(fd, out);
   };
-  fs.writeSync(fd, Buffer.from("RCVX3"));
-  fs.writeSync(fd, salt);
-  fs.writeSync(fd, iv);
+  writeAllSync(fd, Buffer.from("RCVX3"));
+  writeAllSync(fd, salt);
+  writeAllSync(fd, iv);
   return {
     path: outPath,
     writeRecord(k, v) {
@@ -698,8 +715,8 @@ function openFramedWriter(outPath, secret, sharedCrypto) {
     },
     finish() {
       const last = cipher.final();
-      if (last && last.length) fs.writeSync(fd, last);
-      fs.writeSync(fd, cipher.getAuthTag());
+      if (last && last.length) writeAllSync(fd, last);
+      writeAllSync(fd, cipher.getAuthTag());
       fs.closeSync(fd);
       return { path: outPath, bytes: fs.statSync(outPath).size };
     },
@@ -718,24 +735,23 @@ function buildTransferFile(secret) {
   const out = transferFilePath();
   try { fs.unlinkSync(out); } catch (e) {}
   const fd = fs.openSync(out, "w");
-  const put = buf => { if (buf && buf.length) fs.writeSync(fd, buf); };
+  const put = buf => { if (buf && buf.length) writeAllSync(fd, buf); };
   try {
-    fs.writeSync(fd, Buffer.from("RCVX2"));
-    fs.writeSync(fd, salt);
-    fs.writeSync(fd, iv);
+    writeAllSync(fd, Buffer.from("RCVX2"));
+    writeAllSync(fd, salt);
+    writeAllSync(fd, iv);
     put(cipher.update(Buffer.from(JSON.stringify({
       app: "rolecraft-vault", kind: "lan-transfer", at: new Date().toISOString()
     }) + "\n", "utf8")));
     let count = 0;
     for (const k of allKeys()) {
-      let v;
-      try { v = readValue(k); } catch (e) { continue; }
-      if (v === null || v === undefined) continue;
+      const v = readValue(k);
+      if (v === null || v === undefined) throw new Error("Vault record disappeared while packing: " + k);
       put(cipher.update(Buffer.from(JSON.stringify({ k: k, v: String(v) }) + "\n", "utf8")));
       count++;
     }
     put(cipher.final());
-    fs.writeSync(fd, cipher.getAuthTag());
+    writeAllSync(fd, cipher.getAuthTag());
     fs.closeSync(fd);
     return { count, bytes: fs.statSync(out).size, path: out };
   } catch (e) {
@@ -1181,12 +1197,12 @@ function decryptTransferFile(encPath, plainPath, secret, report) {
       const got = fs.readSync(fdIn, buf, 0, want, pos);
       if (got <= 0) break;
       const out = d.update(buf.slice(0, got));
-      if (out.length) fs.writeSync(fdOut, out);
+      if (out.length) writeAllSync(fdOut, out);
       pos += got;
       if (report) report(pos - HEAD, stop - HEAD);
     }
     const fin = d.final(); // throws if the code is wrong or bytes were tampered with
-    if (fin.length) fs.writeSync(fdOut, fin);
+    if (fin.length) writeAllSync(fdOut, fin);
   } finally {
     fs.closeSync(fdIn);
     fs.closeSync(fdOut);
@@ -1565,9 +1581,15 @@ function encodeValue(value, key) {
    mid-write then leaves the previous record intact instead of a truncated one —
    chars:all holds every character in a single file, so a half-write is fatal. */
 function writeFileAtomic(file, payload) {
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, payload, "utf8");
-  fs.renameSync(tmp, file);
+  /* A fixed .tmp name lets two legitimate writes race over the same staging
+     file. Give each attempt its own sibling and clean it on every failure. */
+  const tmp = file + "." + process.pid + "." + crypto.randomBytes(6).toString("hex") + ".tmp";
+  try {
+    fs.writeFileSync(tmp, payload, "utf8");
+    fs.renameSync(tmp, file);
+  } finally {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (e) {}
+  }
 }
 function writeValue(key, value) {
   /* Never write while locked. encodeValue with no master key falls back to
@@ -1718,10 +1740,8 @@ function rewrapAll(oldKeyBuf, newKeyBuf, newSecurity) {
   }
   // Past this line the journal makes the swap inevitable: every record already has
   // a finished new-key copy, so an interrupted run can always be completed forward.
-  fs.writeFileSync(rewrapFile, JSON.stringify({ security: newSecurity || null }), "utf8");
-  for (const k of prepared) fs.renameSync(rewrapPath(k), keyToFile(k));
-  saveSecurity(newSecurity || null);
-  try { fs.unlinkSync(rewrapFile); } catch (e) {}
+  writeFileAtomic(rewrapFile, JSON.stringify({ security: newSecurity || null }));
+  finishPendingRewrap();
 }
 
 /* Run at startup. With a journal, finish the swap; without one, the .rewrap files
@@ -1735,9 +1755,14 @@ function finishPendingRewrap() {
     for (const f of pending) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) {} }
     return;
   }
+  const failed = [];
   for (const f of pending) {
-    try { fs.renameSync(path.join(dataDir, f), path.join(dataDir, f.slice(0, -".rewrap".length))); } catch (e) {}
+    try { fs.renameSync(path.join(dataDir, f), path.join(dataDir, f.slice(0, -".rewrap".length))); }
+    catch (e) { failed.push(f + ": " + e.message); }
   }
+  /* Never advance security.json while any record is still under the old key.
+     The journal remains, so the next launch can complete the forward commit. */
+  if (failed.length) throw new Error("Couldn't finish re-encrypting " + failed.length + " vault record(s)");
   saveSecurity(journal.security);
   try { fs.unlinkSync(rewrapFile); } catch (e) {}
 }
@@ -1867,7 +1892,9 @@ function setupAuthIpc() {
   // rewrapAll writes security.json itself, as the last step of an all-or-nothing swap
   const rewrapFailed = (err) => ({
     ok: false,
-    error: "Couldn't re-encrypt the vault: " + err.message + ". Nothing was changed.",
+    error: fs.existsSync(rewrapFile)
+      ? "Vault re-encryption was interrupted. Close and reopen Rolecraft Vault so it can safely finish before you continue."
+      : "Couldn't re-encrypt the vault: " + err.message + ". Nothing was changed.",
   });
 
   ipcMain.handle("auth-set-password", (e, pw) => {

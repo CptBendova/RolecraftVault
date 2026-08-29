@@ -12,6 +12,10 @@ const fs = require("fs");
 const path = require("path");
 
 const SRC = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+const EXPORT_PLUGIN = fs.readFileSync(path.join(__dirname, "..", "mobile", "android", "app", "src", "main", "java",
+  "com", "cptbendova", "rolecraftvault", "FileExportPlugin.java"), "utf8");
+const MAIN_ACTIVITY = fs.readFileSync(path.join(__dirname, "..", "mobile", "android", "app", "src", "main", "java",
+  "com", "cptbendova", "rolecraftvault", "MainActivity.java"), "utf8");
 
 /* lift saveFile, phoneSave, writeSomewhere, SAVE_SPOTS and the notice hook */
 function lift(name, kind) {
@@ -40,10 +44,13 @@ const lifted = [
   lift("revokeSoon"),        // saveFile calls it on the desktop path
   lift("SAVE_SPOTS", "const "),
   lift("setSaveNotice"),
+  lift("downloadExport"),
   lift("writeSomewhere", "async function "),
   lift("phoneSave"),
   lift("appendJsonText"),
   lift("streamJsonSomewhere"),
+  lift("appendDownloadText"),
+  lift("streamJsonDownload"),
   lift("phoneJsonStream"),
   lift("saveFile"),
 ].join("\n");
@@ -81,6 +88,15 @@ const check = (label, ok, detail) => { if (!ok) bad++; console.log("  " + (ok ? 
 const wait = () => new Promise(r => setTimeout(r, 30));
 
 (async () => {
+  check("the Android shell registers its public export bridge",
+    /registerPlugin\(FileExportPlugin\.class\)/.test(MAIN_ACTIVITY));
+  check("current Android exports use the public Downloads collection",
+    /MediaStore\.Downloads\.EXTERNAL_CONTENT_URI/.test(EXPORT_PLUGIN) &&
+    /Environment\.DIRECTORY_DOWNLOADS/.test(EXPORT_PLUGIN) && /IS_PENDING/.test(EXPORT_PLUGIN));
+  check("Android's picker accepts JSON files as labelled by common Downloads apps",
+    /const JSON_FILE_ACCEPT = "\.json,application\/json,text\/json,text\/plain,application\/octet-stream"/.test(SRC) &&
+    (SRC.match(/accept: JSON_FILE_ACCEPT/g) || []).length >= 4);
+
   /* ---- the desktop edition: no Capacitor, so the anchor is used ---- */
   {
     const { env, log, FakeBlob } = makeEnv(undefined);
@@ -94,7 +110,12 @@ const wait = () => new Promise(r => setTimeout(r, 30));
   /* ---- the phone: the plugin is used and the link is never touched ---- */
   {
     const written = [];
-    const cap = { nativePromise: async (plugin, method, opts) => { written.push({ plugin, method, opts }); return {}; } };
+    const cap = { nativePromise: async (plugin, method, opts) => {
+      written.push({ plugin, method, opts });
+      if (method === "begin") return { token: "export-1", location: "Downloads" };
+      if (method === "finish") return { location: "Downloads" };
+      return {};
+    } };
     const { env, log, FakeBlob } = makeEnv(cap);
     const api = build(env);
     const notices = [];
@@ -102,21 +123,25 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     api.saveFile(new FakeBlob(["hello"]), "backup.json");
     await wait();
     check("the phone does not use the download link", log.anchorClicks.length === 0, "clicks=" + log.anchorClicks.length);
-    check("it writes through the Filesystem plugin", written.length === 1 && written[0].plugin === "Filesystem" && written[0].method === "writeFile",
-      written.length ? written[0].plugin + "." + written[0].method : "no call");
-    if (written.length) {
-      const o = written[0].opts;
-      check("with the filename it was given", o.path === "backup.json", String(o.path));
-      check("and the bytes, base64 encoded", Buffer.from(o.data, "base64").toString("utf8") === "hello", JSON.stringify(o.data));
-      check("somewhere a person can find it", o.directory === "DOCUMENTS", String(o.directory));
-    }
-    check("and it says where it went", notices.length === 1 && /backup\.json/.test(notices[0]), notices[0] || "(silent)");
+    check("it writes through the public Downloads bridge", written.length === 3 && written.every(x => x.plugin === "FileExport"),
+      written.map(x => x.plugin + "." + x.method).join(", "));
+    const begin = written.find(x => x.method === "begin");
+    const append = written.find(x => x.method === "append");
+    check("with the filename it was given", begin && begin.opts.filename === "backup.json", begin && String(begin.opts.filename));
+    check("and the bytes, base64 encoded", append && Buffer.from(append.opts.data, "base64").toString("utf8") === "hello", append && JSON.stringify(append.opts.data));
+    check("somewhere a person can find it", written.some(x => x.method === "finish"));
+    check("and it says where it went", notices.length === 1 && /backup\.json.*Downloads/.test(notices[0]), notices[0] || "(silent)");
   }
 
   /* ---- the phone, when the public folder is refused ---- */
   {
     const tried = [];
-    const cap = { nativePromise: async (p, m, o) => { tried.push(o.directory); if (o.directory !== "DATA") throw new Error("denied"); return {}; } };
+    const cap = { nativePromise: async (p, m, o) => {
+      if (p === "FileExport") throw new Error("old APK");
+      tried.push(o.directory);
+      if (o.directory !== "DATA") throw new Error("denied");
+      return {};
+    } };
     const { env, FakeBlob } = makeEnv(cap);
     const api = build(env);
     const notices = [];
@@ -142,7 +167,12 @@ const wait = () => new Promise(r => setTimeout(r, 30));
   /* ---- a large Android backup: bounded UTF-8 bridge calls ---- */
   {
     const written = [];
-    const cap = { nativePromise: async (plugin, method, opts) => { written.push({ plugin, method, opts }); return {}; } };
+    const cap = { nativePromise: async (plugin, method, opts) => {
+      written.push({ plugin, method, opts });
+      if (method === "begin") return { token: "large-1", location: "Downloads" };
+      if (method === "finish") return { location: "Downloads" };
+      return {};
+    } };
     const { env } = makeEnv(cap);
     const api = build(env);
     const huge = "x".repeat(700000);
@@ -151,12 +181,12 @@ const wait = () => new Promise(r => setTimeout(r, 30));
       await append(huge);
       await append("\"}");
     });
-    const writes = written.filter(x => x.method === "writeFile" || x.method === "appendFile");
+    const writes = written.filter(x => x.plugin === "FileExport" && x.method === "append");
     check("large phone backups are streamed instead of passed as one bridge value", writes.length >= 4,
       "calls=" + writes.length);
-    check("the first piece creates the file and later pieces append", writes[0].method === "writeFile" && writes.slice(1).every(x => x.method === "appendFile"));
+    check("one public download is opened and finished", written[0].method === "begin" && written[written.length - 1].method === "finish");
     check("every bridge value stays bounded", writes.every(x => String(x.opts.data).length <= 256 * 1024));
-    check("streamed JSON is written as UTF-8", writes.every(x => x.opts.encoding === "utf8") && where === "Documents");
+    check("streamed JSON is written as UTF-8", writes.every(x => x.opts.encoding === "utf8") && where === "Downloads");
   }
 
   console.log("");

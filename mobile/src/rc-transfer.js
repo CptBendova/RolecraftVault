@@ -397,8 +397,8 @@
      felt as slow as the first. Keys with no fingerprint are treated as
      missing and will be fetched; they get a fingerprint when they land. */
   let cachedLocal = null;
-  async function localManifest(report) {
-    if (cachedLocal && Date.now() - cachedLocal.at < 120000) {
+  async function localManifest(report, force) {
+    if (!force && cachedLocal && Date.now() - cachedLocal.at < 120000) {
       if (report) report(1, 1);
       return cachedLocal.manifest;
     }
@@ -466,7 +466,10 @@
         await decryptPayload(await ask(target, "/whoami", "GET", null, 30000), target.secret)));
     } catch (e) {}
 
-    const local = await localManifest((i, n) => phase("comparing", i, n));
+    /* Preview may be followed by edits before the user confirms. A real receive
+       must rescan so a two-minute-old preview cannot mark changed work unchanged
+       or removable. */
+    const local = await localManifest((i, n) => phase("comparing", i, n), !preview);
     const needed = [];
     let added = 0, updated = 0;
     for (const k of Object.keys(remote)) {

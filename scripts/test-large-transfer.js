@@ -38,7 +38,7 @@ async function run() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-framed-transfer-"));
   const keyFrom = (secret, salt) => nodeCrypto.createHash("sha256").update(secret).update(salt).digest();
   const writers = new Function("fs", "crypto", "Buffer", "JSON", "keyFrom",
-    lift(MAIN, "createRecordCrypto") + "\n" + lift(MAIN, "framedRecord") + "\n"
+    lift(MAIN, "writeAllSync") + "\n" + lift(MAIN, "createRecordCrypto") + "\n" + lift(MAIN, "framedRecord") + "\n"
       + lift(MAIN, "openRecordWriter") + "\n" + lift(MAIN, "openFramedWriter")
       + "\nreturn { createRecordCrypto, openRecordWriter, openFramedWriter };")(
         fs, nodeCrypto, Buffer, JSON, keyFrom);

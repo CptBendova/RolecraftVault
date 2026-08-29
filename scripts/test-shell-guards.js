@@ -72,7 +72,7 @@ console.log("\nwriting a record while the vault is locked");
       rememberHash: () => {},
       isLocked: () => locked,
       masterKey,
-      fs, path, written
+      fs, path, crypto: require("crypto"), written
     };
     const fn = new Function(...Object.keys(ctx), code + "\nreturn { writeValue };");
     return fn(...Object.values(ctx));

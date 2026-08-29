@@ -86,7 +86,7 @@ async function run() {
     return nodeCrypto.createHash("sha256").update(Buffer.from(secret)).update(Buffer.from(salt)).digest();
   };
   const writerFactory = new Function("fs", "crypto", "Buffer", "JSON", "keyFrom",
-    lift(MAIN, "createRecordCrypto") + "\n" + lift(MAIN, "openRecordWriter")
+    lift(MAIN, "writeAllSync") + "\n" + lift(MAIN, "createRecordCrypto") + "\n" + lift(MAIN, "openRecordWriter")
       + "\nreturn { createRecordCrypto, openRecordWriter };");
   const { createRecordCrypto, openRecordWriter } = writerFactory(fs, nodeCrypto, Buffer, JSON, keyFrom);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-fast-transfer-"));

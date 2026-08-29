@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TransferKeepAlivePlugin.class);
         registerPlugin(TransferTransportPlugin.class);
         registerPlugin(DeviceUnlockPlugin.class);
+        registerPlugin(FileExportPlugin.class);
         SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
 

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.242";
+const APP_VERSION = "1.243";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.242";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.242 — current",
+  heading: "1.243 — current",
+  notes: ["A twenty-defect reliability audit covered editors, recovery, history, pictures, Recently deleted, damaged vault data and Windows transfers. Draft protection now catches writing started while an editor is still opening, removes expired draft payloads as well as their index entries, waits for a real save before clearing recovery, and blocks a second Save while the first is running. Failed portrait and gallery writes explain what happened and do not leave unattached picture data behind.", "Character history now notices every stored writing and organisation field. Restoring an old version preserves portraits from both legacy and later variants, imported variants receive a genuinely unused default name, old characters can add their first section, and valid JSON with the wrong vault shape is refused instead of reaching a broken screen. Persona, lore and prompt picture replacement cleans unused bytes only after the owning record is safely stored; bulk Undo restores colliding records under fresh ids, keeps unknown bin items untouched, and deletion no longer overwrites a collection change that completed while the bin was saving.", "Windows transfer manifests and packs now stop on an unreadable record instead of silently presenting an incomplete vault as complete. Unicode text and thumbnails are sized correctly for batches, encrypted writers finish every byte even after a short filesystem write, concurrent atomic saves use separate staging files, and interrupted password re-encryption cannot advance the password record while vault files are still pending. Android confirms a transfer against a fresh local scan instead of a potentially stale preview.", "Android JSON, text, picture and backup exports now appear in the public Downloads folder, including streamed multi-gigabyte backups. Import JSON opens Android's system picker and accepts the JSON labels used by common Downloads apps while still validating the actual contents before import. Update character from JSON and the other import paths now use Android's content-provider-safe reader, fixing files that could be selected but not opened on some phones. The in-app guide and completion message name the location. Windows needs the full 1.243 setup because the shell changed; Android users need the 1.243 APK."]
+}, {
+  heading: "1.242",
   notes: ["Android's bottom navigation now actually reveals the tab you choose when a character, persona, lorebook, lore entry, prompt collection or prompt is open. The old screen is dismissed first instead of staying fixed above the newly selected library, including when leaving a nested lore entry. Tapping the current tab also returns to that library. Editors keep their existing protected close flow so changing destinations cannot silently discard unsaved writing. Android users need the 1.242 APK; Windows carries the same navigation fix in both the update file and full installer."]
 }, {
   heading: "1.241",
@@ -769,13 +772,28 @@ function revokeSoon(url, delay) {
    the same trap the transfer hit, and rc-transfer.js calls nativePromise for
    the same reason.
 
-   Where it can be written depends on the Android version and this app carries
-   no legacy-storage flag, so the public Documents folder is tried first and
-   the app's own storage after, and whichever worked is what the message
-   names. Guessing would be worse than asking. */
+   Current Android's public Downloads collection is not exposed by Capacitor's
+   Filesystem directory enum. The installed app therefore uses its small native
+   FileExport bridge first. Documents and private app storage remain fallbacks
+   for old APKs and devices that refuse public storage. */
 let saveNotice = null;
 function setSaveNotice(fn) { saveNotice = fn; }
+/* Android file managers disagree about JSON MIME types. The extension remains
+   required by every parser; the aliases only keep a valid Downloads file from
+   being greyed out by the system picker. */
+const JSON_FILE_ACCEPT = ".json,application/json,text/json,text/plain,application/octet-stream";
 const SAVE_SPOTS = [["DOCUMENTS", "Documents"], ["EXTERNAL", "the app's storage"], ["DATA", "the app's private files"]];
+function downloadExport(C, filename, data, encoding, mime) {
+  let token = null;
+  return C.nativePromise("FileExport", "begin", { filename, mime: mime || "application/octet-stream" }).then(opened => {
+    token = opened && opened.token;
+    if (!token) throw new Error("Android did not open the download");
+    return C.nativePromise("FileExport", "append", { token, data, encoding });
+  }).then(() => C.nativePromise("FileExport", "finish", { token })).then(done => done && done.location || "Downloads", e => {
+    if (token) return C.nativePromise("FileExport", "abort", { token }).catch(() => {}).then(() => { throw e; });
+    throw e;
+  });
+}
 /* Its own declaration rather than an async arrow inside the reader: scan-js
    only tracks `function`, so an await in a nested arrow reads to it as a
    mistake. Teaching it about arrows turned out to mis-scope every other await
@@ -799,7 +817,8 @@ function phoneSave(filename, blob) {
     r.onload = () => {
       const s = String(r.result || "");
       const comma = s.indexOf(",");
-      writeSomewhere(C, filename, comma >= 0 ? s.slice(comma + 1) : s).then(resolve, reject);
+      const data = comma >= 0 ? s.slice(comma + 1) : s;
+      downloadExport(C, filename, data, "base64", blob.type).catch(() => writeSomewhere(C, filename, data)).then(resolve, reject);
     };
     r.readAsDataURL(blob);
   });
@@ -850,10 +869,37 @@ function streamJsonSomewhere(C, filename, produce) {
   }
   return tryNext();
 }
+function appendDownloadText(C, token, text) {
+  const s = String(text);
+  let off = 0;
+  function next() {
+    if (off >= s.length) return Promise.resolve();
+    let end = Math.min(s.length, off + 256 * 1024);
+    if (end < s.length) {
+      const left = s.charCodeAt(end - 1), right = s.charCodeAt(end);
+      if (left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff) end--;
+    }
+    const data = s.slice(off, end);
+    off = end;
+    return C.nativePromise("FileExport", "append", { token, data, encoding: "utf8" }).then(next);
+  }
+  return next();
+}
+function streamJsonDownload(C, filename, produce) {
+  let token = null;
+  return C.nativePromise("FileExport", "begin", { filename, mime: "application/json" }).then(opened => {
+    token = opened && opened.token;
+    if (!token) throw new Error("Android did not open the download");
+    return produce(text => appendDownloadText(C, token, text));
+  }).then(() => C.nativePromise("FileExport", "finish", { token })).then(() => "Downloads", e => {
+    if (token) return C.nativePromise("FileExport", "abort", { token }).catch(() => {}).then(() => { throw e; });
+    throw e;
+  });
+}
 function phoneJsonStream(filename, produce) {
   const C = typeof window !== "undefined" && window.Capacitor;
   if (!C || typeof C.nativePromise !== "function") return null;
-  return streamJsonSomewhere(C, filename, produce);
+  return streamJsonDownload(C, filename, produce).catch(() => streamJsonSomewhere(C, filename, produce));
 }
 function saveFile(blob, filename) {
   const onPhone = phoneSave(filename, blob);
@@ -930,7 +976,7 @@ function backupInspection(data) {
 }
 async function readBackupPreview(file) {
   try {
-    const data = JSON.parse(await file.text());
+    const data = JSON.parse(await readTextFile(file));
     return { file, data, info: backupInspection(data) };
   } catch (e) {
     return { file, data: null, info: { ok: false, fatal: ["The file is not valid JSON"], warnings: [], counts: { chars: 0, personas: 0, lore: 0, prompts: 0 }, imageCount: 0 } };
@@ -1005,6 +1051,20 @@ function fileToDataUrl(file) {
     };
     r.onerror = rej;
     r.readAsDataURL(file);
+  });
+}
+
+/* Android's system picker returns content-provider backed File objects. Their
+   File.text() implementation is inconsistent across WebView/vendor versions;
+   FileReader asks the WebView to stream that content URI and works for the same
+   Downloads files everywhere the image importer already supports. */
+function readTextFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) { reject(new Error("no file")); return; }
+    const r = new FileReader();
+    r.onload = e => resolve(String(e && e.target && e.target.result || ""));
+    r.onerror = () => reject(r.error || new Error("could not read the file"));
+    r.readAsText(file, "utf-8");
   });
 }
 
@@ -3327,6 +3387,7 @@ const GUIDE = [
         "The character page does not keep a strip of pictures down the side. Open Grid to see them. Small, Medium and Large show 3, 2 or 1 pictures per row on a phone and 4, 3 or 2 on a tablet, and the controls scroll away as you browse."
       ],
       "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
+      "Files you export from the Android app are saved in the phone's public Downloads folder. The confirmation message names the file and location. Import JSON opens Android's file picker, where the same files can be selected from Downloads. On an older app or a device that blocks Downloads, Rolecraft tries Documents and then its own storage, and the message names that fallback instead.",
       "A tablet is given more to work with than a phone: Dashboard Spotlight stays beside its details, galleries use more columns, and the Dashboard picture count fills complete rows for the available width. There is nothing to set beyond the size choices in Settings.",
       "After setting a master password, Settings can add secure fingerprint or face unlock when the device supports strong biometrics. Android Keystore seals the unlock secret and Android shows the system prompt; Rolecraft never receives fingerprint or face data. The password and optional PIN remain available as fallbacks."
     ]
@@ -4377,6 +4438,24 @@ function personaImgIds(p) {
   if (!p) return [];
   // deduplicated, for the reason given on charImgIds above
   return [...new Set([p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean))];
+}
+function restoreRecordsWithFreshIds(live, incoming) {
+  const ids = new Set((live || []).map(r => r && r.id).filter(Boolean));
+  const restored = (incoming || []).map(record => {
+    if (!record) return record;
+    if (!record.id) {
+      let id;
+      do { id = uid(); } while (ids.has(id));
+      ids.add(id);
+      return { ...record, id };
+    }
+    if (!ids.has(record.id)) { ids.add(record.id); return record; }
+    let id;
+    do { id = uid(); } while (ids.has(id));
+    ids.add(id);
+    return { ...record, id };
+  }).filter(Boolean);
+  return (live || []).concat(restored);
 }
 function picOf(fullCache, imgCache, id) {
   return id ? fullCache && fullCache[id] || imgCache && imgCache[id] : null;
@@ -8952,6 +9031,22 @@ function pushHistory(c, label) {
   const prev = Array.isArray(c.history) ? c.history : [];
   return [snap].concat(prev).slice(0, HISTORY_LIMIT);
 }
+function historySnapshotChanged(before, after) {
+  const content = snap => {
+    const out = { ...snap };
+    delete out.id;
+    delete out.at;
+    delete out.label;
+    return out;
+  };
+  return JSON.stringify(content(before)) !== JSON.stringify(content(after));
+}
+function nextVariantName(variants) {
+  const used = new Set((variants || []).map(v => String(v && v.name || "").trim().toLowerCase()).filter(Boolean));
+  let n = 2;
+  while (used.has(("Variant " + n).toLowerCase())) n++;
+  return "Variant " + n;
+}
 function applySnapshot(c, snap) {
   // restores written content only; profileImg, banner and gallery are deliberately left as they are
   const snapSections = snap.sections || [];
@@ -8988,12 +9083,26 @@ function applySnapshot(c, snap) {
        the artwork, and the JSON update path beside this one already gets it right.
        The snapshot is laid over the variant that is still there, so its text wins
        and everything else the variant carries is left alone. */
-    variants: (snap.variants || []).map(v => {
-      const liveV = v.id && (c.variants || []).find(x => x.id === v.id);
-      return Object.assign({}, liveV || {}, v, {
-        id: v.id || uid()
+    variants: (() => {
+      const current = (c.variants || []).slice();
+      const used = new Set();
+      const restored = (snap.variants || []).map(v => {
+        let at = v.id ? current.findIndex(x => x && x.id === v.id) : -1;
+        /* History written before variant ids existed can still be matched by its
+           name. Without this fallback the words came back under a fresh id and
+           the existing portrait was detached. */
+        if (at < 0 && v.name) at = current.findIndex((x, i) => !used.has(i) && x && x.name === v.name);
+        if (at >= 0) used.add(at);
+        const liveV = at >= 0 ? current[at] : null;
+        return Object.assign({}, liveV || {}, v, { id: liveV && liveV.id || v.id || uid() });
       });
-    })
+      /* History is text-only. Variants created after a snapshot may own unique
+         portraits, so dropping those records would also delete the pictures on
+         Save. Keep unmatched live variants intact while restoring every variant
+         that the snapshot actually describes. */
+      current.forEach((v, i) => { if (!used.has(i)) restored.push(v); });
+      return restored;
+    })()
   });
 }
 function historyWhen(ts) {
@@ -9016,15 +9125,19 @@ async function updateDraftIndex(entry, remove) {
   try { list = JSON.parse(await sGet(DRAFT_INDEX_KEY) || "[]"); } catch (e) {}
   list = Array.isArray(list) ? list.filter(x => x && x.key !== entry.key) : [];
   if (!remove) list.unshift(entry);
+  const dropped = list.slice(30);
   list = list.slice(0, 30);
   if (list.length) await sSet(DRAFT_INDEX_KEY, JSON.stringify(list));else await sDel(DRAFT_INDEX_KEY);
+  /* The index cap used to forget only the pointer. The encrypted draft itself
+     remained in the vault forever and large abandoned records accumulated. */
+  await Promise.all(dropped.map(x => x && x.key ? sDel(x.key).catch(() => {}) : null));
 }
 function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
   const key = draftKeyOf(type, initial.id);
   const baseText = useRef(JSON.stringify(initial));
   const live = useRef(value);
   live.current = value;
-  const loaded = useRef(false);
+  const [loaded, setLoaded] = useState(false);
   const writeQueue = useRef(Promise.resolve());
   const [found, setFound] = useState(null);
   const [status, setStatus] = useState({ state: "clean", savedAt: 0 });
@@ -9044,11 +9157,11 @@ function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
         const snap = JSON.parse(raw);
         if (snap && snap.data && JSON.stringify(snap.data) !== baseText.current) setFound(snap);
       } catch (e) {}
-    }).catch(() => {}).finally(() => { loaded.current = true; });
+    }).catch(() => {}).finally(() => { if (alive) setLoaded(true); });
     return () => { alive = false; };
   }, [key]);
   useEffect(() => {
-    if (!loaded.current || found) return;
+    if (!loaded || found) return;
     if (changed) setStatus(s => s.state === "saving" ? s : { state: "waiting", savedAt: s.savedAt || 0 });
     const timer = setTimeout(() => {
       if (!changed) { clear(); return; }
@@ -9062,7 +9175,7 @@ function useRecoverableDraft(type, initial, value, setValue, onDraftChange) {
       }).catch(() => setStatus({ state: "error", savedAt: 0 }));
     }, 800);
     return () => clearTimeout(timer);
-  }, [changed, value, found, key]);
+  }, [changed, value, found, key, loaded]);
   const restore = () => {
     if (!found) return;
     setValue(found.data);
@@ -9131,6 +9244,7 @@ function CharacterEditor({
   });
   const [lightbox, setLightbox] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [saving, setSaving] = useState(false);
   /* The same clipboard the persona and lore editors use, so a section copied
      here can be pasted there and the other way about. This editor keeps its own
      sections list rather than using SectionsField, which is why the copy and
@@ -9243,7 +9357,7 @@ function CharacterEditor({
     const f = files && files[0];
     if (!f) return;
     try {
-      const parsed = JSON.parse(await f.text());
+      const parsed = JSON.parse(await readTextFile(f));
       const results = normalizeCharacterImport(parsed);
       if (!results.length) {
         toast("No character found in that file. Accepts this app’s own character export, a CharSnap full-character or variant-only file, or a Tavern v1/v2 character card.");
@@ -9309,7 +9423,7 @@ function CharacterEditor({
     } else {
       const nv = Object.assign({
         id: uid(),
-        name: (inc.__vname || "").trim() || ((inc.name || "").trim() && inc.name !== c.name ? inc.name : "Variant " + (variants.length + 2))
+        name: (inc.__vname || "").trim() || ((inc.name || "").trim() && inc.name !== c.name ? inc.name : nextVariantName(variants))
       }, Object.fromEntries(VARIANT_FIELDS.map(k => [k, inc[k] || ""])));
       setC(p => ({ ...p, variants: [...variants, nv], history, __historyPushed: true }));
       setVIdx(variants.length);
@@ -9355,7 +9469,7 @@ function CharacterEditor({
     set("banner", imgId);
     toast("Banner updated");
   };
-  const doSave = () => {
+  const doSave = async () => {
     // as in RecordModal: Save must see a tag typed but not yet entered
     const c = cRef.current;
     if (!c.name.trim()) {
@@ -9364,7 +9478,7 @@ function CharacterEditor({
     }
     const before = snapshotChar(initial, "Before edit");
     const after = snapshotChar(c, "x");
-    const changed = JSON.stringify(before.fields) !== JSON.stringify(after.fields) || JSON.stringify(before.sections) !== JSON.stringify(after.sections) || JSON.stringify(before.variants) !== JSON.stringify(after.variants) || JSON.stringify(before.tags) !== JSON.stringify(after.tags);
+    const changed = historySnapshotChanged(before, after);
     const history = initial.createdAt && changed && !c.__historyPushed ? [before].concat(Array.isArray(c.history) ? c.history : []).slice(0, HISTORY_LIMIT) : c.history || [];
     const out = {
       ...c,
@@ -9373,8 +9487,15 @@ function CharacterEditor({
       createdAt: c.createdAt || Date.now()
     };
     delete out.__historyPushed;
-    draft.clear();
-    onSave(out);
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(out);
+      await draft.clear();
+    } catch (e) {
+      toast("Couldn't save the character - your protected draft is still here");
+      setSaving(false);
+    }
   };
   const setPortraitFor = imgId => {
     if (vIdx >= 0 && variants[vIdx]) {
@@ -9394,7 +9515,12 @@ function CharacterEditor({
     catch (e) { toast("Couldn't use that image — " + ((e && e.message) || "it could not be read")); return; }
     const thumb = await makeThumb(orig).catch(() => null);
     const imgId = uid();
-    await saveImage(imgId, orig, thumb);
+    try {
+      await saveImage(imgId, orig, thumb);
+    } catch (e) {
+      toast("Couldn't save that image - the vault may be out of room");
+      return;
+    }
     setPortraitFor(imgId);
     toast("Portrait set for \u201c" + activeVariantName + "\u201d");
   };
@@ -9402,13 +9528,15 @@ function CharacterEditor({
     if (!files) return;
     const added = [];
     let unusable = 0;
+    let unsaved = 0;
     for (const f of Array.from(files)) {
       let orig;
       try { orig = await fileToDataUrl(f); }
       catch (e) { unusable++; continue; }
       const thumb = await makeThumb(orig).catch(() => null);
       const imgId = uid();
-      await saveImage(imgId, orig, thumb);
+      try { await saveImage(imgId, orig, thumb); }
+      catch (e) { unsaved++; continue; }
       added.push({
         imgId,
         caption: "",
@@ -9421,7 +9549,8 @@ function CharacterEditor({
     }));
     const vName = vIdx >= 0 && variants[vIdx] ? variants[vIdx].name || "variant" : "Default";
     toast(added.length + (added.length === 1 ? " image added to \u201c" : " images added to \u201c") + vName + "\u201d"
-      + (unusable ? " \u00b7 " + unusable + (unusable === 1 ? " could not be shown here and was skipped" : " could not be shown here and were skipped") : ""));
+      + (unusable ? " \u00b7 " + unusable + (unusable === 1 ? " could not be shown here and was skipped" : " could not be shown here and were skipped") : "")
+      + (unsaved ? " \u00b7 " + unsaved + (unsaved === 1 ? " could not be saved" : " could not be saved") : ""));
   };
   /* The gallery grid listed every picture in the character whichever version was
      selected, so editing a variant showed the Default’s pictures and vice versa
@@ -9498,8 +9627,9 @@ function CharacterEditor({
     onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
-    onClick: doSave
-  }, "Save character"))), /*#__PURE__*/React.createElement(DraftRecoveryBanner, {
+    onClick: doSave,
+    disabled: saving
+  }, saving ? "Saving…" : "Save character"))), /*#__PURE__*/React.createElement(DraftRecoveryBanner, {
     draft: draft.found,
     onRestore: draft.restore,
     onDiscard: draft.discardRecovery
@@ -9913,7 +10043,7 @@ function CharacterEditor({
   }, "History", (c.history || []).length ? " (" + c.history.length + ")" : ""), /*#__PURE__*/React.createElement("input", {
     ref: jsonRef,
     type: "file",
-    accept: ".json,application/json",
+    accept: JSON_FILE_ACCEPT,
     hidden: true,
     onChange: e => {
       loadJsonUpdate(e.target.files);
@@ -10198,7 +10328,7 @@ function CharacterEditor({
     size: 14
   }), pasteLabel(secClip))), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
-    onClick: () => set("sections", [...c.sections, {
+    onClick: () => set("sections", [...(c.sections || []), {
       id: uid(),
       title: "",
       content: ""
@@ -10412,8 +10542,9 @@ function CharacterEditor({
     onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
-    onClick: doSave
-  }, "Save character")), jsonIncoming && /*#__PURE__*/React.createElement(UpdateFromJsonModal, {
+    onClick: doSave,
+    disabled: saving
+  }, saving ? "Saving…" : "Save character")), jsonIncoming && /*#__PURE__*/React.createElement(UpdateFromJsonModal, {
     incoming: jsonIncoming,
     variants: variants,
     currentVIdx: vIdx,
@@ -10570,12 +10701,25 @@ function RecordModal({
   const rRef = useRef(r);
   rRef.current = r;
   const [confirmDel, setConfirmDel] = useState(false);
+  const [saving, setSaving] = useState(false);
   /* Clicking the backdrop used to close outright and throw away everything typed.
      Compare against what was opened rather than tracking edits, so undoing a change
      by hand counts as unchanged and closes without nagging. */
   const [confirmLeave, setConfirmLeave] = useState(false);
   const dirty = JSON.stringify(r) !== JSON.stringify(initial);
   const tryClose = () => dirty ? setConfirmLeave(true) : onClose();
+  const saveRecord = () => {
+    if (saving) return;
+    setSaving(true);
+    Promise.resolve(onSave({
+        ...rRef.current,
+        updatedAt: Date.now(),
+        createdAt: rRef.current.createdAt || Date.now()
+      })).then(() => draft.clear()).catch(e => {
+      if (imgCtx && imgCtx.toast) imgCtx.toast("Couldn't save - your protected draft is still here");
+      setSaving(false);
+    });
+  };
   useEffect(() => {
     const h = e => {
       if (e.key !== "Escape") return;
@@ -10750,15 +10894,9 @@ function RecordModal({
     onClick: tryClose
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
-    onClick: () => {
-      draft.clear();
-      onSave({
-        ...rRef.current,
-        updatedAt: Date.now(),
-        createdAt: rRef.current.createdAt || Date.now()
-      });
-    }
-  }, "Save"))));
+    onClick: saveRecord,
+    disabled: saving
+  }, saving ? "Saving…" : "Save"))));
 }
 
 /* ---------- list view for personas / lore / prompts ---------- */
@@ -11418,7 +11556,7 @@ function OnboardingModal({ onCreate, onImport, onTransfer, onGuide, onDone }) {
   }, /*#__PURE__*/React.createElement("strong", null, head), /*#__PURE__*/React.createElement("span", null, body), i === 0 && /*#__PURE__*/React.createElement("em", null, "Recommended"))), /*#__PURE__*/React.createElement("input", {
     ref,
     type: "file",
-    accept: "application/json,.json",
+    accept: JSON_FILE_ACCEPT,
     hidden: true,
     onChange: e => { if (e.target.files[0]) onImport(e.target.files[0]); e.target.value = ""; }
   })), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onDone }, "Skip for now"));
@@ -11776,7 +11914,7 @@ function SettingsModal({
   const installUpdateFile = async f => {
     if (!f) return;
     try {
-      const text = await f.text();
+      const text = await readTextFile(f);
       const r = await window.updater.install(text);
       setUpdMsg(r.ok ? { ok: true, text: "Update " + r.version + " installed — relaunch to apply." } : { ok: false, text: r.error });
       window.updater.status().then(setUpd);
@@ -12425,7 +12563,7 @@ function SettingsModal({
   }), " Download all images")), /*#__PURE__*/React.createElement("input", {
     ref: importRef,
     type: "file",
-    accept: "application/json",
+    accept: JSON_FILE_ACCEPT,
     hidden: true,
     onChange: async e => {
       if (e.target.files[0]) setPendingImport(await readBackupPreview(e.target.files[0]));
@@ -13500,17 +13638,41 @@ function RolecraftVault() {
         if (!raw) return fallback;
         try { return JSON.parse(raw); } catch (e) { return fallback; }
       };
+      const parseCollection = (raw, key) => {
+        const value = parse(raw, key, []);
+        if (!Array.isArray(value) || value.some(x => !x || typeof x !== "object" || Array.isArray(x))) {
+          if (!damaged.includes(key)) damaged.push(key);
+          return [];
+        }
+        return value;
+      };
+      const parseMap = (raw, key) => {
+        const value = parse(raw, key, {});
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          if (!damaged.includes(key)) damaged.push(key);
+          return {};
+        }
+        return value;
+      };
+      const parseStringList = (raw, key) => {
+        const value = parse(raw, key, []);
+        if (!Array.isArray(value) || value.some(x => typeof x !== "string")) {
+          if (!damaged.includes(key)) damaged.push(key);
+          return [];
+        }
+        return value;
+      };
       try {
         const [c, p, l, pr] = await Promise.all([sGet("chars:all"), sGet("personas:all"), sGet("lore:all"), sGet("prompts:all")]);
-        const charList = parse(c, "chars:all", []);
-        const personaList = parse(p, "personas:all", []);
-        const loreList = parse(l, "lore:all", []);
-        const promptList = parse(pr, "prompts:all", []);
-        const bucketM = parse(await sGet("buckets:meta"), "buckets:meta", {});
-        const loreM = parse(await sGet("lore:meta"), "lore:meta", {});
-        const promptM = parse(await sGet("prompts:meta"), "prompts:meta", {});
-        const pbucketM = parse(await sGet("pbuckets:meta"), "pbuckets:meta", {});
-        const blurList = parse(await sGet("blurset"), "blurset", []);
+        const charList = parseCollection(c, "chars:all");
+        const personaList = parseCollection(p, "personas:all");
+        const loreList = parseCollection(l, "lore:all");
+        const promptList = parseCollection(pr, "prompts:all");
+        const bucketM = parseMap(await sGet("buckets:meta"), "buckets:meta");
+        const loreM = parseMap(await sGet("lore:meta"), "lore:meta");
+        const promptM = parseMap(await sGet("prompts:meta"), "prompts:meta");
+        const pbucketM = parseMap(await sGet("pbuckets:meta"), "pbuckets:meta");
+        const blurList = parseStringList(await sGet("blurset"), "blurset");
         const ts = await sGet("ui:textsize");
     const cds = await sGet("ui:cardsize");
         const ctr = await sGet("ui:contrast");
@@ -14661,7 +14823,14 @@ function RolecraftVault() {
      before the write put the same lie back one level up. */
   const saveImage = useCallback(async (imgId, dataUrl, thumb) => {
     await sSet("img:" + imgId, dataUrl);
-    if (thumb) await sSet("th:" + imgId, thumb);
+    try {
+      if (thumb) await sSet("th:" + imgId, thumb);
+    } catch (e) {
+      /* Do not leave an original that no record can point at when the preview
+         write fails. The caller only attaches the id after this resolves. */
+      await Promise.all([sDel("img:" + imgId).catch(() => {}), sDel("th:" + imgId).catch(() => {})]);
+      throw e;
+    }
     /* Stats used to read every original back in full just to measure it — the
        whole vault, one picture at a time, to work out a byte count from the
        length of a string. An image never changes once written (a replacement
@@ -14835,16 +15004,17 @@ function RolecraftVault() {
     toast((entry.record.name || entry.record.title || "Record") + " restored");
   };
   const restoreTrashEntries = async entries => {
-    const tids = new Set((entries || []).map(e => e.tid));
-    const byType = type => (entries || []).filter(e => e.type === type).map(e => e.record);
-    const addMissing = (live, incoming) => {
-      const ids = new Set(live.map(r => r.id));
-      return live.concat(incoming.filter(r => !ids.has(r.id)));
-    };
-    const cs = addMissing(charsRef.current, byType("character"));
-    const ps = addMissing(personasRef.current, byType("persona"));
-    const ls = addMissing(loreRef.current, byType("lore"));
-    const qs = addMissing(promptsRef.current, byType("prompt"));
+    const known = new Set(["character", "persona", "lore", "prompt"]);
+    const restorable = (entries || []).filter(e => e && known.has(e.type) && e.record && typeof e.record === "object");
+    const tids = new Set(restorable.map(e => e.tid));
+    const byType = type => restorable.filter(e => e.type === type).map(e => e.record);
+    /* A bulk Undo must follow the same collision rule as restoring one item.
+       Silently filtering a colliding id removed the bin entry without restoring
+       its record at all. */
+    const cs = restoreRecordsWithFreshIds(charsRef.current, byType("character"));
+    const ps = restoreRecordsWithFreshIds(personasRef.current, byType("persona"));
+    const ls = restoreRecordsWithFreshIds(loreRef.current, byType("lore"));
+    const qs = restoreRecordsWithFreshIds(promptsRef.current, byType("prompt"));
     charsRef.current = cs; personasRef.current = ps; loreRef.current = ls; promptsRef.current = qs;
     setChars(cs); setPersonas(ps); setLore(ls); setPrompts(qs);
     const rest = trashRef.current.filter(t => !tids.has(t.tid));
@@ -14857,6 +15027,7 @@ function RolecraftVault() {
       sSet("prompts:all", JSON.stringify(qs)),
       rest.length ? sSet("trash:all", JSON.stringify(rest)) : sDel("trash:all")
     ]);
+    if (restorable.length !== (entries || []).length) toast("Some unrecognised bin items were left untouched");
   };
   const emptyFromTrash = async entry => {
     const rest = trashRef.current.filter(t => t.tid !== entry.tid);
@@ -14926,10 +15097,19 @@ function RolecraftVault() {
     const col = collections[type];
     const ref = type === "persona" ? personasRef : type === "lore" ? loreRef : type === "prompt" ? promptsRef : null;
     const list = ref ? ref.current : col.list;
+    const before = list.find(x => x.id === r.id);
     const next = list.some(x => x.id === r.id) ? list.map(x => x.id === r.id ? r : x) : [...list, r];
+    /* Commit the record first. Removing image bytes before this succeeds can
+       turn a storage-full error into permanent picture loss. */
+    await sSet(col.key, JSON.stringify(next));
     if (ref) ref.current = next;
     col.set(next);
-    await sSet(col.key, JSON.stringify(next));
+    if (before) {
+      const now = new Set(imageIdsOf(type, r));
+      const held = heldImageIds();
+      const removed = imageIdsOf(type, before).filter(id => !now.has(id) && !held.has(id));
+      await Promise.all(removed.map(dropImage));
+    }
     setEditingRecord(null);
     toast("Saved");
   };
@@ -14986,7 +15166,10 @@ function RolecraftVault() {
     if (type === "lore") setViewLoreEntryId(null);
     if (type === "persona") setViewPersonaId(null);
     const col = collections[type];
-    const next = col.list.filter(x => x.id !== r.id);
+    const ref = type === "persona" ? personasRef : type === "lore" ? loreRef : promptsRef;
+    /* sendManyToTrash awaits a persistent write. Build from the current ref
+       afterwards so an import or save completed during that wait is not lost. */
+    const next = ref.current.filter(x => x.id !== r.id);
     if (type === "persona") personasRef.current = next;
     if (type === "lore") loreRef.current = next;
     if (type === "prompt") promptsRef.current = next;
@@ -15060,7 +15243,7 @@ function RolecraftVault() {
     setJsonImportType(null);
     loreImportWorld.current = null;
     try {
-      const data = JSON.parse(await file.text());
+      const data = JSON.parse(await readTextFile(file));
       if (type === "characters") {
         const items = normalizeCharacterImport(data);
         if (!items.length) {
@@ -15709,7 +15892,7 @@ function RolecraftVault() {
   const importAll = async source => {
     let data;
     try {
-      data = source && typeof source.text === "function" ? JSON.parse(await source.text()) : source;
+      data = source && typeof source.text === "function" ? JSON.parse(await readTextFile(source)) : source;
     } catch (e) {
       toast("That backup is not valid JSON");
       return;
@@ -19590,7 +19773,7 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("input", {
     ref: jsonImportRef,
     type: "file",
-    accept: "application/json,.json",
+    accept: JSON_FILE_ACCEPT,
     hidden: true,
     onChange: e => {
       if (e.target.files[0]) handleJsonImportFile(e.target.files[0]);
