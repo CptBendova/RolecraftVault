@@ -33,9 +33,11 @@ if (!fs.existsSync(keyPath)) {
    preload function that is not there. Recording the build lets the app say so. */
 const mainJs = fs.readFileSync(path.join(root, "app", "main.js"), "utf8");
 const fbMatch = mainJs.match(/const FACTORY_BUILD = "([^"]+)"/);
-const shellBuild = fbMatch ? fbMatch[1] : version;
-if (shellBuild !== version) {
-  console.error("FACTORY_BUILD in app/main.js is " + shellBuild + " but you are signing " + version + ".");
+const factoryBuild = fbMatch ? fbMatch[1] : version;
+const compatMatch = mainJs.match(/const UPDATE_COMPAT_BUILD = "([^"]+)"/);
+const minShellBuild = compatMatch ? compatMatch[1] : factoryBuild;
+if (factoryBuild !== version) {
+  console.error("FACTORY_BUILD in app/main.js is " + factoryBuild + " but you are signing " + version + ".");
   console.error("Run: npm run set-version " + version);
   process.exit(1);
 }
@@ -99,6 +101,19 @@ if (forced !== null) {
   console.log("  Pass --shell if this release changed main.js, preload.js or index.html.");
 }
 
+if (needsShell && minShellBuild !== version) {
+  console.error("UPDATE_COMPAT_BUILD in app/main.js is " + minShellBuild + " but this release changes the shell.");
+  console.error("Set UPDATE_COMPAT_BUILD to " + version + " so future cumulative updates cannot skip it.");
+  process.exit(1);
+}
+
+/* Older installed shells understand only needsShell + shellBuild and compare
+   them exactly. Keep that legacy flag on every modern package, pointing it at
+   the compatibility floor. Old shells below the floor fail closed; current
+   shells use the signed minimum and accept any equal or newer factory build. */
+const legacyNeedsShell = true;
+const shellBuild = minShellBuild;
+
 const appJs = fs.readFileSync(appJsPath);
 /* Routing metadata lives inside hashes because that object has always been part
    of the signature. Older builds still verify it without needing to understand
@@ -106,20 +121,22 @@ const appJs = fs.readFileSync(appJsPath);
    fields to decide whether a patch requires the installer. */
 const hashes = {
   "app.js": crypto.createHash("sha256").update(appJs).digest("hex"),
-  "meta:needsShell": needsShell ? "1" : "0",
+  "meta:needsShell": legacyNeedsShell ? "1" : "0",
   "meta:shellBuild": shellBuild,
+  "meta:minShellBuild": minShellBuild,
 };
 const canon = JSON.stringify({ version, hashes });
 const sig = crypto.sign(null, Buffer.from(canon, "utf8"), crypto.createPrivateKey(fs.readFileSync(keyPath))).toString("base64");
 
 /* Keep the top-level copies for old installed shells. New shells derive both
    values from the signed entries above. */
-const pkg = { version, notes, shellBuild, needsShell, files: { "app.js": appJs.toString("base64") }, hashes, sig };
+const pkg = { version, notes, shellBuild, needsShell: legacyNeedsShell, minShellBuild, files: { "app.js": appJs.toString("base64") }, hashes, sig };
 const out = outArg || path.join(distDir, "Rolecraft-update-" + version + ".rcvup");
 fs.writeFileSync(out, JSON.stringify(pkg));
 console.log("Signed update written:", out);
 console.log("  version:", version, "| app.js sha256:", hashes["app.js"].slice(0, 16) + "…");
+console.log("  Windows shell compatibility: build " + minShellBuild + " or newer.");
 if (needsShell) {
-  console.log("  This patch will be REFUSED on any build other than " + shellBuild + ".");
+  console.log("  This release changes the shell, so existing builds need the full installer.");
   console.log("  Ship Rolecraft-Vault-Setup-" + version + ".exe and say so in the release notes.");
 }

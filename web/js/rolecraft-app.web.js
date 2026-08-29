@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.244";
+const APP_VERSION = "1.245";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.244";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.244 — current",
+  heading: "1.245 — current",
+  notes: ["Windows updates now carry a signed minimum shell version, so installing the newest interface can no longer jump over a required Windows app upgrade and leave a misleading mixed-version installation. This release upgrades the Windows runtime for current Electron security fixes, rebuilds every installer from that exact runtime, and compresses the full setup substantially. Existing Windows installations need the full 1.245 setup.", "Release engineering now runs on GitHub as well as locally, checks dependencies automatically, publishes verification hashes, keeps signing secrets out of the repository, and has clear private security-reporting and contribution guidance. Android's build tools no longer carry the audited vulnerable dependency chain, and test runs keep their disposable Chromium profiles outside the repository.", "The character editor keeps every card and gallery action inside 320px and 360px phone screens under the current browser engine. Android users need the 1.245 APK for this layout fix and the updated guide and changelog."]
+}, {
+  heading: "1.244",
   notes: ["Update character from JSON on Android no longer sends you back to the PIN screen while you choose a file from Downloads. Android pauses the app while its system picker is open, and the old two-and-a-half-second allowance could expire before you found the file; that locked the vault, closed the editor and discarded the pending update. The picker now has a bounded lifecycle allowance that ends as soon as Rolecraft returns to the screen, then normal Home, Recents and app-switch locking resumes. This protects every JSON import route that opens Android's picker. Android users need the 1.244 APK; Windows carries the same changelog and can use the smaller update file."]
 }, {
   heading: "1.243",
@@ -2799,12 +2802,24 @@ const CSS = `
     .rcv.phone .scrollbody.sheet { height: auto; bottom: calc(62px + env(safe-area-inset-bottom)) !important; padding-bottom: 24px !important; }
     .rcv.phone .toast { bottom: calc(74px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
   }
+  @media (max-width: 400px) {
+    .rcv.phone .character-editor-content { padding-left: 0 !important; padding-right: 0 !important; }
+    .rcv.phone .character-editor-actions { flex-wrap: wrap; max-width: 100%; min-width: 0; }
+    /* Electron 44 reserves a little more width for the editor's vertical
+       scroller. Inline 300px card floors then exceeded the 277px writing
+       column on a 320px phone. Every direct editor card becomes a full row at
+       this width; fields remain readable instead of creating a sideways pan. */
+    .rcv.phone .character-editor-content > div { min-width: 0; max-width: 100%; }
+    .rcv.phone .character-editor-content > .card,
+    .rcv.phone .character-editor-content > div > .card,
+    .rcv.phone .character-editor-columns > .card {
+      width: 100% !important; min-width: 0 !important; max-width: 100%; flex-basis: 100% !important;
+    }
+    .rcv.phone .character-editor-gallery-head .btn { max-width: 100%; white-space: normal; }
+  }
   @media (max-width: 330px) {
     .rcv.phone .settings-theme-choices,
     .rcv.phone .settings-contrast-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .rcv.phone .character-editor-content { padding-left: 0 !important; padding-right: 0 !important; }
-    .rcv.phone .character-editor-actions { flex-wrap: wrap; max-width: 100%; min-width: 0; }
-    .rcv.phone .character-editor-columns > .card { width: 100% !important; min-width: 0 !important; }
   }
 `;
 
@@ -10451,13 +10466,18 @@ function CharacterEditor({
       marginTop: 20
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "character-editor-gallery-head",
     style: {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
+      flexWrap: "wrap",
+      gap: 10,
       marginBottom: 14
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { minWidth: 0, flex: "1 1 180px" }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
   }, "Gallery"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11392,7 +11412,7 @@ function TrashModal({
     style: { fontSize: 24, margin: "2px 0 6px", paddingRight: 44 }
   }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 13, color: "var(--mut)", lineHeight: 1.6, marginBottom: 12 }
-  }, "Characters and personas you delete wait here for 30 days, pictures and all, before they go for good."),
+  }, "Characters, personas, lorebook entries and prompts you delete wait here for 30 days, pictures and all, before they go for good."),
   all.length > 8 && /*#__PURE__*/React.createElement("input", {
     value: q,
     onChange: e => setQ(e.target.value),

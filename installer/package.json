@@ -1,8 +1,9 @@
 {
   "name": "rolecraft-vault-setup",
   "productName": "Rolecraft Vault Setup",
-  "version": "1.244",
+  "version": "1.245",
   "private": true,
+  "license": "SEE LICENSE IN ../LICENSE",
   "description": "HD installer for Rolecraft Vault",
   "main": "main.js"
 }

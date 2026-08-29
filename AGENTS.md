@@ -291,10 +291,11 @@ Then:
 5. commit the version, changelog, generated web bundle, and source changes;
 6. create tag `v<version>` and push the commit and tag;
 7. create and **publish** a GitHub Release for that tag, marked Latest;
-8. attach all three artifacts:
+8. attach all three application artifacts plus their checksum file:
    - `Rolecraft-update-<version>.rcvup`
    - `Rolecraft-Vault-Setup-<version>.exe`
    - `Rolecraft-Vault-<version>.apk`
+   - `SHA256SUMS.txt`
 9. verify the public page lists those assets and its digests match the local
    builds; and
 10. download the published `.rcvup`, decode `files["app.js"]`, and compare its
@@ -321,7 +322,8 @@ A code task is done only when:
   manual or hardware-only check.
 
 A release task additionally requires a public Latest GitHub Release, all three
-assets, matching checksums, and a downloaded update-package verification.
+application assets, the checksum file, matching hashes, and a downloaded
+update-package verification.
 
 ## When historical context matters
 

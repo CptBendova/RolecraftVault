@@ -3,13 +3,16 @@
 ; and runs it elevated. The window the person sees is installer/index.html.
 !define APP_NAME "Rolecraft Vault"
 !define COMPANY "Rolecraft"
-!define VERSION "1.244"
+!define VERSION "1.245"
 
 SilentInstall silent
 AutoCloseWindow true
 RequestExecutionLevel admin
-SetCompress off
-SetDatablockOptimize off
+; The Electron setup runtime and product runtime overlap heavily. A solid LZMA
+; block removes that duplication from the public download while extraction still
+; happens only once into NSIS's temporary directory.
+SetCompressor /SOLID lzma
+SetDatablockOptimize on
 
 Name "${APP_NAME} Setup"
 OutFile "..\dist\Rolecraft-Vault-Setup-${VERSION}.exe"

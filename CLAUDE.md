@@ -99,17 +99,15 @@ Editing it by script is normal here. Two things bite repeatedly:
    diffs `app/vendor/` against the last tag, by name rather than by line because
    those are binaries, and names the files. `test-shell-detect.js` covers both
    halves of the rule.
-   **The converse is worth knowing: a renderer-only patch installs on an older
-   shell.** `main.js` refuses a package only when it is *marked* `needsShell` and
-   was built against a different `FACTORY_BUILD` (the `shellBuild` check). A
-   package with `needsShell: false` is accepted whatever build the copy is on, so
-   someone several releases behind still gets an interface fix without a 541 MB
-   download. The `factoryBuild` recorded when a patch is *applied* is a different
-   thing — that is what makes a patch go stale when the shell later changes.
-   Do not assume, as was assumed here once, that a version gap alone blocks a
-   patch: check `needsShell` on the package. 1.219 went out this way to a copy
-   still on shell 1.208, and `preload.js` was identical across that gap, so the
-   bridge the renderer talks to had not moved.
+   **Cumulative patches carry a signed shell floor.** A renderer-only release may
+   install across a version gap only when the installed shell is at least
+   `UPDATE_COMPAT_BUILD`. Update that constant whenever `main.js`, `preload.js`,
+   `index.html`, or `app/vendor/` genuinely changes. The signer authenticates it
+   as `meta:minShellBuild`. It also keeps legacy `needsShell` routing enabled and
+   points `shellBuild` at the same floor so old installed shells fail closed
+   instead of ignoring metadata they do not understand. This was added after
+   1.244 could be applied directly to shell 1.242 even though 1.243 contained a
+   required shell change.
 5. Updates are **cumulative full bundles**, not diffs. The newest `.rcvup` contains
    everything; only ever distribute the latest.
 6. **Never reference a file from `app.js` by a bare relative path.** A patch is
@@ -386,9 +384,11 @@ cd mobile && npm run sync           # copies the web bundle just built into andr
 cd android && ./gradlew assembleRelease   # -> app/build/outputs/apk/release/
 ```
 
-A release carries **three** artifacts, and every published one has: the
+A release carries **three application artifacts plus checksums**, and every
+published one has: the
 `.rcvup` patch, `Rolecraft-Vault-Setup-<v>.exe`, and
-`RolecraftVault-<v>.apk`. The Android build is not optional and not separate —
+`RolecraftVault-<v>.apk`, accompanied by `SHA256SUMS.txt`. The Android build is
+not optional and not separate —
 `set-version` writes `versionName` and `versionCode` for exactly this reason, and
 `npm run sync` copies whatever is in `web/`, so `build:web` has to have run
 first or the APK ships the previous interface.
@@ -399,11 +399,14 @@ published `.rcvup` afterwards by downloading it, base64-decoding
 went out without the changes it claimed.
 
 `build:installer` needs a staged Electron build at `dist/Rolecraft Vault/`, which
-is gitignored and therefore missing on a fresh clone. To rebuild it: copy
-`node_modules/electron/dist` there, rename `electron.exe` to
-`Rolecraft Vault.exe`, delete `resources/default_app.asar`, and copy `app/` into
-`resources/app/`. It also needs NSIS (`winget install NSIS.NSIS`); winget does not
-put `makensis` on PATH, so `scripts/build-installer.js` looks in Program Files.
+is gitignored. The installer script now rebuilds it from
+`node_modules/electron/dist` every time so a dependency upgrade cannot leave a
+stale runtime in the public installer. It also needs NSIS
+(`winget install NSIS.NSIS`); winget does not put `makensis` on PATH, so
+`scripts/build-installer.js` looks in Program Files. Configure a trusted Windows
+certificate through the `ROLECRAFT_WINDOWS_CERTIFICATE` or
+`ROLECRAFT_WINDOWS_CERTIFICATE_SHA1` environment variable; release environments
+should also set `ROLECRAFT_REQUIRE_AUTHENTICODE=1` so signing fails closed.
 
 ## Where it ships
 
@@ -785,6 +788,8 @@ check is picked up without being registered anywhere. Run one on its own with
 | Script | What it catches |
 |---|---|
 | `test-shell-detect.js` | a release routed to the wrong artifact — a patch that needed the installer, or the reverse. Covers `app/vendor/` (rule 4) |
+| `test-update-compatibility.js` | a cumulative renderer package skipping over a required Windows shell release |
+| `test-release-engineering.js` | current runtimes, dependency-chain removal, installer compression/signing hooks, clean test profiles, CI, security guidance and checksum ownership |
 | `test-hardening.js` | the security posture of both shells and the Android manifest, asserted from the source rather than assumed |
 | `test-modal-escape.js` | Escape dismissing what is on top and only that. Needs Electron |
 | `test-native-drag.js` | reordering by drag, driven with real mouse events. Synthetic DragEvents pass against broken code. Needs Electron |

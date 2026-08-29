@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible Rolecraft Vault problem
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report security vulnerabilities here. Use the private Security tab instead.
+  - type: input
+    id: version
+    attributes:
+      label: Rolecraft version
+      placeholder: "1.245"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows app, Android APK, Browser edition]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What happened and how can it be reproduced?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Never attach a real vault, password, signing key, or pairing code.

@@ -22,8 +22,10 @@ function check(label, ok) {
 check("Windows security metadata is written atomically",
   /function saveSecurity\(s\)[\s\S]{0,180}writeFileAtomic\(securityFile/.test(main));
 check("update shell routing is carried inside the signed hashes",
-  /"meta:needsShell"\s*:\s*needsShell/.test(signer) &&
-  /pkg\.hashes\["meta:needsShell"\]/.test(main));
+  /"meta:needsShell"\s*:\s*legacyNeedsShell/.test(signer) &&
+  /"meta:minShellBuild"\s*:\s*minShellBuild/.test(signer) &&
+  /pkg\.hashes\["meta:needsShell"\]/.test(main) &&
+  /pkg\.hashes\["meta:minShellBuild"\]/.test(main));
 check("tamperable top-level routing cannot override signed routing",
   /hasSignedRouting \? signedNeedsShell === "1" : pkg\.needsShell === true/.test(main));
 

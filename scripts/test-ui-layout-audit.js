@@ -132,7 +132,16 @@ const AUDIT = `(async () => {
   };
   const layer = el => ({ present: visible(el),
     overflow: el ? Math.max(0, el.scrollWidth - el.clientWidth) : 999,
-    outside: el ? (() => { const r = el.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1; })() : true });
+    outside: el ? (() => { const r = el.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1; })() : true,
+    offenders: el ? [...el.querySelectorAll("*")].filter(visible).filter(node => {
+      const r = node.getBoundingClientRect();
+      return r.left < -1 || r.right > innerWidth + 1;
+    }).slice(0, 5).map(node => {
+      const r = node.getBoundingClientRect();
+      return (node.className || node.tagName) + "@" + Math.round(r.left) + ".." + Math.round(r.right);
+    }) : [],
+    scrollingNodes: el ? [el, ...el.querySelectorAll("*")].filter(visible).filter(node => node.scrollWidth > node.clientWidth + 1)
+      .slice(0, 5).map(node => (node.className || node.tagName) + "[" + (node.textContent || "").trim().replace(/\s+/g, " ").slice(0, 32) + "]=" + node.clientWidth + "/" + node.scrollWidth) : [] });
   const out = { screens: [] };
   await sleep(1700);
 
@@ -426,8 +435,9 @@ app.whenReady().then(async () => {
       "overflow=" + r.characterSheet.overflow + "px");
     check("a persona sheet opens and fits", r.personaSheet.present && r.personaSheet.overflow <= 1,
       "overflow=" + r.personaSheet.overflow + "px");
-    check("the character editor opens and fits", r.characterEditor.present && r.characterEditor.overflow <= 1 && !r.characterEditor.outside,
-      "overflow=" + r.characterEditor.overflow + "px");
+    check("the character editor opens and fits", r.characterEditor.present && r.characterEditor.overflow <= 1 && !r.characterEditor.outside && r.characterEditor.scrollingNodes.length === 0,
+      "overflow=" + r.characterEditor.overflow + "px" + (r.characterEditor.offenders.length ? " · " + r.characterEditor.offenders.join(", ") : "") +
+        (r.characterEditor.scrollingNodes.length ? " · " + r.characterEditor.scrollingNodes.join(", ") : ""));
     check("the persona editor opens and fits", r.personaEditor.present && r.personaEditor.overflow <= 1 && !r.personaEditor.outside,
       "overflow=" + r.personaEditor.overflow + "px");
     check("a lorebook and its entry fit", r.lorebook.present && r.lorebook.overflow <= 1 && r.loreEntry.present && r.loreEntry.overflow <= 1);

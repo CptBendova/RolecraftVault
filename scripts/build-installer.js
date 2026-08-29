@@ -17,29 +17,27 @@ const staged = path.join(root, "dist", "Rolecraft Vault");
 const runtime = path.join(root, "dist", "Rolecraft-Setup-runtime");
 const nsi = path.join(root, "build", "installer.nsi");
 const electronDist = path.join(root, "node_modules", "electron", "dist");
+const { signWindowsFile } = require("./windows-signing");
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   fs.cpSync(src, dest, { recursive: true, force: true });
 }
 
-if (!fs.existsSync(staged)) {
-  console.error("Missing: dist/Rolecraft Vault/");
-  console.error("Unzip the portable build there, then copy your current app/ over");
-  console.error("dist/Rolecraft Vault/resources/app/ before building. See README.md.");
+if (!fs.existsSync(electronDist)) {
+  console.error("Missing node_modules/electron/dist — run npm install.");
   process.exit(1);
 }
 
-const target = path.join(staged, "resources", "app");
-for (const f of ["main.js", "preload.js", "index.html", "app.js", "package.json", "icon.ico", "icon.png", path.join("vendor", "qrcode.js"), path.join("vendor", "crest-loop.mp4"), path.join("vendor", "crest-256.png"), path.join("vendor", "crest-1024.png")]) {
-  const from = path.join(root, "app", f);
-  if (fs.existsSync(from)) {
-    const dest = path.join(target, f);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(from, dest);
-  }
-}
-console.log("Synced app/ into the packaged build.");
+/* Rebuild the staged product from the installed Electron distribution every
+   time. Reusing yesterday's dist folder can otherwise ship a vulnerable runtime
+   even after package-lock.json was upgraded. */
+fs.rmSync(staged, { recursive: true, force: true });
+copyDir(electronDist, staged);
+fs.renameSync(path.join(staged, "electron.exe"), path.join(staged, "Rolecraft Vault.exe"));
+fs.rmSync(path.join(staged, "resources", "default_app.asar"), { force: true });
+copyDir(path.join(root, "app"), path.join(staged, "resources", "app"));
+console.log("Built the packaged app from the current Electron runtime and app source.");
 
 const stampVersion = require(path.join(root, "app", "package.json")).version;
 const rcedit = path.join(path.dirname(require.resolve("rcedit")), "..", "bin", "rcedit-x64.exe");
@@ -64,11 +62,7 @@ try {
 } catch (e) {
   console.warn("Could not stamp the app exe: " + e.message);
 }
-
-if (!fs.existsSync(electronDist)) {
-  console.error("Missing node_modules/electron/dist — run npm install.");
-  process.exit(1);
-}
+signWindowsFile(appExe);
 
 fs.rmSync(runtime, { recursive: true, force: true });
 copyDir(electronDist, runtime);
@@ -94,6 +88,7 @@ try {
 } catch (e) {
   console.warn("Could not stamp the setup exe: " + e.message);
 }
+signWindowsFile(setupExe);
 
 const makensis = [
   path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "NSIS", "makensis.exe"),
@@ -106,4 +101,6 @@ try {
   console.error("\nmakensis failed or is not installed (winget install NSIS.NSIS).");
   process.exit(1);
 }
-console.log("Installer written to " + path.join(root, "dist", `Rolecraft-Vault-Setup-${stampVersion}.exe`));
+const installerOut = path.join(root, "dist", `Rolecraft-Vault-Setup-${stampVersion}.exe`);
+signWindowsFile(installerOut);
+console.log("Installer written to " + installerOut);

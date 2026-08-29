@@ -24,7 +24,12 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.244";
+const FACTORY_BUILD = "1.245";
+/* The oldest Windows shell that understands every bridge/API required by the
+   current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
+   bundled vendor files genuinely change. It is signed into every update so a
+   cumulative renderer package cannot jump over a required shell release. */
+const UPDATE_COMPAT_BUILD = "1.245";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -53,12 +58,34 @@ function verifyUpdatePackage(pkg) {
      top-level fields so old authentic packages still install, but never let an
      unsigned top-level field override signed routing metadata. */
   const signedNeedsShell = pkg.hashes["meta:needsShell"];
+  const signedMinShellBuild = pkg.hashes["meta:minShellBuild"];
   const hasSignedRouting = signedNeedsShell === "0" || signedNeedsShell === "1";
   return { ok: true, appJs, version: pkg.version, notes: typeof pkg.notes === "string" ? pkg.notes : "",
     needsShell: hasSignedRouting ? signedNeedsShell === "1" : pkg.needsShell === true,
+    minShellBuild: typeof signedMinShellBuild === "string" ? signedMinShellBuild : "",
     shellBuild: hasSignedRouting && typeof pkg.hashes["meta:shellBuild"] === "string"
       ? pkg.hashes["meta:shellBuild"]
       : typeof pkg.shellBuild === "string" ? pkg.shellBuild : "" };
+}
+function compareBuildVersions(left, right) {
+  const a = String(left || "").split(".").map(n => /^\d+$/.test(n) ? Number(n) : NaN);
+  const b = String(right || "").split(".").map(n => /^\d+$/.test(n) ? Number(n) : NaN);
+  if (!a.length || !b.length || a.some(Number.isNaN) || b.some(Number.isNaN)) return null;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const av = a[i] || 0, bv = b[i] || 0;
+    if (av !== bv) return av < bv ? -1 : 1;
+  }
+  return 0;
+}
+function updateNeedsNewerShell(update, factoryBuild = FACTORY_BUILD) {
+  if (update.minShellBuild) {
+    const order = compareBuildVersions(factoryBuild, update.minShellBuild);
+    /* Unknown build syntax must fail closed rather than guessing compatibility. */
+    return order === null || order < 0;
+  }
+  /* Authentic packages from before the compatibility floor retain their exact
+     legacy check. */
+  return !!(update.needsShell && update.shellBuild && update.shellBuild !== factoryBuild);
 }
 function activeUpdate() {
   try {
@@ -1783,8 +1810,9 @@ function installUpdateText(text) {
   try { pkg = JSON.parse(text); } catch { return { ok: false, error: "Not a valid update file" }; }
   const v = verifyUpdatePackage(pkg);
   if (!v.ok) return v;
-  if (v.needsShell && v.shellBuild && v.shellBuild !== FACTORY_BUILD) {
-    return { ok: false, version: v.version, needsInstaller: true, error: "Version " + v.version + " changes the app itself, not just the interface. Run Rolecraft-Vault-Setup-" + v.version + ".exe instead; it keeps your vault and settings. This copy is build " + FACTORY_BUILD + "." };
+  if (updateNeedsNewerShell(v)) {
+    const requirement = v.minShellBuild ? "build " + v.minShellBuild + " or newer" : "build " + v.shellBuild;
+    return { ok: false, version: v.version, needsInstaller: true, error: "Version " + v.version + " needs the Windows app " + requirement + ". Run Rolecraft-Vault-Setup-" + v.version + ".exe instead; it keeps your vault and settings. This copy is build " + FACTORY_BUILD + "." };
   }
   try {
     const cur = path.join(updatesDir, "current");

@@ -13,6 +13,7 @@ const os = require("os");
 
 const root = path.join(__dirname, "..");
 const p = (...a) => path.join(root, ...a);
+const runRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-test-suite-"));
 
 /* Every first-party JS file that ships. Vendor React builds are excluded: they
    are third party and minified, and the const scanner has nothing to say. */
@@ -73,6 +74,7 @@ for (const f of fs.readdirSync(p("scripts")).filter(f => /^test-.*\.js$/.test(f)
        processes over local files only; isolate their profile and keep those
        host limitations from turning every UI assertion into a false failure. */
     args: el ? ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-test-" + process.pid + "-" + f), p("scripts", f)] : [p("scripts", f)],
+    electron: el,
     skip: el && !exe ? "Electron is not installed (npm approve-scripts electron)" : null,
   });
 }
@@ -83,6 +85,7 @@ for (const mode of [null, "1"]) {
     what: mode ? "a shell older than 1.192, where a bare path must fail" : "the crest under an active patch",
     cmd: exe,
     args: ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-assets-" + process.pid + "-" + (mode || "base")), p("scripts", "test-update-assets.js")],
+    electron: true,
     env: mode ? { NO_BASE: mode } : {},
     skip: exe ? null : "Electron is not installed (npm approve-scripts electron)",
   });
@@ -97,7 +100,10 @@ for (const j of jobs) {
   }
   console.log("\n── " + j.name + (j.what ? " ── " + j.what : ""));
   const r = spawnSync(j.cmd, j.args, {
-    cwd: root,
+    /* Chromium has occasionally created malformed empty profile folders in its
+       process working directory on Windows. UI checks use only absolute paths,
+       so keep their cwd inside the disposable suite directory as well. */
+    cwd: j.electron ? runRoot : root,
     stdio: "inherit",
     env: Object.assign({}, process.env, j.env || {}),
   });
@@ -116,6 +122,9 @@ for (const r of results) {
 console.log("=".repeat(60));
 console.log(results.filter(r => r.status === "pass").length + " passed, " +
   failed.length + " failed, " + skipped.length + " skipped");
+
+try { fs.rmSync(runRoot, { recursive: true, force: true }); }
+catch (e) { console.warn("Could not remove disposable test folder: " + e.message); }
 
 if (skipped.length) console.log("\nSkipped checks are not passes. Install what they need and run again.");
 if (failed.length) process.exit(1);

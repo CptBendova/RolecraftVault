@@ -25,8 +25,10 @@ On Android 8 or newer, install the APK over the existing app. **Do not uninstall
 first:** Android removes that device's private vault when the app is uninstalled.
 The APK keeps the same signing identity so normal releases upgrade in place.
 
-Updates are cumulative, so only the newest release matters. Rolecraft Vault does
-not check for or download updates on its own.
+Each update file contains the complete current interface, so download only the
+newest release. If that release depends on a Windows shell update you skipped,
+Rolecraft Vault refuses the small update and directs you to the current full
+installer. It does not check for or download updates on its own.
 
 Rolecraft Vault is free to download and use under the [licence](LICENSE).
 
@@ -114,8 +116,8 @@ Git and must never be printed, committed, or shared.
 npm run check
 npm test
 npm run build:web
-npm run set-version -- 1.233
-npm run sign -- 1.233 "what changed"
+npm run set-version -- <next-version>
+npm run sign -- <next-version> "what changed"
 npm run build:installer
 ```
 
@@ -132,6 +134,9 @@ Set-Location android
 contains the renderer bundle only, so changes to `app/main.js`, `app/preload.js`,
 `app/index.html`, or `app/vendor/` require the full Windows installer. Changes to
 the interface also require rebuilding the web edition and Android APK.
+
+Published releases also include `SHA256SUMS.txt`. Compare its hashes after a
+download when independently verifying an installer, APK, or update package.
 
 ### Repository layout
 
