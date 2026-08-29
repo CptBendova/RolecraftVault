@@ -33,6 +33,10 @@ setTimeout(() => finish(2, "  timed out"), 90000);
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1400, height: 1400 });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
+  /* GitHub's Windows desktop is only 1024x720, so Windows constrains the
+     requested test window. Zoom the disposable page out enough to keep two
+     aside tiles simultaneously hit-testable for a real source/target drag. */
+  win.webContents.setZoomFactor(0.7);
   await new Promise(r => setTimeout(r, 2500));
 
   await win.webContents.executeJavaScript(`(async () => {
