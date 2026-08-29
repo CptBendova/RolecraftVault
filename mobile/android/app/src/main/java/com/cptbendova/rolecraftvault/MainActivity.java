@@ -84,6 +84,17 @@ public class MainActivity extends BridgeActivity {
         pingBackground();
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (this.bridge == null) return;
+        WebView webView = this.bridge.getWebView();
+        if (webView == null) return;
+        webView.evaluateJavascript(
+            "(function(){try{if(typeof window.__rcvOnForeground==='function')window.__rcvOnForeground();}catch(e){}})();",
+            null);
+    }
+
     private void pingBackground() {
         if (this.bridge == null) return;
         WebView webView = this.bridge.getWebView();

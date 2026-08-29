@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.243";
+const APP_VERSION = "1.244";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.243";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.243 — current",
+  heading: "1.244 — current",
+  notes: ["Update character from JSON on Android no longer sends you back to the PIN screen while you choose a file from Downloads. Android pauses the app while its system picker is open, and the old two-and-a-half-second allowance could expire before you found the file; that locked the vault, closed the editor and discarded the pending update. The picker now has a bounded lifecycle allowance that ends as soon as Rolecraft returns to the screen, then normal Home, Recents and app-switch locking resumes. This protects every JSON import route that opens Android's picker. Android users need the 1.244 APK; Windows carries the same changelog and can use the smaller update file."]
+}, {
+  heading: "1.243",
   notes: ["A twenty-defect reliability audit covered editors, recovery, history, pictures, Recently deleted, damaged vault data and Windows transfers. Draft protection now catches writing started while an editor is still opening, removes expired draft payloads as well as their index entries, waits for a real save before clearing recovery, and blocks a second Save while the first is running. Failed portrait and gallery writes explain what happened and do not leave unattached picture data behind.", "Character history now notices every stored writing and organisation field. Restoring an old version preserves portraits from both legacy and later variants, imported variants receive a genuinely unused default name, old characters can add their first section, and valid JSON with the wrong vault shape is refused instead of reaching a broken screen. Persona, lore and prompt picture replacement cleans unused bytes only after the owning record is safely stored; bulk Undo restores colliding records under fresh ids, keeps unknown bin items untouched, and deletion no longer overwrites a collection change that completed while the bin was saving.", "Windows transfer manifests and packs now stop on an unreadable record instead of silently presenting an incomplete vault as complete. Unicode text and thumbnails are sized correctly for batches, encrypted writers finish every byte even after a short filesystem write, concurrent atomic saves use separate staging files, and interrupted password re-encryption cannot advance the password record while vault files are still pending. Android confirms a transfer against a fresh local scan instead of a potentially stale preview.", "Android JSON, text, picture and backup exports now appear in the public Downloads folder, including streamed multi-gigabyte backups. Import JSON opens Android's system picker and accepts the JSON labels used by common Downloads apps while still validating the actual contents before import. Update character from JSON and the other import paths now use Android's content-provider-safe reader, fixing files that could be selected but not opened on some phones. The in-app guide and completion message name the location. Windows needs the full 1.243 setup because the shell changed; Android users need the 1.243 APK."]
 }, {
   heading: "1.242",
@@ -782,6 +785,27 @@ function setSaveNotice(fn) { saveNotice = fn; }
    required by every parser; the aliases only keep a valid Downloads file from
    being greyed out by the system picker. */
 const JSON_FILE_ACCEPT = ".json,application/json,text/json,text/plain,application/octet-stream";
+/* Android pauses the activity while its system picker is in front. Picking a
+   real file can easily take longer than the old 2.5-second lock delay, which
+   unmounted the editor before its FileReader callback could apply the JSON.
+   Keep a bounded picker lease until the page becomes visible again, then leave
+   only a short grace for the change event and content-provider read to start. */
+function createFilePickerLockGate(now = () => Date.now()) {
+  const PICKER_LEASE_MS = 10 * 60 * 1000;
+  const RETURN_GRACE_MS = 2500;
+  let until = 0;
+  return {
+    begin() {
+      until = now() + PICKER_LEASE_MS;
+    },
+    returned() {
+      if (until > now()) until = now() + RETURN_GRACE_MS;
+    },
+    remaining() {
+      return Math.max(0, until - now());
+    }
+  };
+}
 const SAVE_SPOTS = [["DOCUMENTS", "Documents"], ["EXTERNAL", "the app's storage"], ["DATA", "the app's private files"]];
 function downloadExport(C, filename, data, encoding, mime) {
   let token = null;
@@ -14388,11 +14412,11 @@ function RolecraftVault() {
   authRef.current = authState;
   /* Home, Recents, or switching apps on a phone must lock. FLAG_SECURE hides
      the preview; this asks for the PIN again. A file picker also pauses the
-     activity, so those clicks get a short pass. A copy in flight keeps the
-     keys so it can finish with the screen off. */
+     activity, so those clicks get a bounded pass until Android resumes us. A
+     copy in flight keeps the keys so it can finish with the screen off. */
   useEffect(() => {
     if (typeof window === "undefined" || !window.Capacitor) return;
-    let deferUntil = 0;
+    const pickerGate = createFilePickerLockGate();
     let t = 0;
     const retryWhileHidden = delay => {
       clearTimeout(t);
@@ -14401,14 +14425,15 @@ function RolecraftVault() {
       }, Math.max(100, delay || 0));
     };
     const defer = () => {
-      deferUntil = Date.now() + 2500;
+      pickerGate.begin();
     };
     const hide = () => {
       const a = authRef.current;
       if (!a || a.locked || !a.checked) return;
       if (!a.passwordSet && !a.pinSet) return;
-      if (Date.now() < deferUntil) {
-        retryWhileHidden(deferUntil - Date.now() + 50);
+      const pickerWait = pickerGate.remaining();
+      if (pickerWait) {
+        retryWhileHidden(pickerWait + 50);
         return;
       }
       const run = () => {
@@ -14428,9 +14453,13 @@ function RolecraftVault() {
     };
     window.__rcvOnBackground = hide;
     window.__rcvDeferLock = defer;
+    window.__rcvOnForeground = () => pickerGate.returned();
     const onVis = () => {
       clearTimeout(t);
-      if (!document.hidden) return;
+      if (!document.hidden) {
+        pickerGate.returned();
+        return;
+      }
       t = setTimeout(hide, 200);
     };
     const onFile = e => {
@@ -14446,6 +14475,7 @@ function RolecraftVault() {
       try {
         delete window.__rcvOnBackground;
         delete window.__rcvDeferLock;
+        delete window.__rcvOnForeground;
       } catch (e) {}
     };
   }, []);

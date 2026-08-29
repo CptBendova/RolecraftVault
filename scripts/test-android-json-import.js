@@ -4,6 +4,8 @@ const fs = require("fs");
 const path = require("path");
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+const activity = fs.readFileSync(path.join(__dirname, "..", "mobile", "android", "app", "src", "main",
+  "java", "com", "cptbendova", "rolecraftvault", "MainActivity.java"), "utf8");
 
 function lift(name) {
   const start = app.indexOf("function " + name + "(");
@@ -48,6 +50,27 @@ class ContentReader {
   check("the Android picker accepts common JSON MIME aliases",
     /const JSON_FILE_ACCEPT = "\.json,application\/json,text\/json,text\/plain,application\/octet-stream"/.test(app) &&
     (app.match(/accept: JSON_FILE_ACCEPT/g) || []).length >= 4);
+
+  let clock = 1000;
+  const createFilePickerLockGate = new Function(
+    lift("createFilePickerLockGate") + "; return createFilePickerLockGate;"
+  )();
+  const pickerGate = createFilePickerLockGate(() => clock);
+  pickerGate.begin();
+  clock += 3000;
+  check("a real Android file choice is not mistaken for leaving after 2.5 seconds",
+    pickerGate.remaining() > 9 * 60 * 1000);
+  pickerGate.returned();
+  check("returning from Downloads narrows the exception to a short processing grace",
+    pickerGate.remaining() === 2500);
+  clock += 2501;
+  check("normal background locking is restored after the picker has returned",
+    pickerGate.remaining() === 0);
+  check("the Android lifecycle gate begins on file input and settles on resume",
+    /closest\('input\[type="file"\]'\)\) defer\(\)/.test(app) &&
+    /if \(!document\.hidden\) \{\s*pickerGate\.returned\(\)/.test(app) &&
+    /window\.__rcvOnForeground = \(\) => pickerGate\.returned\(\)/.test(app) &&
+    /public void onResume\(\)[\s\S]{0,450}window\.__rcvOnForeground/.test(activity));
 
   console.log("");
   console.log(bad ? "  " + bad + " Android JSON import regression(s) failed."
