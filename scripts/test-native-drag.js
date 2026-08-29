@@ -70,6 +70,16 @@ app.whenReady().then(async () => {
     ${where === "grid" ? `const g = btn(/^Grid$/); if (!g) return { fail: "no Grid button" }; g.click(); await sleep(1300);` : ``}
     const sel = ${where === "grid" ? `".imggrid [data-imgid]"` : where === "aside" ? `".cpage-aside .tile"` : `".card"`};
     let tiles = [...document.querySelectorAll(sel)];
+    if (sel === ".cpage-aside .tile") {
+      /* This check is about Chromium's native drag loop, not the responsive
+         aside layout (covered by test-ui-layout-audit). A 1024x720 hosted
+         desktop exposes only one aside tile, so stage the real draggable DOM
+         nodes in a visible row without replacing their React handlers. */
+      tiles.filter(t => t.draggable).forEach((t, i) => Object.assign(t.style, {
+        position: "fixed", left: (24 + i * 116) + "px", top: "120px",
+        width: "96px", height: "96px", zIndex: "2147483000"
+      }));
+    }
     if (${JSON.stringify("sections")} === ${JSON.stringify("PLACEHOLDER")}) {}
     if (sel === ".card") {
       // only the prose cards, and only ones fully on screen: a target below the
