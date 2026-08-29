@@ -923,6 +923,10 @@ Still worth doing: moving them into `tests/`.
 - `window.__rcvAndroidBack()` is the single bridge between the AndroidX back
   dispatcher and React. It returns true only when it unwound a modal, editor,
   record, book, or library destination; false at Dashboard lets Android exit.
+- The Android bottom bar remains reachable while fixed record sheets are open.
+  A primary destination must clear the complete reading stack (record, entry and
+  book) before changing the library underneath it. Do not clear editors through
+  this path; their own close flow protects unsaved writing.
 - `.rcvup` belongs to `RolecraftVault.Update`, registered by the elevated custom
   installer. Both first launch and `second-instance` must pass the file through
   `installUpdateText`, so double-click cannot bypass signature or shell checks.

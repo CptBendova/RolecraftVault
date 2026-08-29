@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.241";
+const APP_VERSION = "1.242";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.241";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.241 — current",
+  heading: "1.242 — current",
+  notes: ["Android's bottom navigation now actually reveals the tab you choose when a character, persona, lorebook, lore entry, prompt collection or prompt is open. The old screen is dismissed first instead of staying fixed above the newly selected library, including when leaving a nested lore entry. Tapping the current tab also returns to that library. Editors keep their existing protected close flow so changing destinations cannot silently discard unsaved writing. Android users need the 1.242 APK; Windows carries the same navigation fix in both the update file and full installer."]
+}, {
+  heading: "1.241",
   notes: ["Backup verification now checks the pictures that were actually read, including bucket covers, book covers and artwork held in Recently deleted. A missing picture stops the export instead of producing an incomplete file labelled verified, damaged records are refused before a restore can replace the vault, and Android's streamed writer preserves emoji and other four-byte characters even when one lands exactly between file pieces.", "Android storage now commits each saved value and its transfer fingerprint together, so an interruption cannot make a later copy mistake changed work for an unchanged record. Password changes also migrate the large-file format used by versions 1.168 to 1.171, and a screen-off transfer keeps checking after it finishes so the vault locks before the app is shown again.", "Windows transfers now preserve text at every one-megabyte boundary, turn disk-full and file-write failures into a clear transfer error instead of risking an app crash, and report a blocked Mirror deletion as incomplete rather than Complete. Lorebook and prompt exports now include covers, empty books and empty collections as well as entry pictures. Windows needs the full 1.241 setup because the receiving shell changed; Android users need the 1.241 APK." ]
 }, {
   heading: "1.240",
@@ -15884,6 +15887,22 @@ function RolecraftVault() {
     label: "Prompt Vault",
     icon: icons.prompt
   }];
+  /* On Android these destinations remain visible underneath fixed record sheets.
+     Changing only `view` selects a new library behind the sheet, which makes the
+     tab appear dead and leaves the old character or book on screen. A primary
+     destination is also an explicit request to leave the current reading stack,
+     so unwind every record-owned layer before revealing it. Editors are not
+     included: they protect unsaved writing through their own close flow. */
+  const navigatePrimary = nextView => {
+    setViewLoreEntryId(null);
+    setViewPromptEntryId(null);
+    setViewLoreBook(null);
+    setViewPromptBook(null);
+    setViewCharId(null);
+    setViewPersonaId(null);
+    setPersonaGrid(false);
+    setView(nextView);
+  };
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
@@ -16057,7 +16076,7 @@ function RolecraftVault() {
     title: n.label,
     "aria-label": n.label,
     "data-nav-id": n.id,
-    onClick: () => setView(n.id)
+    onClick: () => navigatePrimary(n.id)
   }, /*#__PURE__*/React.createElement(Ic, {
     d: n.icon,
     size: navIcon
