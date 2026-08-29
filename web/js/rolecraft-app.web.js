@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.245";
+const APP_VERSION = "1.246";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.245";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.245 — current",
+  heading: "1.246 — current",
+  notes: ["The new public CodeQL audit found three Windows file-handling race windows. Update packages and large transfer files are now opened once, inspected through that exact descriptor, read to the validated bound, and closed on every path, so another process cannot swap a checked path for a different file before Rolecraft reads it. Windows users need the full 1.246 setup because this hardening is in the app shell.", "Release tests now create unpredictable private temporary directories, adapt real animation, window and drag checks to hosted display constraints without weakening their assertions, and pin current GitHub Actions to immutable revisions. Extended CodeQL scanning now covers Rolecraft's Java/Kotlin, JavaScript and workflow code. Android users receive the same updated changelog in the 1.246 APK."]
+}, {
+  heading: "1.245",
   notes: ["Windows updates now carry a signed minimum shell version, so installing the newest interface can no longer jump over a required Windows app upgrade and leave a misleading mixed-version installation. This release upgrades the Windows runtime for current Electron security fixes, rebuilds every installer from that exact runtime, and compresses the full setup substantially. Existing Windows installations need the full 1.245 setup.", "Release engineering now runs on GitHub as well as locally, checks dependencies automatically, publishes verification hashes, keeps signing secrets out of the repository, and has clear private security-reporting and contribution guidance. Android's build tools no longer carry the audited vulnerable dependency chain, and test runs keep their disposable Chromium profiles outside the repository.", "The character editor keeps every card and gallery action inside 320px and 360px phone screens under the current browser engine. Android users need the 1.245 APK for this layout fix and the updated guide and changelog."]
 }, {
   heading: "1.244",

@@ -35,7 +35,8 @@ const ai = APPJS.indexOf("const ASSET_BASE = (() => {");
 const aj = APPJS.indexOf("})();", ai) + 5;
 const assetBase = APPJS.slice(ai, aj);
 
-const dir = path.join(os.tmpdir(), "rcv-probe3", "current");
+const probeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-probe3-"));
+const dir = path.join(probeRoot, "current");
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, "probe.js"), assetBase + `
 const t = src => new Promise(r => {
@@ -54,6 +55,10 @@ html = html.replace(/<script src="[^"]*app\.js"><\/script>/,
   '<script src="' + fileUrl(path.join(dir, "probe.js")) + '"></script>');
 const eff = path.join(dir, "index.effective.html");
 fs.writeFileSync(eff, html);
+const finish = code => {
+  try { fs.rmSync(probeRoot, { recursive: true, force: true }); } catch (_) {}
+  app.exit(code);
+};
 
 app.on("ready", () => {
   const win = new BrowserWindow({ show: false });
@@ -70,8 +75,8 @@ app.on("ready", () => {
     /* app.exit, not process.exitCode then app.quit: quit() tears the process
        down its own way and the code set on process is discarded, so the runner
        saw 0 no matter what this printed. */
-    app.exit(good ? 0 : 1);
+    finish(good ? 0 : 1);
   });
   win.loadFile(eff);
-  setTimeout(() => { console.log("timed out"); app.exit(1); }, 12000);
+  setTimeout(() => { console.log("timed out"); finish(1); }, 12000);
 });

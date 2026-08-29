@@ -144,11 +144,12 @@ async function run() {
     liftFunction(mainSource, "eachTransferLine") + "; return eachTransferLine;"
   )(fs, Buffer, StringDecoder);
   const desktopExpected = "a".repeat((1 << 20) - 1) + "😀";
-  const temp = path.join(os.tmpdir(), "rolecraft-transfer-utf8-" + process.pid + ".txt");
+  const transferTemp = fs.mkdtempSync(path.join(os.tmpdir(), "rolecraft-transfer-utf8-"));
+  const temp = path.join(transferTemp, "payload.txt");
   fs.writeFileSync(temp, desktopExpected + "\n", "utf8");
   let desktopActual = "";
   try { eachTransferLine(temp, line => { desktopActual = line; }); }
-  finally { try { fs.unlinkSync(temp); } catch {} }
+  finally { try { fs.rmSync(transferTemp, { recursive: true, force: true }); } catch {} }
   check("Windows transfer parsing preserves UTF-8 across its 1 MiB boundary",
     desktopActual === desktopExpected);
 

@@ -24,12 +24,12 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.245";
+const FACTORY_BUILD = "1.246";
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.245";
+const UPDATE_COMPAT_BUILD = "1.246";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -546,6 +546,16 @@ function writeAllSync(fd, value) {
     if (!written) throw new Error("The transfer file could not be fully written");
     at += written;
   }
+}
+function readExactSync(fd, length, position = 0) {
+  const buf = Buffer.alloc(length);
+  let at = 0;
+  while (at < length) {
+    const got = fs.readSync(fd, buf, at, length - at, position + at);
+    if (!got) throw new Error("The file ended before its recorded length");
+    at += got;
+  }
+  return buf;
 }
 
 /* Streams the vault to disk one record at a time as encrypted NDJSON.
@@ -1200,22 +1210,23 @@ function startTransferServer() {
    payload, and only then writes anything into the vault. Bounded memory, and a
    corrupt or wrong-code transfer can never leave the vault half-written. */
 function decryptTransferFile(encPath, plainPath, secret, report) {
-  const size = fs.statSync(encPath).size;
   const HEAD = 5 + 16 + 12;
-  if (size < HEAD + 16) throw new Error("transfer file too small");
   const fdIn = fs.openSync(encPath, "r");
-  const head = Buffer.alloc(HEAD);
-  fs.readSync(fdIn, head, 0, HEAD, 0);
-  if (head.slice(0, 5).toString() !== "RCVX2") { fs.closeSync(fdIn); throw new Error("not a Rolecraft transfer"); }
-  const salt = head.slice(5, 21);
-  const iv = head.slice(21, 33);
-  const tag = Buffer.alloc(16);
-  fs.readSync(fdIn, tag, 0, 16, size - 16);
-  const d = crypto.createDecipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
-  d.setAuthTag(tag);
-  try { fs.unlinkSync(plainPath); } catch (e) {}
-  const fdOut = fs.openSync(plainPath, "w");
+  let fdOut = null;
   try {
+    /* Inspect and read the descriptor we actually opened. A path can be
+       replaced between stat() and open(), especially in a shared directory. */
+    const size = fs.fstatSync(fdIn).size;
+    if (size < HEAD + 16) throw new Error("transfer file too small");
+    const head = readExactSync(fdIn, HEAD, 0);
+    if (head.slice(0, 5).toString() !== "RCVX2") throw new Error("not a Rolecraft transfer");
+    const salt = head.slice(5, 21);
+    const iv = head.slice(21, 33);
+    const tag = readExactSync(fdIn, 16, size - 16);
+    const d = crypto.createDecipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
+    d.setAuthTag(tag);
+    try { fs.unlinkSync(plainPath); } catch (e) {}
+    fdOut = fs.openSync(plainPath, "w");
     let pos = HEAD;
     const stop = size - 16;
     const buf = Buffer.alloc(1 << 20);
@@ -1231,15 +1242,14 @@ function decryptTransferFile(encPath, plainPath, secret, report) {
     const fin = d.final(); // throws if the code is wrong or bytes were tampered with
     if (fin.length) writeAllSync(fdOut, fin);
   } finally {
-    fs.closeSync(fdIn);
-    fs.closeSync(fdOut);
+    try { fs.closeSync(fdIn); } catch (e) {}
+    if (fdOut !== null) try { fs.closeSync(fdOut); } catch (e) {}
   }
 }
 
 /* Reads the decrypted NDJSON in chunks so a huge vault never becomes one
    JavaScript string. Two passes: verify the header, then write records. */
 function eachTransferLine(plainPath, onLine) {
-  const size = fs.statSync(plainPath).size;
   const fd = fs.openSync(plainPath, "r");
   const buf = Buffer.alloc(1 << 20);
   const decoder = new StringDecoder("utf8");
@@ -1254,6 +1264,7 @@ function eachTransferLine(plainPath, onLine) {
     }
   };
   try {
+    const size = fs.fstatSync(fd).size;
     while (pos < size && !stop) {
       const got = fs.readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
       if (got <= 0) break;
@@ -1832,13 +1843,15 @@ function updateFileArg(args) {
 let pendingUpdateFile = updateFileArg(process.argv);
 function openUpdateFile(file, win) {
   let result;
+  let fd = null;
   try {
-    const st = fs.statSync(file);
+    fd = fs.openSync(file, "r");
+    const st = fs.fstatSync(fd);
     if (!st.isFile() || st.size > 64 * 1024 * 1024) throw new Error("That update file is too large");
-    result = installUpdateText(fs.readFileSync(file, "utf8"));
+    result = installUpdateText(readExactSync(fd, st.size).toString("utf8"));
   } catch (err) {
     result = { ok: false, error: err && err.message ? err.message : "Couldn't read that update file" };
-  }
+  } finally { if (fd !== null) try { fs.closeSync(fd); } catch (e) {} }
   try { if (win && !win.isDestroyed()) win.webContents.send("update-file-result", result); } catch (e) {}
   return result;
 }
