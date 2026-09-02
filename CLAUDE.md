@@ -727,8 +727,9 @@ keeps doing unnecessary work:
   real video only when a large live crest is visible in Quality; Performance
   must not download or initialise a decoder for it.
 - Canvas dust takes its colour from the current theme. Pass the theme through as
-  a dependency so switching Dark, Light and CharSnap rebuilds the motes with the
-  new `--brass` value immediately, without a reload.
+  a dependency so switching Dark, Light, CharSnap or Custom, including changing
+  the live Custom accent, rebuilds the motes with the new `--brass` value
+  immediately without a reload.
 - Pausing dust means cancelling its pending animation frame. A loop that keeps
   requesting a frame and merely skips drawing still wakes the renderer sixty
   times a second under every panel. Resume it when the library is visible again.
@@ -740,6 +741,13 @@ Short entrance motion for panels belongs to Quality and is theme-neutral.
 Performance and reduced-motion remove it through the same global gates. Run the
 real renderer check below whenever changing the theme root, ambient layer, crest,
 panels, or Graphics setting.
+
+Custom theme memory lives beside `rcv-theme` in localStorage, not inside the
+encrypted vault, because its colours must be available before unlock. Store only
+the four user-facing colours. `customThemeVars` owns every derived colour and the
+contrast protection; do not start persisting individual CSS variables or let a
+Settings preview bypass that function. The same inline variables must be present
+on locked, loading, error and ready roots so no state flashes back to Dark.
 
 ### Responsive dashboard, libraries and image grid (1.238)
 
@@ -830,6 +838,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-touch-targets.js` | controls staying big enough to hit with a finger |
 | `test-perf-mode.js` | what performance mode turns off |
 | `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Read the canvas `fillStyle`, not random anti-aliased pixels. Needs Electron |
+| `test-custom-theme.js` | Custom colour controls, live derived palette, accessible text, phone-width fit and persistence across a reload. Needs Electron |
 | `test-ui-layout-audit.js` | all primary screens, records and editors fitting phone/tablet/desktop/wide viewports; Dashboard hierarchy and picture count; working library card sizes; and five centred Android navigation cells. Needs Electron |
 | `test-device-unlock-screen.js` | a real locked Android render with biometric enrollment, including the unlock action. It catches component-scoped platform flags that only fail for protected vaults. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |

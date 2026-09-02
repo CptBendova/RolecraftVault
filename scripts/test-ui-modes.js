@@ -101,7 +101,7 @@ const qualityProbe = `(async () => {
   const pausedHits = rafHits;
   const modal = document.querySelector(".modal");
   const modalRect = modal.getBoundingClientRect();
-  const optionNames = /^(Light|Dark|CharSnap|Quality|Performance|Small|Medium|Large|Normal|Higher|Maximum)$/;
+  const optionNames = /^(Light|Dark|CharSnap|Custom|Quality|Performance|Small|Medium|Large|Normal|Higher|Maximum)$/;
   const options = [...modal.querySelectorAll("button")].filter(b => optionNames.test((b.textContent || "").trim()));
   const optionsInside = options.every(b => {
     const r = b.getBoundingClientRect();

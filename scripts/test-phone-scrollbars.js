@@ -117,11 +117,11 @@ const LOOK = `(async () => {
      panel, not sitting off the edge of it. */
   const edge = m.getBoundingClientRect().right - (parseFloat(getComputedStyle(m).paddingRight) || 0);
   const named = re => [...m.querySelectorAll("button")].filter(b => re.test((b.textContent||"").trim()));
-  const outside = named(/^(Light|Dark|CharSnap|Normal|Higher|Maximum)$/)
+  const outside = named(/^(Light|Dark|CharSnap|Custom|Normal|Higher|Maximum)$/)
     .filter(b => b.getBoundingClientRect().right > edge + 1)
     .map(b => (b.textContent||"").trim());
   o.optionsOffTheEdge = outside;
-  o.optionsFound = named(/^(Light|Dark|CharSnap|Normal|Higher|Maximum)$/).length;
+  o.optionsFound = named(/^(Light|Dark|CharSnap|Custom|Normal|Higher|Maximum)$/).length;
   return o;
 })()`;
 
@@ -166,7 +166,7 @@ app.whenReady().then(async () => {
     p.column.scrollbarWidth === "none" && p.panel.scrollbarWidth === "none");
 
   console.log("\nthe panel that the bar was pushing out of shape");
-  check("all six choices are on screen", p.optionsFound === 6, "found " + p.optionsFound);
+  check("all seven choices are on screen", p.optionsFound === 7, "found " + p.optionsFound);
   check("none of them sits off the edge", p.optionsOffTheEdge.length === 0,
     p.optionsOffTheEdge.join(", "));
   check("the panel does not scroll sideways at all", p.panel.overflowsX === 0,

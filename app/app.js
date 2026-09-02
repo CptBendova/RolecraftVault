@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.249";
+const APP_VERSION = "1.250";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.249";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.249 — current",
+  heading: "1.250 — current",
+  notes: ["Settings now includes a Custom theme alongside Light, Dark and CharSnap. Four native colour pickers control the background, cards, accent and text, with changes applied immediately across the dashboard, libraries, editors, dialogs and lock screen.", "The custom palette is remembered on each device before the vault unlocks. Rolecraft derives matching fields, borders, buttons, secondary text and animation colours from the four choices, and automatically balances extreme combinations so important text remains readable. Reset custom colours restores the original dark palette without touching vault data.", "The in-app guide now explains how custom colours, automatic contrast protection and per-device theme memory work. The four-choice theme row and colour controls have been checked at Android phone, tablet and Windows widths. Windows can use the update file or full installer; Android receives the same feature in the 1.250 APK."]
+}, {
+  heading: "1.249",
   notes: ["Exports now wait for Android or Windows to finish writing before saying they worked. Character, persona, CharSnap and picture ZIP exports no longer show a success message when the destination refused the file. Large Android ZIPs are sent to the native writer in small pieces instead of being rebuilt as one enormous base64 value in the WebView, which prevents large picture archives from exhausting phone memory.", "Prompt imports now keep the collection and title as separate parts of duplicate matching, so differently named prompts cannot collide because their words happen to form the same combined phrase. Removing or replacing a bucket cover also checks every live record, other cover and Recently deleted entry before removing the picture bytes, protecting restored vaults in which an image id is shared.", "Lorebook and prompt collection covers load after restarting Windows or the browser edition. Blur changes are written in order and picture deletion waits for its blur record to be cleaned, preventing old blur choices from returning. Android 8 and 9 now ask for public-storage permission before exporting to Downloads or Pictures, and the in-app guide correctly distinguishes Downloads files from the Pictures/Rolecraft Vault gallery album. Android users need the 1.249 APK for the native export fixes; Windows includes the shared fixes in both the update file and full installer."]
 }, {
   heading: "1.248",
@@ -2186,6 +2189,137 @@ function dashboardImagePriority(spotlight, wallVisible) {
   return prioritizeImageQueue([], [spotlight && spotlight.profileImg].concat((wallVisible || []).map(item => item && item.imgId)));
 }
 
+/* Custom themes deliberately store only four understandable choices. Everything
+   else is derived here so a hand-picked palette still has coherent fields,
+   borders, buttons and secondary text instead of asking someone to tune twenty
+   implementation colours. Invalid saved values fall back independently. */
+const CUSTOM_THEME_DEFAULT = Object.freeze({
+  background: "#0a0e1c",
+  surface: "#121a30",
+  accent: "#d9b25c",
+  text: "#e7ebf7"
+});
+const THEME_NAMES = ["light", "dark", "charsnap", "custom"];
+function themeHex(value, fallback) {
+  const v = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : fallback;
+}
+function normalCustomTheme(value) {
+  let raw = value;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch (e) { raw = {}; }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) raw = {};
+  return {
+    background: themeHex(raw.background, CUSTOM_THEME_DEFAULT.background),
+    surface: themeHex(raw.surface, CUSTOM_THEME_DEFAULT.surface),
+    accent: themeHex(raw.accent, CUSTOM_THEME_DEFAULT.accent),
+    text: themeHex(raw.text, CUSTOM_THEME_DEFAULT.text)
+  };
+}
+function themeRgb(hex) {
+  const n = parseInt(themeHex(hex, "#000000").slice(1), 16);
+  return [n >> 16 & 255, n >> 8 & 255, n & 255];
+}
+function rgbThemeHex(rgb) {
+  return "#" + rgb.map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("");
+}
+function mixThemeHex(a, b, amount) {
+  const x = themeRgb(a), y = themeRgb(b);
+  return rgbThemeHex(x.map((n, i) => n + (y[i] - n) * amount));
+}
+function alphaThemeHex(hex, alpha) {
+  const c = themeRgb(hex);
+  return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + alpha + ")";
+}
+function themeLuminance(hex) {
+  const part = n => {
+    const x = n / 255;
+    return x <= .04045 ? x / 12.92 : Math.pow((x + .055) / 1.055, 2.4);
+  };
+  const c = themeRgb(hex);
+  return .2126 * part(c[0]) + .7152 * part(c[1]) + .0722 * part(c[2]);
+}
+function themeContrast(a, b) {
+  const x = themeLuminance(a), y = themeLuminance(b);
+  return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
+}
+function readableThemeColour(wanted, surfaces, ratio) {
+  const score = colour => Math.min(...surfaces.map(bg => themeContrast(colour, bg)));
+  if (score(wanted) >= ratio) return wanted;
+  for (let step = 1; step <= 20; step++) {
+    const amount = step / 20;
+    const light = mixThemeHex(wanted, "#ffffff", amount);
+    const dark = mixThemeHex(wanted, "#000000", amount);
+    const choices = [light, dark].filter(c => score(c) >= ratio);
+    if (choices.length) return choices.sort((a, b) => score(b) - score(a))[0];
+  }
+  return ["#ffffff", "#000000"].sort((a, b) => score(b) - score(a))[0];
+}
+function customThemeVars(value, contrast) {
+  const chosen = normalCustomTheme(value);
+  const ink = chosen.background;
+  /* A single text colour cannot be readable over opposite black and white
+     surfaces. In that extreme case, gently bring the panel toward the chosen
+     background until one readable foreground exists. Ordinary palettes keep
+     the exact surface colour picked in Settings. */
+  let panel = chosen.surface;
+  for (let step = 0; step <= 20; step++) {
+    const candidate = mixThemeHex(chosen.surface, ink, step / 20);
+    const best = Math.max(
+      Math.min(themeContrast("#ffffff", ink), themeContrast("#ffffff", candidate)),
+      Math.min(themeContrast("#000000", ink), themeContrast("#000000", candidate))
+    );
+    panel = candidate;
+    if (best >= 4.5) break;
+  }
+  const ink2 = mixThemeHex(ink, panel, .34);
+  const panel2 = mixThemeHex(panel, ink, .18);
+  const surfaces = [ink, ink2, panel, panel2];
+  const text = readableThemeColour(chosen.text, surfaces, 4.5);
+  const mutedWanted = contrast === "max" ? text : mixThemeHex(text, ink, contrast === "high" ? .1 : .26);
+  const muted = readableThemeColour(mutedWanted, surfaces, 4.5);
+  const dimWanted = contrast === "max" ? text : mixThemeHex(text, ink, contrast === "high" ? .16 : .32);
+  const dim = readableThemeColour(dimWanted, surfaces, 4.5);
+  const accent = readableThemeColour(chosen.accent, surfaces, 4.5);
+  const darkCanvas = themeLuminance(ink) < .38;
+  const accentDeep = mixThemeHex(accent, darkCanvas ? "#ffffff" : "#000000", .14);
+  const buttonText = readableThemeColour(darkCanvas ? "#10131d" : "#ffffff", [accent, accentDeep], 4.5);
+  const danger = readableThemeColour(darkCanvas ? "#e98686" : "#9d3d49", surfaces, 4.5);
+  return {
+    "--ink": ink,
+    "--ink2": ink2,
+    "--panel": panel,
+    "--panel2": panel2,
+    "--line": alphaThemeHex(text, .14),
+    "--line2": alphaThemeHex(text, .28),
+    "--text": text,
+    "--mut": muted,
+    "--dim": dim,
+    "--brass": accent,
+    "--brass-soft": alphaThemeHex(accent, .14),
+    "--brass-line": alphaThemeHex(accent, .42),
+    "--blue": accent,
+    "--blue-deep": accentDeep,
+    "--danger": danger,
+    "--danger-soft": alphaThemeHex(danger, .12),
+    "--danger-line": alphaThemeHex(danger, .32),
+    "--chip-bg": alphaThemeHex(accent, .1),
+    "--chip-line": alphaThemeHex(accent, .3),
+    "--nav-hov": alphaThemeHex(accent, .07),
+    "--nav-act": alphaThemeHex(accent, .13),
+    "--field": mixThemeHex(ink, panel, .5),
+    "--overlay": alphaThemeHex(darkCanvas ? "#000000" : "#1e2642", darkCanvas ? .72 : .46),
+    "--sidebg": "linear-gradient(180deg, " + panel + ", " + ink + ")",
+    "--placeholder": "radial-gradient(ellipse at 50% 35%, " + mixThemeHex(panel, accent, .12) + ", " + ink2 + ")",
+    "--lockbg": "radial-gradient(ellipse at 50% 30%, " + panel + " 0%, " + ink + " 65%)",
+    "--scroll": mixThemeHex(panel, text, .18),
+    "--shadow": "0 10px 30px " + alphaThemeHex(darkCanvas ? "#000000" : text, darkCanvas ? .5 : .16),
+    "--btn-grad": "linear-gradient(135deg, " + accent + ", " + accentDeep + ")",
+    "--btn-text": buttonText
+  };
+}
+
 /* ---------- shared styles ---------- */
 const CSS = `
   .rcv * { box-sizing: border-box; }
@@ -2262,6 +2396,12 @@ const CSS = `
     width: 16px; height: 16px; flex: 0 0 auto; margin: 0; padding: 0;
     accent-color: var(--blue); cursor: pointer;
   }
+  .rcv .custom-theme-editor { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); }
+  .rcv .theme-colour-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .rcv .theme-colour-control { min-width: 0; display: flex; flex-direction: column; gap: 6px; color: var(--mut); font-size: 12px; font-weight: 650; }
+  .rcv .theme-colour-choice { min-width: 0; display: flex; align-items: center; gap: 7px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+  .rcv input.theme-colour-input { width: 42px; min-width: 42px; height: 34px; padding: 2px; border-radius: 7px; background: transparent; cursor: pointer; }
+  .rcv .theme-colour-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font: 11px ui-monospace, Consolas, monospace; text-transform: uppercase; }
   .rcv input:focus, .rcv textarea:focus, .rcv select:focus { border-color: var(--blue-deep); }
   .rcv textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
   .rcv ::placeholder { color: var(--dim); }
@@ -2863,12 +3003,13 @@ const CSS = `
     .rcv.phone .modal { max-width: calc(100vw - 42px); }
     .rcv.phone .modal .btn { max-width: 100%; overflow: hidden; overflow-wrap: break-word; word-break: normal; white-space: normal; }
     .rcv.phone .settings-choice-row { display: grid !important; gap: 8px; }
-    .rcv.phone .settings-theme-choices,
+    .rcv.phone .settings-theme-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .rcv.phone .settings-card-choices,
     .rcv.phone .settings-contrast-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .rcv.phone .settings-reading-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .rcv.phone .settings-choice { width: 100%; min-width: 0; padding-left: 6px; padding-right: 6px; overflow-wrap: normal; white-space: nowrap; }
     .rcv.phone .settings-theme-choices .settings-choice-content { flex-direction: column; gap: 4px !important; }
+    .rcv.phone .theme-colour-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .rcv.phone .qr-stage { width: 100vw; height: 100vh; }
     .rcv.phone > .scrollbody { height: calc(100vh - 56px); padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important; }
     /* A record sheet starts at the top of the screen, unlike the library below
@@ -3246,7 +3387,7 @@ const GUIDE = [
         "On Windows and the web edition, the column on the left moves between the Dashboard and the four libraries: Characters, Personas, Lorebooks and Prompts.",
         "On Android those same five destinations sit in the bottom bar. Search, locking and Settings sit in the top bar, and this guide can always be opened from Settings.",
         "On Windows and the web edition, Stats, the theme, locking, this guide and Settings sit at the bottom of the left column.",
-        "The theme button changes the look of the app, and Settings has a reading text size of Small, Medium or Large if the writing feels too small.",
+        "The theme button changes the look of the app. Settings offers Light, Dark, CharSnap and Custom. Custom has colour pickers for the background, cards, accent and text, and remembers the palette on this device.",
         "Escape closes whatever is open, and every window also has an X in its top corner.",
         "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
       ],
@@ -3444,6 +3585,7 @@ const GUIDE = [
     "summary": "Full screen, how much the app draws, and the size of everything.",
     "body": [
       "Everything here lives in Settings, and none of it touches your vault. It decides how the app looks and how hard it works, nothing more.",
+      "Themes has Light, Dark, CharSnap and Custom. Choose Custom to open four colour pickers for the background, cards, accent and text. Changes apply while you pick and are remembered from the lock screen onwards. Rolecraft derives the remaining shades and balances combinations that would make text unreadable. Reset custom colours returns to the original dark palette without changing your records.",
       "Full screen is on the Windows app. Settings has Screen, with Window and Full screen, and F11 switches between them from anywhere in the app. There is no title bar in full screen, so the way back out is in the same place: open Settings and choose Window. Escape does it too, and so does F11 again. The web edition and the Android app are already whatever size the browser or the device gives them, so the setting is not shown there.",
       "Graphics has two settings, Quality and Performance.",
       [
@@ -11847,6 +11989,8 @@ function SettingsModal({
   counts,
   theme,
   setTheme,
+  customTheme,
+  setCustomTheme,
   textSize,
   setTextSize,
   cardSize,
@@ -12134,12 +12278,11 @@ function SettingsModal({
     style: {
       display: "flex",
       gap: 8,
-      /* Three of these do not fit across a phone: the row used to scroll
-         sideways inside the panel instead, which put CharSnap off the edge
-         where nothing said it was there. */
+      /* The phone grid below keeps all four choices visible without turning
+         names into narrow vertical fragments. */
       flexWrap: "wrap"
     }
-  }, [["light", "Light", icons.sun], ["dark", "Dark", icons.moon], ["charsnap", "CharSnap", icons.persona]].map(([t, label, ic]) => /*#__PURE__*/React.createElement("button", {
+  }, [["light", "Light", icons.sun], ["dark", "Dark", icons.moon], ["charsnap", "CharSnap", icons.persona], ["custom", "Custom", icons.gear]].map(([t, label, ic]) => /*#__PURE__*/React.createElement("button", {
     key: t,
     className: "btn settings-choice " + (theme === t ? "btn-primary" : "btn-ghost"),
     "data-settings-choice": "theme-" + t,
@@ -12158,7 +12301,34 @@ function SettingsModal({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: ic,
     size: 14
-  }), label)))), /*#__PURE__*/React.createElement("div", {
+  }), label)))), theme === "custom" && /*#__PURE__*/React.createElement("div", {
+    className: "custom-theme-editor"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 700, marginBottom: 4 }
+  }, "Custom colours"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: { fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }
+  }, "Pick the four main colours. Rolecraft builds the borders, fields and button shades from them, and automatically balances combinations that would make text unreadable."), /*#__PURE__*/React.createElement("div", {
+    className: "theme-colour-grid"
+  }, [["background", "Background"], ["surface", "Cards"], ["accent", "Accent"], ["text", "Text"]].map(([key, label]) => /*#__PURE__*/React.createElement("label", {
+    key,
+    className: "theme-colour-control"
+  }, /*#__PURE__*/React.createElement("span", null, label), /*#__PURE__*/React.createElement("span", {
+    className: "theme-colour-choice"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    className: "theme-colour-input",
+    value: customTheme[key],
+    "data-theme-colour": key,
+    "aria-label": label + " colour",
+    onInput: e => setCustomTheme({ ...customTheme, [key]: e.currentTarget.value })
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "theme-colour-value"
+  }, customTheme[key]))))), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: { marginTop: 10 },
+    onClick: () => setCustomTheme(CUSTOM_THEME_DEFAULT)
+  }, "Reset custom colours")), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13191,16 +13361,31 @@ function RolecraftVault() {
   });
   const [theme, setThemeState] = useState(() => {
     try {
-      return localStorage.getItem("rcv-theme") || "dark";
+      const saved = localStorage.getItem("rcv-theme");
+      return THEME_NAMES.includes(saved) ? saved : "dark";
     } catch {
       return "dark";
     }
   });
   const setTheme = t => {
+    if (!THEME_NAMES.includes(t)) return;
     setThemeState(t);
     try {
       localStorage.setItem("rcv-theme", t);
     } catch {}
+  };
+  /* Like the selected theme and graphics mode, this stays in localStorage on
+     purpose: the palette must be ready before encrypted storage is unlocked so
+     the lock screen does not flash back to Dark. It contains colours only, no
+     vault data. */
+  const [customTheme, setCustomThemeState] = useState(() => {
+    try { return normalCustomTheme(localStorage.getItem("rcv-custom-theme")); }
+    catch (e) { return normalCustomTheme(null); }
+  });
+  const setCustomTheme = value => {
+    const next = normalCustomTheme(value);
+    setCustomThemeState(next);
+    try { localStorage.setItem("rcv-custom-theme", JSON.stringify(next)); } catch (e) {}
   };
   /* Beside the theme, and for the same reason: the lock screen needs it before
      the vault can be opened. */
@@ -16277,7 +16462,9 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "") + " cards-" + cardSize;
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : theme === "custom" ? " custom" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "") + " cards-" + cardSize;
+  const rootThemeStyle = theme === "custom" ? customThemeVars(customTheme, contrast) : {};
+  const themeTone = theme === "custom" ? theme + ":" + customTheme.accent : theme;
   const sheetOpen = !!(viewCharId || viewPersonaId);
   const overlayOpen = !!(showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
   quietRef.current = overlayOpen;
@@ -16301,20 +16488,24 @@ function RolecraftVault() {
   }, [view, viewLoreBook, viewLoreEntryId, viewPromptBook, viewPromptEntryId, sheetOpen, overlayOpen, editingChar, editingRecord]);
   if (authState.checked && authState.locked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-theme": theme,
     "data-rcv-state": "locked",
     style: {
+      ...rootThemeStyle,
       "--prose-size": proseSizePx,
       "--card-min": cardMinPx
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(LockScreen, {
     authState: authState,
-    tone: theme,
+    tone: themeTone,
     onUnlocked: () => refreshAuth()
   }));
   if (loadError) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-theme": theme,
     "data-rcv-state": "error",
     style: {
+      ...rootThemeStyle,
       alignItems: "center",
       justifyContent: "center",
       padding: 32,
@@ -16360,8 +16551,10 @@ function RolecraftVault() {
      threw before auth had been read, so the lock screen never appeared. */
   if (!authState.checked) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-theme": theme,
     "data-rcv-state": "loading",
     style: {
+      ...rootThemeStyle,
       alignItems: "center",
       justifyContent: "center"
     }
@@ -16372,8 +16565,10 @@ function RolecraftVault() {
   }, "Opening the vault\u2026"));
   if (!ready) return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-theme": theme,
     "data-rcv-state": "loading",
     style: {
+      ...rootThemeStyle,
       alignItems: "center",
       justifyContent: "center"
     }
@@ -16383,15 +16578,17 @@ function RolecraftVault() {
   }));
   return /*#__PURE__*/React.createElement("div", {
     className: rootClass,
+    "data-theme": theme,
     "data-rcv-state": "ready",
     style: {
+      ...rootThemeStyle,
       "--prose-size": proseSizePx,
       "--card-min": cardMinPx
     }
   }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement(AmbientLayer, {
     dust: 40,
     paused: overlayOpen || sheetOpen,
-    tone: theme
+    tone: themeTone
   }), /*#__PURE__*/React.createElement("div", {
     className: "sidebar",
     style: {
@@ -16472,14 +16669,14 @@ function RolecraftVault() {
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
   }, "Stats")), (() => {
-    const themeLabel = theme === "dark" ? "Theme · Dark" : theme === "light" ? "Theme · Light" : "Theme · CharSnap";
+    const themeLabel = "Theme · " + (theme === "dark" ? "Dark" : theme === "light" ? "Light" : theme === "charsnap" ? "CharSnap" : "Custom");
     return /*#__PURE__*/React.createElement("button", {
       className: "navitem",
       title: themeLabel,
       "aria-label": themeLabel,
-      onClick: () => setTheme(theme === "dark" ? "light" : theme === "light" ? "charsnap" : "dark")
+      onClick: () => setTheme(theme === "dark" ? "light" : theme === "light" ? "charsnap" : theme === "charsnap" ? "custom" : "dark")
     }, /*#__PURE__*/React.createElement(Ic, {
-      d: theme === "dark" ? icons.moon : theme === "light" ? icons.sun : icons.persona,
+      d: theme === "dark" ? icons.moon : theme === "light" ? icons.sun : theme === "charsnap" ? icons.persona : icons.gear,
       size: navIcon
     }), /*#__PURE__*/React.createElement("span", {
       className: "navlabel"
@@ -19886,6 +20083,8 @@ function RolecraftVault() {
       },
     theme: theme,
     setTheme: setTheme,
+    customTheme: customTheme,
+    setCustomTheme: setCustomTheme,
     authState: authState,
     refreshAuth: refreshAuth,
     counts: {

@@ -381,7 +381,7 @@ app.whenReady().then(async () => {
       r.pictureExport.choices.includes("Save individual files") && r.pictureExport.choices.includes("Create ZIP"),
       "overflow=" + r.pictureExport.overflow + "px choices=" + r.pictureExport.choices.join(", "));
     if (size.android && !r.dashboard.tabletClass) {
-      check("Settings choices keep whole horizontal labels", r.settings.choices.length === 13 &&
+      check("Settings choices keep whole horizontal labels", r.settings.choices.length === 14 &&
         r.settings.choices.every(item => item.lines === 1 && item.overflow <= 1 && item.wrap !== "anywhere"),
         r.settings.choices.map(item => item.id + "=" + item.lines + " line(s)/" + item.overflow + "px/" + item.wrap).join(", "));
       const widths = r.bottomNav.map(item => item.width);
