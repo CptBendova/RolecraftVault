@@ -36,8 +36,11 @@ Rolecraft Vault is free to download and use under the [licence](LICENSE).
 
 - Keeps **characters** with any number of alternate versions.
 - Separates **personas**, **lorebooks**, and reusable **prompt collections**.
+  Lorebooks support remembered grid/list views, World or Personal grouping, and
+  direct links to every character or persona using them.
 - Stores portraits, banners, galleries, albums, tags, buckets, and per-picture
-  blur choices.
+  blur choices. Characters can be marked Planned, WIP, or Done and filtered or
+  sorted by that workflow status.
 - Provides built-in and private templates, plus safe text-only duplication that
   never makes two records compete for ownership of the same picture.
 - Protects in-progress writing with recoverable encrypted drafts and a visible
@@ -50,7 +53,8 @@ Rolecraft Vault is free to download and use under the [licence](LICENSE).
 - Uses phone-sized navigation and Android system Back behavior in the APK.
 
 Rolecraft Vault reads and writes **CharSnap** characters and lorebooks, and
-imports **Chub** lorebooks and **Tavern** v1/v2 character cards. Text, JSON,
+imports **Chub**, standalone lorebook v3, embedded character-card lorebooks, and
+**Tavern** v1/v2 character cards. Text, JSON,
 pictures, and complete encrypted backups can be exported so the library is not
 locked to one application.
 

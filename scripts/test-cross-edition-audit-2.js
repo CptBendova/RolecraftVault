@@ -73,9 +73,9 @@ async function run() {
     !malformedBackup.ok && /damaged records/.test(malformedBackup.fatal.join(" ")));
 
   const makeUid = (() => { let n = 0; return () => "new-" + ++n; })();
-  const normalizeLoreImport = new Function("uid", "toTermList", "asArray",
+  const normalizeLoreImport = new Function("uid", "toTermList", "firstTermList", "asArray",
     liftFunction(app, "normalizeLoreImport") + "; return normalizeLoreImport;"
-  )(makeUid, value => value || [], value => Array.isArray(value) ? value : [value]);
+  )(makeUid, value => value || [], (...values) => values.find(value => value && value.length) || [], value => Array.isArray(value) ? value : [value]);
   const normalizePromptImport = new Function("uid", "toTermList", "asArray",
     liftFunction(app, "normalizePromptImport") + "; return normalizePromptImport;"
   )(makeUid, value => value || [], value => Array.isArray(value) ? value : [value]);

@@ -185,6 +185,14 @@ always_active_system_prompt, creator_comment, variant_name, variant_tagline`.
 Emitting the 16-key export shape fails validation. Lorebook import uses the Chub
 structure plus CharSnap's own fields, and every entry needs ≥1 trigger.
 
+Lorebook files are not reliably flat. Standalone v3 books use `{spec:
+"lorebook_v3", data:{entries:[...]}}`, while character cards put the same book
+under `data.character_book`; older Chub and CharSnap files keep `entries` at the
+root. Some generators also write triggers as comma-separated text rather than
+an array. `normalizeLoreImport` deliberately unwraps all of these shapes and
+normalises `triggers`, `keys`, `key`, or `keywords` through `toTermList`. Do not
+make the root-level `entries` check strict again.
+
 There are **two importers**: "Import JSON" (Basics tab) takes a whole character;
 "Import Variant" (Details tab) takes a **bare variant object with the fields at the
 root**. They are not interchangeable.

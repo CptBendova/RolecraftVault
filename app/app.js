@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.250";
+const APP_VERSION = "1.251";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.250";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.250 — current",
+  heading: "1.251 — current",
+  notes: ["Lorebooks now have proper Grid and List entry views, remembered separately from prompt collections. Books can be filed as World lore or Personal lore, filtered from the Lorebooks screen, and changed later without moving or rewriting any entries.", "Open a lorebook to see every character and persona attached to it, with direct links back to those records. A character or persona can still use as many lorebooks as needed. Character editors now have one-tap Planned, WIP and Done workflow tags; the Characters screen can filter by status or sort the whole library from Planned through Done.", "Lorebook JSON import now reads current standalone lorebook v3 files, data-wrapped exports and lorebooks embedded inside character-card JSON, as well as the existing Rolecraft, Chub and CharSnap shapes. Triggers written as comma, semicolon or line-separated text are kept instead of being silently dropped, and several common content field names are accepted.", "Secure Markdown web links in displayed writing are clickable and open in the device's normal browser, without navigating the vault away. The in-app guide and public README cover the new organisation, views, links and import compatibility. Windows users can use the update file or full installer; Android receives the same interface and importer in the 1.251 APK."]
+}, {
+  heading: "1.250",
   notes: ["Settings now includes a Custom theme alongside Light, Dark and CharSnap. Four native colour pickers control the background, cards, accent and text, with changes applied immediately across the dashboard, libraries, editors, dialogs and lock screen.", "The custom palette is remembered on each device before the vault unlocks. Rolecraft derives matching fields, borders, buttons, secondary text and animation colours from the four choices, and automatically balances extreme combinations so important text remains readable. Reset custom colours restores the original dark palette without touching vault data.", "The in-app guide now explains how custom colours, automatic contrast protection and per-device theme memory work. The four-choice theme row and colour controls have been checked at Android phone, tablet and Windows widths. Windows can use the update file or full installer; Android receives the same feature in the 1.250 APK."]
 }, {
   heading: "1.249",
@@ -1376,6 +1379,20 @@ function firstTermList(...sources) {
   }
   return [];
 }
+const WORKFLOW_TAGS = ["Planned", "WIP", "Done"];
+function characterWorkflowStatus(c) {
+  const tags = c && Array.isArray(c.tags) ? c.tags : [];
+  const found = tags.find(t => WORKFLOW_TAGS.some(s => s.toLowerCase() === String(t).trim().toLowerCase()));
+  return found ? WORKFLOW_TAGS.find(s => s.toLowerCase() === String(found).trim().toLowerCase()) : "";
+}
+function withCharacterWorkflowStatus(tags, status) {
+  const rest = (Array.isArray(tags) ? tags : []).filter(t => !WORKFLOW_TAGS.some(s => s.toLowerCase() === String(t).trim().toLowerCase()));
+  return status ? [...rest, status] : rest;
+}
+function workflowStatusRank(c) {
+  const s = characterWorkflowStatus(c);
+  return s === "Planned" ? 0 : s === "WIP" ? 1 : s === "Done" ? 2 : 3;
+}
 function asArray(x) {
   return Array.isArray(x) ? x : [x];
 }
@@ -1774,14 +1791,15 @@ function normalizeLoreImport(obj, fallbackWorld, keepBooks = true) {
     return nid;
   };
   const push = raw => {
-    const trig = Array.isArray(raw.triggers) ? raw.triggers : Array.isArray(raw.keys) ? raw.keys : Array.isArray(raw.key) ? raw.key : [];
+    const trig = firstTermList(raw.triggers, raw.keys, raw.key, raw.keywords);
+    const keyTitle = firstTermList(raw.key, raw.keys, raw.triggers, raw.keywords).join(", ");
     out.push({
       id: uid(),
-      title: raw.title || raw.name || raw.comment || (Array.isArray(raw.key) ? raw.key.join(", ") : raw.key) || "Imported entry",
+      title: raw.title || raw.name || raw.comment || keyTitle || "Imported entry",
       world: raw.world || fallbackWorld || "",
-      content: raw.content || raw.entry || raw.description || "",
+      content: raw.content || raw.entry || raw.description || raw.value || raw.text || raw.definition || "",
       entryType: raw.entryType || raw.type || "",
-      triggers: trig.map(String).filter(Boolean),
+      triggers: trig,
       images: (raw.images || []).map(im => ({
         imgId: remap(im.imgId)
       })).filter(im => im.imgId),
@@ -1813,19 +1831,31 @@ function normalizeLoreImport(obj, fallbackWorld, keepBooks = true) {
     for (const raw of obj.lore || []) push(raw);
     return done();
   }
-  if (obj && obj.entries && typeof obj.entries === "object" && !Array.isArray(obj.entries)) {
+  /* Current standalone lorebooks wrap their payload in data, while character
+     cards place it under data.character_book. Older Chub/CharSnap files keep
+     entries at the root. Treat every wrapper as the same book before deciding
+     whether its entries are an object or an array. */
+  const wrapped = obj && typeof obj === "object" && (
+    obj.data && obj.data.character_book ||
+    obj.character_book ||
+    obj.data && obj.data.lorebook ||
+    obj.lorebook ||
+    obj.data && obj.data.entries && obj.data ||
+    obj
+  );
+  if (wrapped && wrapped.entries && typeof wrapped.entries === "object" && !Array.isArray(wrapped.entries)) {
     // SillyTavern / CharSnap / world-info style lorebook (entries keyed by id)
-    const world = obj.name || obj.title || fallbackWorld || "Imported lorebook";
-    for (const raw of Object.values(obj.entries)) push({
+    const world = wrapped.name || wrapped.title || obj && (obj.name || obj.title) || fallbackWorld || "Imported lorebook";
+    for (const raw of Object.values(wrapped.entries)) push({
       ...raw,
       world
     });
     return done();
   }
-  if (obj && Array.isArray(obj.entries)) {
+  if (wrapped && Array.isArray(wrapped.entries)) {
     // JAI-style lorebook: { title, entry_count, entries: [ { name, type, keys, content } ] }
-    const world = obj.title || obj.name || fallbackWorld || "Imported lorebook";
-    for (const raw of obj.entries) push({
+    const world = wrapped.name || wrapped.title || obj && (obj.name || obj.title) || fallbackWorld || "Imported lorebook";
+    for (const raw of wrapped.entries) push({
       ...raw,
       world
     });
@@ -3408,7 +3438,8 @@ const GUIDE = [
         "Creator memo is never sent to the AI. It is the right place for notes to yourself, especially if you have hidden your guts.",
         "Tagline shows on the card and in listings, and is not sent to the AI either."
       ],
-      "Custom sections are yours to name: appearance, rules of the world, anything. CharSnap has no such field of its own, so on the way out they are folded into the description, each one headed by its own title. Four particular titles are handled differently, and Publishing to CharSnap says which."
+      "Custom sections are yours to name: appearance, rules of the world, anything. CharSnap has no such field of its own, so on the way out they are folded into the description, each one headed by its own title. Four particular titles are handled differently, and Publishing to CharSnap says which.",
+      "Web links written in Markdown are clickable when the saved writing is displayed. Secure links open in the normal browser instead of replacing the vault screen."
     ]
   },
   {
@@ -3471,9 +3502,12 @@ const GUIDE = [
         "Keep an entry under 1,500 characters, which is CharSnap's limit. Around 500 is a comfortable size.",
         "Up to 25 entries can fire on a single message.",
         "A bot can have at most three lorebooks attached on CharSnap. The editor warns you past that.",
-        "Entry types (Character, Location, Item, PlotEvent, Other) are for your own sorting and barely affect the AI."
+        "Entry types (Character, Location, Item, PlotEvent, Other) are for your own sorting and barely affect the AI.",
+        "Grid and List switch how entries are laid out. The choice is remembered separately for lorebooks and prompt collections on this device.",
+        "A lorebook can be filed as World lore or Personal lore. The Lorebooks screen groups and filters by that choice, while each book shows every character and persona attached to it.",
+        "One character or persona can use several lorebooks. Attach them in its editor, then open the lorebook to move back through those links."
       ],
-      "Importing inside a book puts everything into that book, whatever the file claims. Importing from the Lorebooks screen instead files entries by the world named in the file."
+      "Importing inside a book puts everything into that book, whatever the file claims. Importing from the Lorebooks screen instead files entries by the world named in the file. Flat Chub and CharSnap books, standalone lorebook v3 files and lorebooks embedded in character-card JSON are all accepted."
     ]
   },
   {
@@ -3493,6 +3527,7 @@ const GUIDE = [
       [
         "Buckets are folders. A character or persona sits in one bucket, and a bucket can have its own cover picture.",
         "Tags describe a character and are how you filter your own library. They may contain spaces.",
+        "Planned, WIP and Done are quick workflow tags in the character editor. The Characters screen can filter by them or sort the whole library in workflow order.",
         "Searchable terms are extra words that help a character be found. CharSnap does not allow spaces in these, so a space becomes a hyphen when exporting. What you typed stays here unchanged.",
         "The search box on each library screen looks through names, tags, terms and the writing itself. Ctrl+K on Windows searches every kind at once and also runs common actions.",
         "The star beside any Ctrl+K result keeps it in Favourites on the dashboard, so a large library can keep its most-used records close.",
@@ -3533,7 +3568,8 @@ const GUIDE = [
         "Exporting all lorebooks or all prompt collections includes the original pictures, thumbnails and blur choices. A single-book export does the same for just that book.",
         "Import accepts this app's own files, CharSnap files, and Tavern v1 and v2 character cards. A file holding several characters at once, sometimes called a bot pack, is read as all of them.",
         "If something you are importing is already in the vault, you are asked what to do with it before anything is written: bring it in as a copy, overwrite what is here, or skip it.",
-        "Download a sample file gives you a blank file listing every field an import will accept."
+        "Download a sample file gives you a blank file listing every field an import will accept.",
+        "Lorebook import also understands standalone lorebook v3 files, data-wrapped files and the character_book section inside character cards. Trigger lists may be arrays or comma-separated text."
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
       "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. On Android it writes that file in small pieces, so a large vault does not need to fit in memory twice. The app records when a backup succeeds and reminds you when recent work needs another copy.",
@@ -5013,9 +5049,13 @@ function mdInline(text) {
     }, mdInline(t.slice(2, -2))));else if (t.startsWith("[")) {
       const label = t.slice(1, t.indexOf("]"));
       const url = t.slice(t.indexOf("](") + 2, -1);
-      out.push(/*#__PURE__*/React.createElement("span", {
+      const safe = url.startsWith("https:" + "//");
+      out.push(/*#__PURE__*/React.createElement(safe ? "a" : "span", {
         key: "l" + k++,
         title: url,
+        href: safe ? url : undefined,
+        target: safe ? "_blank" : undefined,
+        rel: safe ? "noopener noreferrer" : undefined,
         style: {
           color: "var(--brass)",
           textDecoration: "underline",
@@ -7024,7 +7064,12 @@ function LorebookPage({
   onExportBook,
   onExportBookText,
   onExportCharSnap,
-  onStats
+  onStats,
+  scope,
+  onSetScope,
+  linkedRecords,
+  onOpenLinked,
+  viewStoreKey = "rcv-book-entry-view"
 }) {
   const coverRef = useRef(null);
   const coverSrc = cover ? fullCache && fullCache[cover] || imgCache && imgCache[cover] : null;
@@ -7033,6 +7078,17 @@ function LorebookPage({
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(world);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [entryView, setEntryViewState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(viewStoreKey);
+      if (saved === "list" || saved === "grid") return saved;
+    } catch {}
+    return "grid";
+  });
+  const setEntryView = next => {
+    setEntryViewState(next);
+    try { localStorage.setItem(viewStoreKey, next); } catch {}
+  };
   useEffect(() => {
     const h = e => {
       if (e.key === "Escape" && !escOff) onClose();
@@ -7262,12 +7318,56 @@ function LorebookPage({
       margin: "0 auto",
       padding: "24px 30px 80px"
     }
-  }, types.length > 1 && /*#__PURE__*/React.createElement("div", {
+  }, onSetScope && /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: "14px 16px",
+      marginBottom: 16,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, fontWeight: 700 }
+  }, "Lorebook type"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, color: "var(--dim)", marginTop: 2 }
+  }, scope === "personal" ? "Private notes, preferences and reusable personal context." : "Places, people and shared facts for a fictional world.")), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 7, flexWrap: "wrap" }
+  }, ["world", "personal"].map(value => /*#__PURE__*/React.createElement("button", {
+    key: value,
+    className: "chip" + ((scope || "world") === value ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => onSetScope(value)
+  }, value === "world" ? "World lore" : "Personal lore")))), linkedRecords && /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: { padding: "14px 16px", marginBottom: 16 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13.5, fontWeight: 700, marginBottom: linkedRecords.length ? 9 : 3 }
+  }, "Characters and personas using this lorebook"), linkedRecords.length ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 7, flexWrap: "wrap" }
+  }, linkedRecords.map(r => /*#__PURE__*/React.createElement("button", {
+    key: r.type + ":" + r.id,
+    className: "chip",
+    style: { cursor: "pointer" },
+    onClick: () => onOpenLinked(r)
+  }, r.label, " · ", r.type))) : /*#__PURE__*/React.createElement("div", {
+    style: { color: "var(--dim)", fontSize: 12.5 }
+  }, "Nothing is attached yet. Add this lorebook from a character or persona editor.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap",
+      marginBottom: 18
+    }
+  }, types.length > 1 ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
-      flexWrap: "wrap",
-      marginBottom: 18
+      flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "chip" + (typeFilter === null ? " on" : ""),
@@ -7282,7 +7382,15 @@ function LorebookPage({
       cursor: "pointer"
     },
     onClick: () => setTypeFilter(typeFilter === t ? null : t)
-  }, t, " · ", entries.filter(e => (e.entryType || "").trim() === t).length))), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, t, " · ", entries.filter(e => (e.entryType || "").trim() === t).length))) : /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 7, marginLeft: "auto" },
+    "aria-label": "Entry view"
+  }, ["grid", "list"].map(mode => /*#__PURE__*/React.createElement("button", {
+    key: mode,
+    className: "chip" + (entryView === mode ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => setEntryView(mode)
+  }, mode === "grid" ? "Grid" : "List")))), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: 30,
@@ -7292,8 +7400,8 @@ function LorebookPage({
   }, needle ? "No " + entriesNoun + " match that search." : "This " + bookNoun + " is empty — add your first " + entryNoun + "."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
-      gap: 14
+      gridTemplateColumns: entryView === "list" ? "minmax(0, 1fr)" : "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
+      gap: entryView === "list" ? 9 : 14
     }
   }, shown.map(e => /*#__PURE__*/React.createElement("div", {
     key: e.id,
@@ -7301,7 +7409,7 @@ function LorebookPage({
     role: "button",
     tabIndex: 0,
     style: {
-      padding: 18,
+      padding: entryView === "list" ? "13px 16px" : 18,
       cursor: "pointer"
     },
     onClick: () => onOpenEntry(e),
@@ -7311,7 +7419,7 @@ function LorebookPage({
       display: "flex",
       gap: 8,
       alignItems: "baseline",
-      marginBottom: 8
+      marginBottom: entryView === "list" ? 5 : 8
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "serif",
@@ -7331,7 +7439,7 @@ function LorebookPage({
       color: "var(--mut)",
       lineHeight: 1.55,
       display: "-webkit-box",
-      WebkitLineClamp: 4,
+      WebkitLineClamp: entryView === "list" ? 2 : 4,
       WebkitBoxOrient: "vertical",
       overflow: "hidden"
     }
@@ -7339,7 +7447,7 @@ function LorebookPage({
     style: {
       fontSize: 11.5,
       color: "var(--brass)",
-      marginTop: 8,
+      marginTop: entryView === "list" ? 5 : 8,
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis"
@@ -7348,7 +7456,7 @@ function LorebookPage({
     style: {
       fontSize: 11.5,
       color: "var(--dim)",
-      marginTop: 8,
+      marginTop: entryView === "list" ? 5 : 8,
       display: "flex",
       gap: 10
     }
@@ -10156,7 +10264,25 @@ function CharacterEditor({
     placeholder: "fantasy, villain, sci-fi…",
     // tags already in the vault first, then the rest of CharSnap's vocabulary
     suggestions: allTags.concat(CHARSNAP_TAGS.filter(t => !allTags.some(a => a.toLowerCase() === t.toLowerCase())))
-  }), /*#__PURE__*/React.createElement("label", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 7,
+      alignItems: "center",
+      flexWrap: "wrap",
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 12.5, color: "var(--mut)", marginRight: 2 }
+  }, "Workflow status"), WORKFLOW_TAGS.map(status => /*#__PURE__*/React.createElement("button", {
+    key: status,
+    type: "button",
+    className: "chip" + (characterWorkflowStatus(c) === status ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => set("tags", withCharacterWorkflowStatus(c.tags, characterWorkflowStatus(c) === status ? "" : status))
+  }, status))), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11.5, color: "var(--dim)", marginTop: 7, lineHeight: 1.45 }
+  }, "This is stored as a normal tag, so it travels in exports and can be filtered or sorted from the Characters screen."), /*#__PURE__*/React.createElement("label", {
     className: "lbl",
     style: {
       marginTop: 14
@@ -13432,6 +13558,7 @@ function RolecraftVault() {
   const [zipProg, setZipProg] = useState(null);
   const [charQ, setCharQ] = useState("");
   const [tagFilter, setTagFilter] = useState(null);
+  const [workflowFilter, setWorkflowFilter] = useState(null);
   const [bucketFilter, setBucketFilter] = useState(null); // bucket name, "" = Unsorted, null = all
   const [tagsOpen, setTagsOpen] = useState(false);
   const [dupePrompt, setDupePrompt] = useState(null); // { type, fresh:[items], dupes:[{item, existingId}] }
@@ -13675,6 +13802,8 @@ function RolecraftVault() {
   const [viewLoreEntryId, setViewLoreEntryId] = useState(null);
   const [newBookOpen, setNewBookOpen] = useState(false);
   const [newBookName, setNewBookName] = useState("");
+  const [newBookScope, setNewBookScope] = useState("world");
+  const [loreScopeFilter, setLoreScopeFilter] = useState(null);
   const [promptMeta, setPromptMeta] = useState({}); // { collection: { cover: imgId } }
   const promptMetaRef = useRef(promptMeta);
   promptMetaRef.current = promptMeta;
@@ -16352,10 +16481,10 @@ function RolecraftVault() {
 
   /* --- derived --- */
   const allTags = useMemo(() => [...new Set(chars.flatMap(c => c.tags || []))].sort(byName), [chars]);
-  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter))/* Every other list guards its fields; this one concatenated name, story and
+  const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !workflowFilter || characterWorkflowStatus(c) === workflowFilter)/* Every other list guards its fields; this one concatenated name, story and
    personality raw, so a character missing any of them had the literal word
    "undefined" folded into what gets searched — and typing it matched them. */
-.filter(c => !charQ.trim() || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+.filter(c => !charQ.trim() || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "status" ? workflowStatusRank(a) - workflowStatusRank(b) || byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   /* This copied every character, persona, lore entry and prompt in the vault
      into a new object, sorted the lot, and threw all but six away — and it ran
      on every render, including while typing in a search box on a completely
@@ -17433,7 +17562,9 @@ function RolecraftVault() {
     value: "updated"
   }, "Recently updated"), /*#__PURE__*/React.createElement("option", {
     value: "name"
-  }, "Name A–Z")), /*#__PURE__*/React.createElement("button", {
+  }, "Name A–Z"), /*#__PURE__*/React.createElement("option", {
+    value: "status"
+  }, "Workflow status")), /*#__PURE__*/React.createElement("button", {
     className: "btn " + (selectMode ? "btn-brass" : "btn-ghost"),
     style: {
       flexShrink: 0
@@ -17796,7 +17927,27 @@ function RolecraftVault() {
       d: icons.plus,
       size: 12
     }), " Add characters"))));
-  })(), allTags.length > 0 && /*#__PURE__*/React.createElement("div", {
+  })(), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 16,
+      display: "flex",
+      gap: 7,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "eyebrow",
+    style: { marginRight: 3 }
+  }, "Workflow"), /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (workflowFilter === null ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => setWorkflowFilter(null)
+  }, "All"), WORKFLOW_TAGS.map(status => /*#__PURE__*/React.createElement("button", {
+    key: status,
+    className: "chip" + (workflowFilter === status ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => setWorkflowFilter(workflowFilter === status ? null : status)
+  }, status, " · ", chars.filter(c => characterWorkflowStatus(c) === status).length))), allTags.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 20
     }
@@ -17956,7 +18107,22 @@ function RolecraftVault() {
     className: "veil"
   }), /*#__PURE__*/React.createElement("div", {
     className: "meta"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, characterWorkflowStatus(c) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      width: "fit-content",
+      padding: "2px 7px",
+      marginBottom: 4,
+      borderRadius: 99,
+      border: "1px solid rgba(217,178,92,.58)",
+      background: "rgba(6,9,20,.66)",
+      color: "#e8c978",
+      fontSize: 10.5,
+      fontWeight: 700,
+      letterSpacing: ".06em",
+      textTransform: "uppercase"
+    }
+  }, characterWorkflowStatus(c)), /*#__PURE__*/React.createElement("div", {
     className: "serif",
     style: {
       fontSize: 17,
@@ -17983,7 +18149,7 @@ function RolecraftVault() {
     }
   }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !overlayOpen && (() => {
     const needle = personaQ.trim().toLowerCase();
-    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" || sort === "status" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
     return /*#__PURE__*/React.createElement("div", {
       style: sheetOpen ? {
         display: "none"
@@ -18025,7 +18191,7 @@ function RolecraftVault() {
         width: 220
       }
     }), /*#__PURE__*/React.createElement("select", {
-      value: sort,
+      value: sort === "status" ? "name" : sort,
       onChange: e => setSort(e.target.value),
       style: { width: 190 },
       "aria-label": "Sort personas"
@@ -18460,7 +18626,11 @@ function RolecraftVault() {
     Object.keys(loreMeta).forEach(w => {
       if (!books[w]) books[w] = [];
     });
-    const names = Object.keys(books).sort((a, b) => (a || "\uffff").localeCompare(b || "\uffff"));
+    const scopeOf = w => loreMeta[w] && loreMeta[w].scope === "personal" ? "personal" : "world";
+    const names = Object.keys(books).filter(w => !loreScopeFilter || scopeOf(w) === loreScopeFilter).sort((a, b) => {
+      const scopeDiff = (scopeOf(a) === "personal" ? 1 : 0) - (scopeOf(b) === "personal" ? 1 : 0);
+      return scopeDiff || (a || "\uffff").localeCompare(b || "\uffff");
+    });
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -18515,6 +18685,7 @@ function RolecraftVault() {
       className: "btn btn-primary",
       onClick: () => {
         setNewBookName("");
+        setNewBookScope("world");
         setNewBookOpen(true);
       }
     }, /*#__PURE__*/React.createElement("span", {
@@ -18526,14 +18697,28 @@ function RolecraftVault() {
     }, /*#__PURE__*/React.createElement(Ic, {
       d: icons.plus,
       size: 14
-    }), " New lorebook")))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }), " New lorebook")))), Object.keys(books).length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "eyebrow",
+      style: { marginRight: 3 }
+    }, "Type"), /*#__PURE__*/React.createElement("button", {
+      className: "chip" + (loreScopeFilter === null ? " on" : ""),
+      style: { cursor: "pointer" },
+      onClick: () => setLoreScopeFilter(null)
+    }, "All · ", Object.keys(books).length), ["world", "personal"].map(scope => /*#__PURE__*/React.createElement("button", {
+      key: scope,
+      className: "chip" + (loreScopeFilter === scope ? " on" : ""),
+      style: { cursor: "pointer" },
+      onClick: () => setLoreScopeFilter(loreScopeFilter === scope ? null : scope)
+    }, scope === "world" ? "World lore" : "Personal lore", " · ", Object.keys(books).filter(w => scopeOf(w) === scope).length))), names.length === 0 && /*#__PURE__*/React.createElement("div", {
       className: "card",
       style: {
         padding: 34,
         color: "var(--dim)",
         fontSize: 14
       }
-    }, "No lorebooks yet. Create one, or import a lorebook JSON — entries group into books by their world."), /*#__PURE__*/React.createElement("div", {
+    }, Object.keys(books).length ? "No lorebooks match this type." : "No lorebooks yet. Create one, or import a lorebook JSON — entries group into books by their world."), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
@@ -18544,6 +18729,7 @@ function RolecraftVault() {
       const latest = es.length ? Math.max.apply(null, es.map(e => e.updatedAt || 0)) : null;
       const sample = es.slice().sort((a, b) => (a.title || "").localeCompare(b.title || "")).slice(0, 4).map(e => e.title || "Untitled");
       const cover = loreMeta[w] && loreMeta[w].cover;
+      const scope = scopeOf(w);
       return /*#__PURE__*/React.createElement("div", {
         key: w || "__unfiled",
         className: "card",
@@ -18614,9 +18800,12 @@ function RolecraftVault() {
       }, w || "Unfiled"), /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 12,
-          color: "var(--brass)"
+          color: "var(--brass)",
+          display: "flex",
+          gap: 7,
+          flexWrap: "wrap"
         }
-      }, es.length, " ", es.length === 1 ? "entry" : "entries"))), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, es.length, " ", es.length === 1 ? "entry" : "entries"), /*#__PURE__*/React.createElement("span", null, "· ", scope === "personal" ? "Personal lore" : "World lore")))), /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 12.5,
           color: "var(--mut)",
@@ -19026,6 +19215,26 @@ function RolecraftVault() {
       imgCache: imgCache,
       fullCache: fullCache,
       blurred: blurred,
+      scope: meta.scope === "personal" ? "personal" : "world",
+      onSetScope: async scope => {
+        await persistLoreMeta({
+          ...loreMeta,
+          [viewLoreBook]: { ...meta, scope }
+        });
+        toast(scope === "personal" ? "Filed under Personal lore" : "Filed under World lore");
+      },
+      linkedRecords: chars.filter(c => (c.lorebooks || []).includes(viewLoreBook)).map(c => ({ id: c.id, type: "Character", label: c.name || "Untitled" })).concat(personas.filter(p => (p.lorebooks || []).includes(viewLoreBook)).map(p => ({ id: p.id, type: "Persona", label: p.name || "Untitled" }))).sort((a, b) => byName(a.label, b.label)),
+      onOpenLinked: record => {
+        setViewLoreBook(null);
+        if (record.type === "Character") {
+          setView("characters");
+          setViewCharId(record.id);
+        } else {
+          setView("personas");
+          setViewPersonaId(record.id);
+        }
+      },
+      viewStoreKey: "rcv-lore-entry-view",
       onSetCover: async files => {
         try {
           const imgId = await readThenSave(files[0]);
@@ -19251,6 +19460,7 @@ function RolecraftVault() {
       imgCache: imgCache,
       fullCache: fullCache,
       blurred: blurred,
+      viewStoreKey: "rcv-prompt-entry-view",
       onSetCover: async files => {
         try {
           const imgId = await readThenSave(files[0]);
@@ -19579,7 +19789,15 @@ function RolecraftVault() {
       color: "var(--mut)",
       marginBottom: 14
     }
-  }, "Name the world this book describes — entries you add inside will file under it."), /*#__PURE__*/React.createElement("input", {
+  }, "Name this lorebook, then choose whether it belongs with shared world lore or personal notes."), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }
+  }, ["world", "personal"].map(scope => /*#__PURE__*/React.createElement("button", {
+    key: scope,
+    type: "button",
+    className: "chip" + (newBookScope === scope ? " on" : ""),
+    style: { cursor: "pointer" },
+    onClick: () => setNewBookScope(scope)
+  }, scope === "world" ? "World lore" : "Personal lore"))), /*#__PURE__*/React.createElement("input", {
     autoFocus: true,
     value: newBookName,
     onChange: e => setNewBookName(e.target.value),
@@ -19590,7 +19808,7 @@ function RolecraftVault() {
         (async () => {
           if (!loreMeta[n]) await persistLoreMeta({
             ...loreMeta,
-            [n]: {}
+            [n]: { scope: newBookScope }
           });
           setNewBookOpen(false);
           setViewLoreBook(n);
@@ -19618,7 +19836,7 @@ function RolecraftVault() {
       if (!n) return;
       if (!loreMeta[n]) await persistLoreMeta({
         ...loreMeta,
-        [n]: {}
+        [n]: { scope: newBookScope }
       });
       setNewBookOpen(false);
       setViewLoreBook(n);
