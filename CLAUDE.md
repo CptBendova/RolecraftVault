@@ -31,7 +31,14 @@ preserves concurrent writing as deterministic conflict copies. Image originals
 are never overwritten or deleted. Previews may differ across devices without
 blocking original-image convergence. Only currently applied records hold image
 references, so purging a deleted conflict does not demand its pictures forever.
-Records and sync state commit with compare-and-swap after all originals arrive.
+Records and causal state commit in small compare-and-swap checkpoints, only
+after every original referenced by that record arrives. Never store unsaved
+records in the local causal snapshot: a restart would infer false deletions.
+Verified image-cache descriptors checkpoint independently of writing edits and
+survive later publishing passes. Initial consent (accepted) is durable, distinct
+from completed first reconciliation (approved/established). Keep deletions until
+their recovery-bin records are saved. A foreground status heartbeat renews the
+native serving lease during long preparation; lock/background guards still win.
 Windows stages unchanged files with hard links and replaces files atomically;
 Android compares encrypted pointers in the same IndexedDB transaction that
 writes values and fingerprints. Failed old-file cleanup must never delete new

@@ -33,6 +33,14 @@ function make(name,network={}){const t=createTransport({directory:path.join(root
   assert.equal(moved.port,renewed.port,"Remembered seed must not replace newly discovered endpoint");
   assert.equal((await last.call("index",{peer:status.device})).label,"Tablet");
   console.log("PASS authenticated rediscovery reconnects to a changed endpoint without another code");
+  const realNow=Date.now;let elapsed=0;
+  try{
+    Date.now=()=>realNow()+elapsed;
+    elapsed=15000;await restarted.call("status");elapsed=25000;
+    assert.equal((await last.call("index",{peer:status.device})).label,"Tablet","An unlocked preparation heartbeat renews the serving lease");
+    locked=true;await assert.rejects(restarted.call("status"),/Unlock/);locked=false;
+  }finally{Date.now=realNow;locked=false;}
+  console.log("PASS a busy unlocked device stays available beyond the old lease without weakening lock guards");
   restarted.pause();
   // The immutable download cache is usable even while the source is offline.
   for(const t of transports.filter(t=>t.info().label==="pc-two"))assert.equal((await t.call("chunk",{peer:status.device,hash:chunk.hash})).text,text);

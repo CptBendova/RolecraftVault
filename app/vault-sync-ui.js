@@ -85,12 +85,10 @@
   function SyncProgress({status,onDetails}){
     if(!status||!status.settings?.enabled||!["checking","preparing","receiving"].includes(status.phase))return null;
     if(status.phase==="checking"&&status.initial===false)return null;
-    return h("div",{className:"sync-progress",role:"status","aria-live":"polite",style:{padding:"12px 14px",marginBottom:16,border:"1px solid var(--line2)",borderRadius:12,background:"var(--panel)",color:"var(--mut)",fontSize:13,minWidth:0}},
-      h("strong",{style:{color:"var(--text)"}},"Device sync"),
-      h("div",{style:{marginTop:4,overflowWrap:"break-word"}},status.message),
-      h("div",{style:{marginTop:4}},"You can keep using your library while devices catch up."),
-      status.phase==="preparing"&&status.total>0&&h("progress",{"aria-label":"Picture preparation",value:Math.min(status.done||0,status.total),max:status.total,style:{width:"100%",height:6,display:"block",marginTop:8}}),
-      onDetails&&h("button",{className:"btn btn-ghost",style:{marginTop:8},onClick:onDetails},"Sync details"));
+    return h("div",{className:"sync-progress",style:{display:"flex",justifyContent:"flex-end",marginBottom:4,minWidth:0}},
+      h("button",{className:"btn btn-ghost",onClick:onDetails,"aria-label":"Device sync details",title:status.message,style:{display:"inline-flex",alignItems:"center",gap:7,padding:"4px 10px",minHeight:44,maxWidth:"100%",color:"var(--mut)",fontSize:12}},
+        h("span",{className:"spin","aria-hidden":true,style:{width:12,height:12,flexShrink:0}}),
+        h("span",null,status.phase==="preparing"?"Preparing sync…":"Syncing…")));
   }
   host.RolecraftSyncProgress=SyncProgress;
   host.RolecraftSyncPanel=SyncPanel;

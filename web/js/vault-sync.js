@@ -8,7 +8,7 @@
   function create(options){
     const storage=options.storage;
     const transport=host.vaultSync || (host.Capacitor&&typeof host.Capacitor.nativePromise==="function"?{call:(method,args)=>host.Capacitor.nativePromise("VaultSync","dispatch",{method,args:args||{}})}:null);
-    let stopped=false,busy=false,timer=null,epoch=0,approval=null,invalidCache=false,settings=null,lastPaint=0,firstCheck=true;
+    let stopped=false,busy=false,timer=null,pulseTimer=null,epoch=0,approval=null,invalidCache=false,settings=null,lastPaint=0,firstCheck=true;
     let current={phase:"off",message:"Choose a primary device or join its group."};
     const remoteCache=new Map();
     const listeners=new Set();
@@ -17,6 +17,18 @@
     const ready=()=>options.ready()&&!(host.Capacitor&&document.hidden);
     const check=run=>{if(run!==epoch||stopped||!ready())throw Error("Sync paused. Open and unlock the app to resume.");};
     const call=async(method,args,run=epoch)=>{check(run);const result=await transport.call(method,args||{});check(run);return result||{};};
+    async function pulse(){
+      if(stopped)return;
+      if(settings&&settings.enabled&&ready())await transport.call("status",{}).catch(()=>{});
+      if(!stopped)pulseTimer=setTimeout(pulse,5000);
+    }
+    // Cache checkpoints never advance the causal snapshot of unsaved records.
+    async function rememberImages(images,run){
+      check(run);const raw=await get(STATE),state=raw?JSON.parse(raw):{};
+      if(state.group&&state.group!==settings.group)throw Error("Sync group changed");
+      const next=JSON.stringify({...state,group:settings.group,images:{...state.images,...images}});
+      if(next!==raw){check(run);await storage.syncCommit({[STATE]:next},{[STATE]:raw});}
+    }
     async function stage(text,run){
       const parts=[];
       for(let at=0;at<text.length;){
@@ -40,14 +52,14 @@
       return [...ids];
     }
     async function localImages(snapshot,old,run){
-      const images=Object.create(null), ids=refs(snapshot);let done=0;
+      const images=Object.create(null), ids=refs(snapshot);let done=0,saved=0,lastSave=Date.now();
       const keys=ids.flatMap(id=>["img:"+id,"th:"+id]),marks={};
       for(let i=0;i<keys.length;i+=256){
         if(firstCheck)report("preparing","Checking saved pictures… "+Math.min(ids.length,Math.ceil(i/2))+" of "+ids.length,{done:Math.ceil(i/2),total:ids.length},false);
         Object.assign(marks,await storage.fingerprints(keys.slice(i,i+256)));check(run);
         await sleep(0);
       }
-      for(const id of ids){
+      try{for(const id of ids){
         done++;
         for(const prefix of ["img:","th:"]){
           const key=prefix+id,mark=marks[key],cached=!invalidCache&&old&&old[key];
@@ -57,8 +69,9 @@
           if(value==null){if(prefix==="img:")throw Error("A referenced picture could not be read. No library changes were made.");continue;}
           if(encoder.encode(value).length>128*1024*1024)throw Error("One picture exceeds the safe sync size. It remains on this device.");
           images[key]={...await stage(value,run),fingerprint:mark};
+          if(++saved>=16||Date.now()-lastSave>2000){await rememberImages(images,run);saved=0;lastSave=Date.now();}
         }
-      }
+      }}finally{if(saved)await rememberImages(images,run);}
       return images;
     }
     function portable(images){return Object.fromEntries(Object.entries(images).map(([k,v])=>[k,{hash:v.hash,parts:v.parts,bytes:v.bytes}]));}
@@ -102,11 +115,15 @@
         let snapshot=await C.scan(local.items,local.state.snapshot,settings.device,hash);
         await C.validate(snapshot,hash);
         const images=await localImages(snapshot,local.state.images,run);
-        const localState={...local.state,group:settings.group,snapshot,images};
+        const refreshed=await readLocal();check(run);
+        if(C.canonical(refreshed.raw)!==C.canonical(local.raw)){report("checking","Picture preparation saved. Picking up your latest writing on the next pass.");return;}
+        local=refreshed;
+        const localState={...local.state,group:settings.group,snapshot,images:{...local.state.images,...images}};
         const outgoingState=JSON.stringify(localState);
         /* Publish only revisions already saved in the encrypted vault. A failed
            metadata write cannot be advertised as a successful peer save. */
         if(outgoingState!==local.stateRaw){await storage.syncCommit({[STATE]:outgoingState},{...local.raw,[STATE]:local.stateRaw});local.stateRaw=outgoingState;}
+        local.state=localState;
         const revision=await publish(snapshot,images,run,local.state.approved);
         const discovered=await call("discover",{},run), peers=[],sources=[],snapshots=[snapshot];
         for(const peer of discovered.peers||[]){
@@ -146,30 +163,61 @@
         merged.snapshot=await C.scan(merged.items,merged.snapshot,settings.device,hash);
         const diff=C.difference(local.items,merged.items), changed=diff.added+diff.changed+diff.removed;
         const planId=await hash(C.canonical(merged.snapshot));
-        if(!local.state.approved&&changed&&approval!==planId){report("preview","Review the initial merge before anything in this library is replaced.",{peers,preview:{...diff,conflicts:merged.conflicts,id:planId}});return;}
+        if(!local.state.approved&&!local.state.accepted&&changed&&approval!==planId){report("preview","Review the initial merge before anything in this library is replaced.",{peers,preview:{...diff,conflicts:merged.conflicts,id:planId}});return;}
         if(!options.canApply()){report("busy","Changes are ready. Finish editing to let sync save them safely.",{peers});return;}
-        const needed=refs(merged.snapshot),allImages={...images};let received=0;
-        for(const id of needed)for(const prefix of ["img:","th:"]){
-          const key=prefix+id,available=sources.filter(s=>s.images[key]);
-          if(!available.length){if(prefix==="img:"&&!allImages[key])throw Error("A peer's referenced picture is missing. No records were changed.");continue;}
-          const target=available[0].images[key];
-          if(prefix==="img:"&&(available.some(s=>s.images[key].hash!==target.hash)||allImages[key]&&allImages[key].hash!==target.hash))throw Error("Two libraries contain different pictures with the same identity. Sync stopped without overwriting either picture.");
-          if(allImages[key])continue;
-          report("receiving","Receiving pictures safely… "+(++received),{peers,preview:null},false);
-          const value=await download(target,available[0].peer,run);
-          await storage.syncImage(key,value);check(run);
-          allImages[key]={...target,fingerprint:await storage.fingerprint(key)};
+        // Consent starts automatic reconciliation; it does not advertise a
+        // partially received device as established or acknowledge unsaved work.
+        if(!local.state.accepted&&!local.state.approved){
+          local.state={...local.state,accepted:true};const accepted=JSON.stringify(local.state);
+          await storage.syncCommit({[STATE]:accepted},{...local.raw,[STATE]:local.stateRaw});local.stateRaw=accepted;approval=null;
         }
-        check(run);
-        if(!options.canApply()){report("busy","Changes are downloaded. Finish editing to apply them safely.",{peers});return;}
-        const nextState={...localState,approved:true,snapshot:merged.snapshot,images:allImages};
-        const nextRaw=C.expand(merged.items,local.raw),values={[STATE]:JSON.stringify(nextState)};
-        if(changed)for(const [key,text]of Object.entries(nextRaw))if(text!==local.raw[key])values[key]=text;
-        if(changed||values[STATE]!==local.stateRaw){
-          report("applying","Saving verified changes on this device…",{peers,preview:null});await sleep(50);check(run);
-          if(!options.canApply())throw Error("Editing started while sync was preparing. Your work is preserved; sync will retry.");
-          await storage.syncCommit(values,{...local.raw,[STATE]:local.stateRaw});check(run);approval=null;
-          if(changed)await options.onApplied();
+        const needed=refs(merged.snapshot),allImages={...images},pending=[];
+        let received=needed.filter(id=>allImages["img:"+id]).length,committed=false,lastCommit=Date.now(),cacheDirty=false;
+        const units=Object.entries(merged.snapshot.entries).map(([key,entry])=>({key,entry,ids:merged.items[key]?refs({entries:{[key]:entry}}):[]})).sort((a,b)=>a.ids.length-b.ids.length);
+        async function commitPending(final){
+          check(run);if(!options.canApply())return false;
+          const latest=await readLocal();check(run);
+          if(C.canonical(latest.raw)!==C.canonical(local.raw))throw Error("Library changed during sync. Completed progress is saved; picking up your edit on the next pass.");
+          const items={...local.items},partial={format:1,entries:{...(local.state.snapshot||snapshot).entries}};
+          for(const unit of pending){partial.entries[unit.key]=unit.entry;if(merged.items[unit.key])items[unit.key]=merged.items[unit.key];else delete items[unit.key];}
+          const nextState={...latest.state,accepted:true,approved:!!latest.state.approved||final,snapshot:partial,images:{...latest.state.images,...allImages}};
+          const nextRaw=C.expand(items,local.raw),values={};let writing=false;
+          const tables=new Set(pending.map(u=>C.TABLES[C.parts(u.key)[0]][0]));
+          for(const [key,text]of Object.entries(nextRaw))if(text!==local.raw[key]&&tables.has(key)){values[key]=text;writing=true;}
+          const nextStateRaw=JSON.stringify(nextState);if(nextStateRaw!==latest.stateRaw)values[STATE]=nextStateRaw;
+          if(Object.keys(values).length){
+            if(writing){report("applying","Saving completed records. Remaining pictures will continue next…",{peers,preview:null});await sleep(50);check(run);if(!options.canApply())return false;}
+            await storage.syncCommit(values,{...local.raw,[STATE]:latest.stateRaw});check(run);committed=true;
+            local={raw:{...local.raw,...Object.fromEntries(Object.entries(values).filter(([key])=>key!==STATE))},items,state:nextState,stateRaw:nextStateRaw};
+            if(writing)await options.onApplied();
+          }
+          pending.length=0;lastCommit=Date.now();cacheDirty=false;
+          return true;
+        }
+        try{
+          for(const unit of units){
+            if(!merged.items[unit.key])continue; // Deletions wait for their recoverable bin records.
+            for(const id of unit.ids)for(const prefix of ["img:","th:"]){
+              const key=prefix+id,available=sources.filter(s=>s.images[key]);
+              if(!available.length){if(prefix==="img:"&&!allImages[key])throw Error("A peer's referenced picture is missing. Completed records remain saved.");continue;}
+              const target=available[0].images[key];
+              if(prefix==="img:"&&(available.some(s=>s.images[key].hash!==target.hash)||allImages[key]&&allImages[key].hash!==target.hash))throw Error("Two libraries contain different pictures with the same identity. Neither picture was overwritten.");
+              if(allImages[key])continue;
+              const cached=local.state.images&&local.state.images[key];
+              if(!invalidCache&&cached&&cached.hash===target.hash&&cached.fingerprint!=null&&cached.fingerprint===await storage.fingerprint(key)){allImages[key]=cached;if(prefix==="img:")received++;continue;}
+              report("receiving","Receiving pictures safely… "+received+" of "+needed.length+" originals. Completed records are saved as we go.",{peers,preview:null,done:received,total:needed.length},false);
+              const value=await download(target,available[0].peer,run);
+              await storage.syncImage(key,value);check(run);
+              allImages[key]={...target,fingerprint:await storage.fingerprint(key)};cacheDirty=true;if(prefix==="img:")received++;
+              if(Date.now()-lastCommit>2000){await rememberImages(allImages,run);cacheDirty=false;await commitPending(false);}
+            }
+            if(C.canonical((local.state.snapshot||snapshot).entries[unit.key])!==C.canonical(unit.entry))pending.push(unit);
+            if(pending.length>=16||Date.now()-lastCommit>2000||!committed&&pending.length)await commitPending(false);
+          }
+          for(const unit of units)if(!merged.items[unit.key])pending.push(unit);
+          if(!await commitPending(true)){report("busy","Downloaded progress is saved. Finish editing to apply the remaining records.",{peers});return;}
+        }finally{if(cacheDirty)await rememberImages(allImages,run);}
+        if(committed){
           report("saved","Changes saved here. Waiting for other devices to confirm their copies.",{peers,preview:null});
         }else{
           const online=peers.filter(p=>p.online),synced=online.length&&online.every(p=>p.revision===revision.library&&(!p.extensionRevision||p.extensionRevision===revision.extension));
@@ -188,7 +236,7 @@
       report(r.enabled?"checking":"off",r.enabled?"Pairing remembered. Preparing the first comparison…":"This device has left the sync group.",{settings:r,preview:null,code:null});
       clearTimeout(timer);timer=setTimeout(tick,0);return r;
     }
-    return {supported:!!transport&&!!storage.syncCommit,subscribe(fn){listeners.add(fn);fn(current);return()=>listeners.delete(fn);},start(){if(transport&&!stopped)tick();},stop(){stopped=true;epoch++;clearTimeout(timer);if(transport)transport.call("pause",{}).catch(()=>{});},configure,
+    return {supported:!!transport&&!!storage.syncCommit,subscribe(fn){listeners.add(fn);fn(current);return()=>listeners.delete(fn);},start(){if(transport&&!stopped){if(!pulseTimer)pulseTimer=setTimeout(pulse,5000);tick();}},stop(){stopped=true;epoch++;clearTimeout(timer);clearTimeout(pulseTimer);if(transport)transport.call("pause",{}).catch(()=>{});},configure,
       async invite(){const run=epoch;check(run);const r=await call("invite",{},run);report(current.phase,current.message,{code:r.code});return r.code;},
       async requestJoin(label){const r=await call("joinRequest",{label,namespace:options.namespace||"library1"});settings=r;report("off","Scan this QR using a device already in your group.",{settings:r});},
       async offerJoin(code){return call("offerJoin",{code});},

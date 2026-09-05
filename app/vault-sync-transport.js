@@ -115,7 +115,7 @@ function createTransport({directory,protect,unprotect,unlocked,network={}}){
   async function call(method,args={}){
     if(method==="pause"){stopEnrollment();pause();return {paused:true};}
     guard();
-    if(method==="status"){load();return info();}
+    if(method==="status"){load();if(server&&cfg)lease=Date.now()+20000;return info();}
     if(method==="upgradeNamespace"){
       load();if(!cfg||cfg.namespace!==args.from||args.to!=="library1")throw Error("Incompatible group upgrade");
       pause();if(fs.existsSync(rootFile))fs.unlinkSync(rootFile);save({...cfg,namespace:args.to});return info();
