@@ -16,6 +16,11 @@ updates:
     directory: /mobile/android
     schedule:
       interval: monthly
+    ignore:
+      # The current Android Gradle plugin cannot use the proposed Gradle 9.7.
+      # Keep compatible patch/minor updates until the Android toolchain migrates.
+      - dependency-name: "gradle-wrapper"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
