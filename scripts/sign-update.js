@@ -22,7 +22,7 @@ if (!version) {
 const appJsPath = path.join(root, "app", "app.js");
 const distDir = path.join(root, "dist");
 fs.mkdirSync(distDir, { recursive: true });
-const keyPath = path.join(root, "keys", "private_key.pem");
+const keyPath = process.env.ROLECRAFT_SIGNING_KEY_PATH || path.join(root, "keys", "private_key.pem");
 if (!fs.existsSync(keyPath)) {
   console.error("keys/private_key.pem not found. Copy it from your update kit — see keys/README.txt.");
   process.exit(1);

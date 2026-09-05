@@ -217,7 +217,8 @@ public class FileExportPlugin extends Plugin {
                 if (state.uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     ContentValues values = new ContentValues();
                     values.put(MediaStore.MediaColumns.IS_PENDING, 0);
-                    getContext().getContentResolver().update(state.uri, values, null, null);
+                    int published = getContext().getContentResolver().update(state.uri, values, null, null);
+                    if (published != 1) throw new IllegalStateException("Android could not make the completed file visible in Downloads");
                 }
                 if (state.file != null && state.location.startsWith("Pictures")) {
                     MediaScannerConnection.scanFile(getContext(),

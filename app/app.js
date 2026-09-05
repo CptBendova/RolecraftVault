@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.252";
+const APP_VERSION = "1.253";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.252";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.252 — current",
+  heading: "1.253 — current",
+  notes: ["Backup export now has a persistent progress panel, picture counts and a final filename and location. Errors remain visible instead of disappearing after Preparing backup. Repeated taps cannot start competing backups.", "Fixed backup failures caused by empty picture references and a bin-image helper that was out of scope. Damaged records and unreadable pictures stop safely with a visible error; existing library data is never rewritten by export.", "Android full backups must finish in public Downloads. A failed Downloads write no longer silently falls back to hidden app storage or marks the backup reminder as successful. Install this APK over the standard app without uninstalling to retain its library."]
+}, {
+  heading: "1.252",
   notes: ["Character and persona search now use the same normalization and include saved tags and search terms. Numbered names sort naturally, so Chapter 2 comes before Chapter 10, while case differences no longer split otherwise similar names.", "Persona cards and gallery tiles now respond to Space as well as Enter. Keyboard actions on controls inside a card no longer trigger the surrounding card too. The storage-error screen has a safe Retry opening vault action and clearer advice not to reset your data.", "The interface, guide and release tooling received a cross-platform regression audit covering phone and tablet layouts, themes, Quality and Performance modes, imports, exports, protected storage, image ownership and transfer safety. Shared search and keyboard logic is consolidated instead of duplicated. The release signer now ignores tags outside the app's normal version format.", "Windows 1.251 users can use the signed interface update or the full installer; Android users can install the 1.252 APK over the existing app. Application IDs, vault folders and signing identities are unchanged. Do not uninstall first."]
 }, {
   heading: "1.251",
@@ -1010,7 +1013,9 @@ function streamJsonDownload(C, filename, produce) {
 function phoneJsonStream(filename, produce) {
   const C = typeof window !== "undefined" && window.Capacitor;
   if (!C || typeof C.nativePromise !== "function") return null;
-  return streamJsonDownload(C, filename, produce).catch(() => streamJsonSomewhere(C, filename, produce));
+  /* A backup hidden inside the app is not a recoverable public export. Keep
+     the original failure instead of silently retrying in private storage. */
+  return streamJsonDownload(C, filename, produce);
 }
 function saveFile(blob, filename, options) {
   const opts = options || {};
@@ -1039,6 +1044,13 @@ function downloadJSON(obj, filename) {
   return saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }), filename);
 }
 const DIAG_EVENTS = [];
+const imageIdsOf = (type, r) => {
+  if (!r || typeof r !== "object") return [];
+  if (type === "character") return charImgIds(r);
+  if (type === "persona") return personaImgIds(r);
+  if (r.images != null && !Array.isArray(r.images)) throw new Error("A record has a damaged picture list. Your library has not been changed.");
+  return (r.images || []).map(im => im && im.imgId).filter(Boolean);
+};
 function recordDiag(label) {
   DIAG_EVENTS.push({ at: new Date().toISOString(), label: String(label || "event").slice(0, 80) });
   if (DIAG_EVENTS.length > 20) DIAG_EVENTS.shift();
@@ -1064,8 +1076,8 @@ function backupInspection(data) {
   if (data) {
     safeList("chars").filter(recordObject).forEach(c => charImgIds(c).forEach(id => wanted.add(id)));
     safeList("personas").filter(recordObject).forEach(p => personaImgIds(p).forEach(id => wanted.add(id)));
-    safeList("lore").filter(recordObject).forEach(e => (e.images || []).forEach(x => x && x.imgId && wanted.add(x.imgId)));
-    safeList("prompts").filter(recordObject).forEach(e => (e.images || []).forEach(x => x && x.imgId && wanted.add(x.imgId)));
+    safeList("lore").filter(recordObject).forEach(e => imageIdsOf("lore", e).forEach(id => wanted.add(id)));
+    safeList("prompts").filter(recordObject).forEach(e => imageIdsOf("prompt", e).forEach(id => wanted.add(id)));
     [data.buckets, data.personaBuckets, data.loreBooks, data.promptBooks].forEach(meta => {
       if (!recordObject(meta)) return;
       Object.values(meta).forEach(item => item && item.cover && wanted.add(item.cover));
@@ -3580,7 +3592,7 @@ const GUIDE = [
         "Lorebook import also understands standalone lorebook v3 files, data-wrapped files and the character_book section inside character cards. Trigger lists may be arrays or comma-separated text."
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
-      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. On Android it writes that file in small pieces, so a large vault does not need to fit in memory twice. The app records when a backup succeeds and reminds you when recent work needs another copy.",
+      "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. On Android it writes that file in small pieces, so a large vault does not need to fit in memory twice. A progress panel shows the current stage and picture counts; keep the app open and screen awake until it finishes. The final filename, location or error stays visible in Settings for this session. Only successful exports update the backup reminder.",
       "Import backup accepts only a complete vault backup, checks it first, and shows its date, app version, record counts, picture count and any missing pictures before it offers to replace the vault. The replacement is staged and committed together, so a failed restore leaves the vault you already had untouched.",
       "While an editor is open, unsaved writing is kept as a private draft inside the encrypted vault. If the app closes unexpectedly, the dashboard and the editor offer to restore it."
     ]
@@ -3688,7 +3700,7 @@ const GUIDE = [
         "The character page does not keep a strip of pictures down the side. Open Grid to see them. Small, Medium and Large show 3, 2 or 1 pictures per row on a phone and 4, 3 or 2 on a tablet, and the controls scroll away as you browse."
       ],
       "Your vault on the device is private to the app. No browser and no other app on the phone can read it, and it is never copied to Google Drive or anywhere else. Clearing the app's storage in Android settings will erase it, and so will uninstalling, so keep an exported backup somewhere else if it matters to you.",
-      "JSON, text, backup and ZIP files exported from the Android app are saved in the phone's public Downloads folder. Individual pictures are saved in Pictures/Rolecraft Vault so Gallery apps can find them. The confirmation message names the file and location. Import JSON opens Android's file picker, where exported JSON can be selected from Downloads. On an older app or a device that blocks the public location, Rolecraft tries Documents and then its own storage, and the message names that fallback instead.",
+      "JSON, text, backup and ZIP files exported from the Android app are saved in the phone's public Downloads folder. Individual pictures are saved in Pictures/Rolecraft Vault so Gallery apps can find them. Full backups require Downloads and report failure if it cannot be used; they never silently save inside hidden app storage. Other exports may fall back to Documents or app storage and name that location. Import JSON opens Android's file picker, where exported JSON can be selected from Downloads. To move an Android vault to Windows, export a full backup, copy that JSON to the computer and preview it using Import backup. Confirming restore replaces the Windows vault, so export its own backup first if it has anything you need to keep.",
       "A tablet is given more to work with than a phone: Dashboard Spotlight stays beside its details, galleries use more columns, and the Dashboard picture count fills complete rows for the available width. There is nothing to set beyond the size choices in Settings.",
       "After setting a master password, Settings can add secure fingerprint or face unlock when the device supports strong biometrics. Android Keystore seals the unlock secret and Android shows the system prompt; Rolecraft never receives fingerprint or face data. The password and optional PIN remain available as fallbacks."
     ]
@@ -12111,6 +12123,30 @@ function TransferWizard({ onClose, onVaultReplaced, onAdvanced }) {
   }, body);
 }
 
+function BackupExportStatus({ status }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!status || status.phase !== "working") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [status && status.phase]);
+  if (!status) return null;
+  const busy = status.phase === "working";
+  const stalled = busy && now - status.updatedAt > 30000;
+  return React.createElement("div", {
+    className: "backup-health " + (status.phase === "error" ? "due" : "good"),
+    "data-backup-status": status.phase,
+    role: status.phase === "error" ? "alert" : "status",
+    "aria-live": "polite",
+    style: { overflowWrap: "break-word", minWidth: 0 }
+  }, React.createElement("strong", null, status.phase === "error" ? "Backup was not exported" : busy ? "Exporting backup" : "Backup exported"),
+    React.createElement("span", null, status.message),
+    status.filename && React.createElement("span", null, "File: " + status.filename),
+    status.location && React.createElement("span", null, "Location: " + status.location),
+    busy && React.createElement("progress", { max: status.total || 1, value: status.total ? status.done || 0 : undefined, "aria-label": "Backup progress", style: { width: "100%" } }),
+    busy && React.createElement("span", null, "Keep Rolecraft open and the screen awake. " + Math.max(0, Math.floor((now - status.startedAt) / 1000)) + " seconds elapsed."),
+    stalled && React.createElement("span", null, "Still waiting for storage. No completion has been confirmed; do not start another export."));
+}
 function SettingsModal({
   onOpenTrash,
   onOpenHistory,
@@ -12119,6 +12155,7 @@ function SettingsModal({
   onCopyDiagnostics,
   lastBackup,
   backupDue,
+  backupExport,
   perfMode,
   setPerfMode,
   onVaultReplaced,
@@ -12950,7 +12987,7 @@ function SettingsModal({
     }
   }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
     className: "backup-health " + (backupDue ? "due" : "good")
-  }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), React.createElement(BackupExportStatus, { status: backupExport }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -12958,7 +12995,8 @@ function SettingsModal({
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
-    onClick: onExport
+    onClick: onExport,
+    disabled: backupExport && backupExport.phase === "working"
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       display: "inline-flex",
@@ -14063,6 +14101,9 @@ function RolecraftVault() {
   const [favorites, setFavorites] = useState([]);
   const [drafts, setDrafts] = useState([]);
   const [lastBackup, setLastBackup] = useState(0);
+  const [backupExport, setBackupExport] = useState(null);
+  const [backupExportOpen, setBackupExportOpen] = useState(false);
+  const backupExportBusy = useRef(false);
   const refreshDrafts = useCallback(() => {
     sGet(DRAFT_INDEX_KEY).then(v => {
       try { setDrafts(v ? JSON.parse(v).filter(Boolean) : []); } catch (e) { setDrafts([]); }
@@ -15375,11 +15416,6 @@ function RolecraftVault() {
      would not be a restore. The pictures are only removed when the entry is emptied
      from the bin, by hand or by the 30-day sweep. */
   const TRASH_DAYS = 30;
-  const imageIdsOf = (type, r) => {
-    if (type === "character") return charImgIds(r);
-    if (type === "persona") return personaImgIds(r);
-    return (r.images || []).map(im => im.imgId).filter(Boolean);
-  };
   /* Several at once has to be one write. Calling the single version in a loop
      would have each call build its list from the same closed-over trash, so
      every write but the last would be thrown away and only one of the records
@@ -16284,18 +16320,33 @@ function RolecraftVault() {
     }
   };
   const exportAll = async () => {
-    toast("Preparing backup…");
+    setBackupExportOpen(true);
+    if (backupExportBusy.current) return;
+    backupExportBusy.current = true;
+    const startedAt = Date.now();
+    let filename = "", location = "", lastPaint = 0;
+    const report = (message, done = 0, total = 0, force = true) => {
+      const now = Date.now();
+      if (!force && now - lastPaint < 125 && done !== total) return;
+      lastPaint = now;
+      setBackupExport({ phase: "working", message, filename, startedAt, updatedAt: now, done, total });
+    };
+    report("Preparing backup…");
+    try {
+    /* Let the progress panel paint before inspecting a large library. All
+       preparation belongs inside this catch, not just the final file write. */
+    await new Promise(resolve => setTimeout(resolve, 0));
     const imgIds = [];
     for (const c of chars) imgIds.push(...charImgIds(c));
     for (const p of personas) imgIds.push(...personaImgIds(p));
     Object.values(bucketMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
-    lore.forEach(e => (e.images || []).forEach(im => imgIds.push(im.imgId)));
+    lore.forEach(e => imageIdsOf("lore", e).forEach(id => imgIds.push(id)));
     Object.values(loreMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
-    prompts.forEach(p => (p.images || []).forEach(im => imgIds.push(im.imgId)));
+    prompts.forEach(p => imageIdsOf("prompt", p).forEach(id => imgIds.push(id)));
     Object.values(promptMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
@@ -16306,10 +16357,13 @@ function RolecraftVault() {
     Object.values(pBucketMeta).forEach(m => {
       if (m && m.cover) imgIds.push(m.cover);
     });
-    trash.forEach(t => imageIdsOf(t.type, t.record).forEach(id => imgIds.push(id)));
+    trash.forEach(t => {
+      if (!t || !t.record) throw new Error("A bin entry is damaged. Your library has not been changed.");
+      imageIdsOf(t.type, t.record).forEach(id => imgIds.push(id));
+    });
     const uniqueIds = [...new Set(imgIds.filter(Boolean))];
     const exportedAt = new Date().toISOString();
-    const filename = "rolecraft-backup-" + exportedAt.slice(0, 10) + ".json";
+    filename = "rolecraft-backup-" + exportedAt.replace(/[:.]/g, "-") + ".json";
     const base = {
       app: "rolecraft-vault",
       version: 4,
@@ -16330,7 +16384,8 @@ function RolecraftVault() {
        this structural pass from mistaking not-yet-read pictures for failures. */
     const expectedImages = Object.fromEntries(uniqueIds.map(id => [id, true]));
     const check = backupInspection({ ...base, images: expectedImages });
-    if (!check.ok) { toast("Backup validation failed — nothing was exported"); recordDiag("backup validation failed"); return; }
+    if (!check.ok) throw new Error(check.fatal[0] || "Backup validation failed");
+    report("Opening backup destination…");
     const stream = phoneJsonStream(filename, async append => {
       let first = true, imageCount = 0;
       const prop = async (name, value) => {
@@ -16338,10 +16393,12 @@ function RolecraftVault() {
         first = false;
       };
       await append("{");
+      report("Writing library records…");
       for (const name of ["app", "version", "exportedAt", "chars", "personas", "lore", "prompts"]) await prop(name, base[name]);
       await append(",\"images\":{");
       let comma = false;
       for (const id of uniqueIds) {
+        report("Saving picture " + (imageCount + 1) + " of " + uniqueIds.length, imageCount, uniqueIds.length, imageCount === 0);
         const value = (await sGet("img:" + id)) || imgCache[id] || null;
         if (!value) throw new Error("Backup validation failed because a referenced picture could not be read");
         await append((comma ? "," : "") + JSON.stringify(id) + ":" + JSON.stringify(value));
@@ -16350,7 +16407,9 @@ function RolecraftVault() {
       }
       await append("},\"thumbs\":{");
       comma = false;
+      let thumbCount = 0;
       for (const id of uniqueIds) {
+        report("Saving previews " + (++thumbCount) + " of " + uniqueIds.length, thumbCount, uniqueIds.length, thumbCount === 1);
         const value = await sGet("th:" + id);
         if (!value) continue;
         await append((comma ? "," : "") + JSON.stringify(id) + ":" + JSON.stringify(value));
@@ -16366,28 +16425,24 @@ function RolecraftVault() {
         images: imageCount
       });
       await append("}");
+      report("Finishing the download…");
     });
     let saved = false;
     if (stream) {
-      try {
-        const where = await stream;
-        saveNotice && saveNotice("Saved as " + filename + " in " + where);
-        saved = true;
-      } catch (e) {
-        saveNotice && saveNotice("Couldn't save " + filename + ": " + ((e && e.message) || e));
-      }
+      location = await stream;
+      saved = true;
     } else {
       const images = {}, thumbs = {};
+      let readCount = 0;
       for (const id of uniqueIds) {
+        report("Reading picture " + (++readCount) + " of " + uniqueIds.length, readCount, uniqueIds.length, false);
         images[id] = (await sGet("img:" + id)) || imgCache[id] || null;
         const thumb = await sGet("th:" + id);
         if (thumb) thumbs[id] = thumb;
       }
       const finalCheck = backupInspection({ ...base, images, thumbs });
       if (!finalCheck.ok || finalCheck.warnings.length) {
-        toast(finalCheck.fatal[0] || finalCheck.warnings[0] || "Backup validation failed — nothing was exported");
-        recordDiag("backup image validation failed");
-        return;
+        throw new Error(finalCheck.fatal[0] || finalCheck.warnings[0] || "Backup validation failed");
       }
       saved = await downloadJSON({
         ...base,
@@ -16400,12 +16455,23 @@ function RolecraftVault() {
           images: Object.values(images).filter(Boolean).length
         }
       }, filename);
+      location = typeof saved === "string" ? saved : "Downloads";
     }
+    if (!saved) throw new Error("The file could not be saved. Check available storage and try again.");
     if (saved) {
       const at = Date.now();
-      setLastBackup(at);
-      await sSet("ui:lastbackup", String(at));
-      toast("Backup saved and verified");
+      let message = "All referenced pictures were read and the backup was exported. Keep this plain JSON file somewhere safe.";
+      try {
+        await sSet("ui:lastbackup", String(at));
+        setLastBackup(at);
+      } catch (e) { message += " The backup reminder could not be updated."; }
+      setBackupExport({ phase: "success", message, filename, location, startedAt, updatedAt: at });
+    }
+    } catch (e) {
+      recordDiag("backup export failed");
+      setBackupExport({ phase: "error", filename, startedAt, updatedAt: Date.now(), message: ((e && e.message) || String(e)) + " Your library has not been changed. Check free storage and Downloads access, then retry. Do not uninstall or clear app storage." });
+    } finally {
+      backupExportBusy.current = false;
     }
   };
   const importAll = async source => {
@@ -20281,6 +20347,7 @@ function RolecraftVault() {
     onCopyDiagnostics: copyDiagnostics,
     lastBackup: lastBackup,
     backupDue: backupDue,
+    backupExport: backupExport,
     textSize: textSize,
     setTextSize: applyTextSize,
     cardSize: cardSize,
@@ -20409,7 +20476,15 @@ function RolecraftVault() {
       if (e.target.files[0]) handleJsonImportFile(e.target.files[0]);
       e.target.value = "";
     }
-  }), exportConfirm && /*#__PURE__*/React.createElement("div", {
+  }), backupExportOpen && backupExport && React.createElement("div", {
+    className: "modal-back", style: { zIndex: 125 }
+  }, React.createElement("div", {
+    className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",
+    style: { maxWidth: 520, width: "100%", maxHeight: "85dvh", overflowY: "auto" }
+  }, React.createElement(BackupExportStatus, { status: backupExport }), React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: () => setBackupExportOpen(false)
+  }, backupExport.phase === "working" ? "Hide progress (continues in Settings)" : "Close"))), exportConfirm && /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
     style: {
       zIndex: 120

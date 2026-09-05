@@ -547,6 +547,17 @@ empty books and covers survive a round trip.
 
 ## Public Android exports (1.243, 1.248)
 
+Standard 1.253 makes full backup exports public-Downloads-only. Never silently
+fall back to an app-private file and then advance backup health. The handler's
+entire preparation and write run inside one error boundary, with a single-run
+guard and persistent status. Empty image references are ignored only while
+collecting IDs; the original records remain unchanged in the backup. The shared
+imageIdsOf helper must be top-level: backupInspection is also top-level and
+previously threw on bin records when that helper lived inside RolecraftVault.
+Native finish checks that MediaStore actually published the completed row.
+Worktree builds may reference existing signing material through
+ROLECRAFT_KEYSTORE_PROPERTIES and ROLECRAFT_SIGNING_KEY_PATH without copying it.
+
 An HTML download link is swallowed by the Capacitor WebView, and Capacitor's
 Filesystem enum does not expose modern public Downloads or Pictures
 collections. `FileExportPlugin` is therefore the owner of user-visible exports.
