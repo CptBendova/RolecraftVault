@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.254";
+const APP_VERSION = "1.257";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,15 @@ const APP_VERSION = "1.254";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.257 — current",
+  notes: ["First sync now saves completed records in small checkpoints, after each record's originals are verified. Text-only records can appear before the rest of the pictures, and interrupted picture preparation is remembered.", "A small local or remote writing edit no longer discards completed first-sync work. Initial approval is remembered while the remaining records resume; concurrent edits and picture collisions remain protected.", "A compact sync spinner replaces the large library banner. Open its details button for full progress in Settings. The connection lease stays renewed during long preparation while the app remains open and unlocked.", "Install the full Windows installer or update the signed APK in place. Existing library data and remembered pairing are preserved."]
+}, {
+  heading: "1.256 — current",
+  notes: ["Windows no longer decrypts entire pictures to check the local sync cache, and sync-bookkeeping saves no longer rebuild the full vault folder. Large picture checks run in small yielding batches, with less frequent progress repaints.","A non-blocking Device sync banner shows preparation and receiving progress while you continue using the library. Actual incoming record replacements retain their guarded saving screen and atomic commit.","The primary is only the starting library. Once a device has completed its first sync, it can help another device join even if the original tablet or computer is offline. Existing devices continue as equal peers; group identity and stored data are preserved.","Windows users need the full 1.256 installer for the startup fix. Android receives progress and equal-peer improvements in the signed APK. Install over the existing app without uninstalling. Android background suspension and locking still pause sync."]
+}, {
+  heading: "1.255 — current",
+  notes: ["Pair devices using a full-size QR on Windows, phones and tablets, with an offline camera reader and Scan QR image fallback. A computer can show its own join QR for a device already in your group to scan, with confirmation on the computer before it joins.","Refresh pairing QR adds another device at any time without leaving the group, even while pictures are preparing. Only the invitation expires after ten minutes; remembered group membership does not. Timestamp-only character and persona saves no longer create new conflict copies; genuinely different writing and pictures remain preserved.","Install the full Windows installer for the new native pairing support, or update the signed Android APK in place. Existing libraries and group membership are preserved. The in-app guide now explains QR pairing, refreshing expired invitations and safe conflict copies."]
+}, {
   heading: "1.254 — current",
   notes: ["Automatic device sync can start from your most up-to-date phone, tablet or Windows computer. Pair each device once in Settings; the group is remembered securely and devices rediscover each other on the local network without new codes.", "The first comparison asks you to approve its merge. Unique records are retained, conflicting writing is preserved as separate copies, and later edits can travel in either direction. Synced record removals stay recoverable in the bin; sync never deletes picture files. Privacy blur marks travel with the library while device settings stay local.", "Transfers use encrypted, verified chunks and reuse completed downloads after interruptions. Incoming records are saved together only after their pictures arrive and only if local editing has not changed the library. Sync pauses while locked or Android is in the background, and resumes when open and unlocked. This is not a backup: keep periodic exports.", "Windows requires the full 1.254 installer for the new native sync transport. Install the Android APK over the existing standard app without uninstalling. Pair on the same private network and allow the Windows app through the private-network firewall if prompted. The guide includes the setup and recovery steps."]
 }, {
@@ -3442,7 +3451,7 @@ const GUIDE = [
     summary: "Pair computers, phones and tablets once, then keep their libraries up to date.",
     body: [
       "Open Settings on your most up-to-date device, such as your tablet, and choose Use this device as primary under Automatic device sync. This selects the preferred starting library, not a permanently required server.",
-      "Choose Pair another device. On each other computer, phone or tablet, scan its pairing QR or paste the code and choose Remember and join group. Pairing codes expire after ten minutes; after a successful pairing, the group is remembered securely and no new code is needed when returning to the same local network.",
+      "Choose Pair another device to display a QR. On another phone, tablet or computer, choose Scan pairing QR or Scan QR image, then Remember and join group. A Windows computer can also Show QR to join an existing group: scan that computer from a paired device, choose Add scanned computer to this group, then accept on the computer. Invitations expire after ten minutes; Refresh pairing QR creates a fresh invitation without leaving your group, even during picture preparation. Group membership is remembered securely and does not expire. After the first sync, all devices are equal peers: any synced device can share updates or pair a new member while the original starting device is offline. A small sync spinner opens detailed progress in Settings. Completed records are saved as their originals arrive, while remaining pictures continue. If interrupted, reopen and unlock the app to resume saved progress without leaving the group. Small writing edits are picked up automatically.",
       "Review and approve the first comparison on each device. Unique records are kept, and conflicting writing is kept as separate copies labelled sync conflict. Once paired, later changes travel in both directions. Record removals received by another device stay recoverable in its bin. Sync never deletes picture files.",
       "Keep the apps open and unlocked while syncing. Windows may be minimized. Android pauses when backgrounded or locked and resumes when open and unlocked. Finish editing before incoming changes can be applied. Verified downloaded chunks are reused after interruptions, and Up to date appears after connected peers have published matching revisions.",
       "Use a trusted private local network and allow the Windows app through the firewall on private networks if prompted. Guest networks can isolate devices. If a peer is missing, reopen and unlock both apps, check Wi-Fi and firewall access, then choose Check now. Do not keep creating new groups to fix a temporary disconnection.",
@@ -11599,7 +11608,7 @@ function qrMatrix(text) {
   if (typeof qrcode !== "function") return null;
   const str = String(text || "");
   if (!str) return null;
-  for (let type = 1; type <= 6; type++) {
+  for (let type = 1; type <= 40; type++) {
     try {
       const qr = qrcode(type, "M");
       qr.addData(str);
@@ -11631,7 +11640,7 @@ function TransferQr(props) {
     viewBox: "0 0 " + d + " " + d,
     shapeRendering: "crispEdges",
     "aria-hidden": true,
-    style: { display: "block", background: "#fff", borderRadius: 10 }
+    style: { display: "block", background: "#fff", maxWidth: "100%", height: "auto" }
   }, /*#__PURE__*/React.createElement("rect", { width: d, height: d, fill: "#ffffff" }), /*#__PURE__*/React.createElement("path", { d: path, fill: "#111111" }));
 }
 /* Recently deleted, in a window of its own.
@@ -13012,7 +13021,7 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), window.RolecraftSyncPanel && React.createElement(window.RolecraftSyncPanel, {engine:syncEngine,status:syncStatus,renderQr:code=>React.createElement(TransferQr,{text:code})}), /*#__PURE__*/React.createElement("div", {
+  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), window.RolecraftSyncPanel && React.createElement(window.RolecraftSyncPanel, {engine:syncEngine,status:syncStatus,renderQr:code=>React.createElement(TransferQr,{text:code,size:360})}), /*#__PURE__*/React.createElement("div", {
     className: "backup-health " + (backupDue ? "due" : "good")
   }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), React.createElement(BackupExportStatus, { status: backupExport }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -14139,6 +14148,7 @@ function RolecraftVault() {
     const engine = window.RolecraftVaultSync.create({
       storage: window.storage,
       namespace: window.RolecraftSyncNamespace || "library1",
+      previousNamespace: window.RolecraftPreviousSyncNamespace,
       ready: () => !!document.querySelector('.rcv[data-rcv-state="ready"]'),
       canApply: () => !pendingVaultWrites && !backupExportBusy.current && !document.activeElement?.matches("input, textarea, [contenteditable=true]") && document.querySelectorAll(".modal-back:not(.sync-saving)").length <= (document.querySelector(".vault-sync-panel") ? 1 : 0),
       imageIds: (kind, record) => {
@@ -17014,7 +17024,7 @@ function RolecraftVault() {
       height: "100vh",
       padding: "30px 34px 70px"
     }
-  }, view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
+  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onDetails:()=>setShowSettings(true)}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
     const rng = mulberry32(dashSeed);
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;

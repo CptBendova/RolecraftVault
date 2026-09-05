@@ -2,6 +2,24 @@
 
 ## Remembered multi-device sync
 
+Windows sync cache fingerprints use encrypted-file stat identities, not decrypted
+picture content. Yield during bulk checks and keep lock guards after each yield.
+A sync:state-only compare-and-swap uses the existing atomic single-file write;
+never rebuild the whole vault for bookkeeping. Multi-record replacements remain
+atomic. Advertise established=true only from durably approved local sync state.
+A newcomer may compare with the starting device or any established peer; the
+starting device is not a permanent server. Keep explicit first-merge approval.
+
+QR pairing uses the bundled qrcode encoder through version 40 and offline jsQR
+decoder, both loaded by desktop and web/mobile entry points. The native reverse
+join offer is ephemeral, encrypted to the join QR key, and requires local accept.
+Refreshing an invitation must not wait for picture preparation or change group
+identity. Expiry belongs to the invitation, never membership. Optional index
+descriptors stay outside the shared library payload; unsupported indices are
+not downloaded or interpreted. Keep all record/image validation and write guards.
+Timestamp-only character/persona revisions may coalesce their clocks, but real
+writing and image differences must still preserve conflict copies.
+
 Automatic sync is a separate protocol from passive one-time transfer. The
 native Windows transport and Android VaultSyncPlugin serve only immutable,
 encrypted chunks. Pairing secrets use safeStorage/Keystore. Authenticated UDP
@@ -13,7 +31,14 @@ preserves concurrent writing as deterministic conflict copies. Image originals
 are never overwritten or deleted. Previews may differ across devices without
 blocking original-image convergence. Only currently applied records hold image
 references, so purging a deleted conflict does not demand its pictures forever.
-Records and sync state commit with compare-and-swap after all originals arrive.
+Records and causal state commit in small compare-and-swap checkpoints, only
+after every original referenced by that record arrives. Never store unsaved
+records in the local causal snapshot: a restart would infer false deletions.
+Verified image-cache descriptors checkpoint independently of writing edits and
+survive later publishing passes. Initial consent (accepted) is durable, distinct
+from completed first reconciliation (approved/established). Keep deletions until
+their recovery-bin records are saved. A foreground status heartbeat renews the
+native serving lease during long preparation; lock/background guards still win.
 Windows stages unchanged files with hard links and replaces files atomically;
 Android compares encrypted pointers in the same IndexedDB transaction that
 writes values and fingerprints. Failed old-file cleanup must never delete new

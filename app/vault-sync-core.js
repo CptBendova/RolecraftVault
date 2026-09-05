@@ -45,11 +45,20 @@
     return out;
   }
   function dominates(a, b) { return Object.keys(b).every(k => (a[k] || 0) >= b[k]) && Object.keys(a).some(k => a[k] > (b[k] || 0)); }
-  function frontier(versions) {
+  function frontier(versions, kind) {
     const combined = dict();
     for (const v of versions) {
-      const previous = combined[v.hash];
-      combined[v.hash] = previous ? { ...v, clock: clockMax([previous,v]), author: [previous.author,v.author].sort()[0], at: Math.max(previous.at, v.at) } : v;
+      // A save timestamp alone is not a competing character/persona edit.
+      // Retain a real, checksummed revision and all causal history; never
+      // strip writing, picture references or timestamps from stored records.
+      let identity = v.hash;
+      if ((kind === "character" || kind === "persona") && v.value) {
+        const content = {...v.value}; delete content.updatedAt;
+        identity = canonical(content);
+      }
+      const previous = combined[identity];
+      const chosen = previous && previous.hash.localeCompare(v.hash) < 0 ? previous : v;
+      combined[identity] = previous ? { ...chosen, clock: clockMax([previous,v]), author: [previous.author,v.author].sort()[0], at: Math.max(previous.at, v.at) } : v;
     }
     const unique = Object.values(combined);
     return unique.filter(v => !unique.some(other => other !== v && dominates(other.clock, v.clock))).sort((a,b) => a.hash.localeCompare(b.hash));
@@ -86,7 +95,7 @@
     const entries = dict(), items = dict(); let conflicts = 0;
     for (const snapshot of snapshots) {
       await validate(snapshot,hash);
-      for (const [key,entry] of Object.entries(snapshot.entries)) entries[key] = {versions: frontier([...(entries[key] ? entries[key].versions : []), ...entry.versions])};
+      for (const [key,entry] of Object.entries(snapshot.entries)) entries[key] = {versions: frontier([...(entries[key] ? entries[key].versions : []), ...entry.versions], parts(key)[0])};
     }
     /* Synthetic conflict identities are deterministic on all peers. If a user
        edits or deletes a conflict copy later, its descendant beats this seed. */
@@ -103,7 +112,7 @@
         if (typeof value.name === "string") value.name += " (sync conflict)";
         else if (typeof value.title === "string") value.title += " (sync conflict)";
         const seed = {...loser,value,hash:await hash(canonical(value))};
-        entries[copyKey] = {versions:frontier([...(entries[copyKey] ? entries[copyKey].versions : []), seed])};
+        entries[copyKey] = {versions:frontier([...(entries[copyKey] ? entries[copyKey].versions : []), seed], kind)};
         conflicts++;
       }
     }
