@@ -18,18 +18,27 @@ async function until(test,label,timeout=60000){const end=Date.now()+timeout;whil
 (async()=>{
   const tablet=make("tablet");await tablet.transport.call("configure",{action:"create",label:"tablet"});const code=(await tablet.transport.call("invite")).code;
   for(const name of ["phone","pc-one","pc-two"]){const n=make(name);await n.transport.call("configure",{action:"join",code,label:name});}
-  for(const n of nodes)n.engine.start();
+  let syncMark=Date.now();for(const n of nodes)n.engine.start();
   await until(()=>nodes.every(n=>JSON.parse(n.data.get("lore:all")).length===4),"Initial four-way merge");
   for(const n of nodes)for(const peer of nodes)assert(n.data.has("img:"+peer.name),"Every referenced picture saves before the record appears");
   console.log("PASS actual automatic loop merges four different vaults and verifies every picture");
-  await until(()=>nodes.every(n=>n.status.phase==="synced"),"Acknowledged convergence");
+  await until(()=>nodes.every(n=>n.status.lastSynced>=syncMark),"Acknowledged convergence");
   console.log("PASS peers report up to date only after their durable published revisions agree");
-  const phone=nodes[1],records=JSON.parse(phone.data.get("lore:all"));records.find(r=>r.id==="tablet").content="Edited later on phone";phone.data.set("lore:all",JSON.stringify(records));
+  syncMark=Date.now();const phone=nodes[1],records=JSON.parse(phone.data.get("lore:all"));records.find(r=>r.id==="tablet").content="Edited later on phone";phone.data.set("lore:all",JSON.stringify(records));
   await until(()=>nodes.every(n=>JSON.parse(n.data.get("lore:all")).find(r=>r.id==="tablet").content==="Edited later on phone"),"Bidirectional edit");
   console.log("PASS phone edits automatically reach the tablet and both computers without new codes");
-  await until(()=>nodes.every(n=>n.status.phase==="synced"),"Second convergence");
+  await until(()=>nodes.every(n=>n.status.lastSynced>=syncMark),"Second convergence");
   const remaining=JSON.parse(phone.data.get("lore:all")).filter(r=>r.id!=="pc-two");phone.data.set("lore:all",JSON.stringify(remaining));
   await until(()=>nodes.every(n=>!JSON.parse(n.data.get("lore:all")).some(r=>r.id==="pc-two")),"Deletion propagation");
   for(const n of nodes.filter(n=>n!==phone)){assert(JSON.parse(n.data.get("trash:all")).some(t=>t.record.id==="pc-two"));assert(n.data.has("img:pc-two"));}
   console.log("PASS remote deletions are recoverable in the receiving bin and never remove picture bytes");
+  await until(()=>nodes.every(n=>n.status.lastSynced),"Established group");
+  tablet.engine.stop();tablet.transport.pause();
+  const computer=nodes[2],fresh=make('new-device');
+  const invitation=(await computer.transport.call('invite')).code;
+  await fresh.transport.call('configure',{action:'join',code:invitation,label:'new-device'});fresh.engine.start();
+  await until(()=>JSON.parse(fresh.data.get('lore:all')).some(r=>r.id==='tablet'),'Join through an established computer with starting tablet offline');
+  const edits=JSON.parse(computer.data.get('lore:all'));edits.find(r=>r.id==='tablet').content='Computer edit while tablet sleeps';computer.data.set('lore:all',JSON.stringify(edits));
+  await until(()=>nodes.filter(n=>n!==tablet).every(n=>JSON.parse(n.data.get('lore:all')).some(r=>r.id==='tablet'&&r.content==='Computer edit while tablet sleeps')),'Equal-peer updates without the starting tablet');
+  console.log('PASS a synced computer pairs a new device and exchanges updates while the original tablet is offline');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{for(const n of nodes){n.engine.stop();n.transport.pause();}});

@@ -8,11 +8,11 @@
   function create(options){
     const storage=options.storage;
     const transport=host.vaultSync || (host.Capacitor&&typeof host.Capacitor.nativePromise==="function"?{call:(method,args)=>host.Capacitor.nativePromise("VaultSync","dispatch",{method,args:args||{}})}:null);
-    let stopped=false,busy=false,timer=null,epoch=0,approval=null,invalidCache=false,settings=null,lastPaint=0;
+    let stopped=false,busy=false,timer=null,epoch=0,approval=null,invalidCache=false,settings=null,lastPaint=0,firstCheck=true;
     let current={phase:"off",message:"Choose a primary device or join its group."};
     const remoteCache=new Map();
     const listeners=new Set();
-    function report(phase,message,extra={},force=true){if(!force&&Date.now()-lastPaint<150)return;lastPaint=Date.now();current={...current,...extra,phase,message};for(const fn of listeners)fn(current);}
+    function report(phase,message,extra={},force=true){if(!force&&Date.now()-lastPaint<750)return;lastPaint=Date.now();current={...current,...extra,phase,message,initial:firstCheck};for(const fn of listeners)fn(current);}
     const get=async key=>{try{const r=await storage.get(key);return r?r.value:null;}catch(e){if(/not found/i.test(e.message))return null;throw e;}};
     const ready=()=>options.ready()&&!(host.Capacitor&&document.hidden);
     const check=run=>{if(run!==epoch||stopped||!ready())throw Error("Sync paused. Open and unlock the app to resume.");};
@@ -42,12 +42,17 @@
     async function localImages(snapshot,old,run){
       const images=Object.create(null), ids=refs(snapshot);let done=0;
       const keys=ids.flatMap(id=>["img:"+id,"th:"+id]),marks={};
-      for(let i=0;i<keys.length;i+=5000)Object.assign(marks,await storage.fingerprints(keys.slice(i,i+5000)));
+      for(let i=0;i<keys.length;i+=256){
+        if(firstCheck)report("preparing","Checking saved pictures… "+Math.min(ids.length,Math.ceil(i/2))+" of "+ids.length,{done:Math.ceil(i/2),total:ids.length},false);
+        Object.assign(marks,await storage.fingerprints(keys.slice(i,i+256)));check(run);
+        await sleep(0);
+      }
       for(const id of ids){
-        report("preparing","Preparing picture "+(++done)+" of "+ids.length,{done,total:ids.length},false);
+        done++;
         for(const prefix of ["img:","th:"]){
           const key=prefix+id,mark=marks[key],cached=!invalidCache&&old&&old[key];
           if(mark!=null&&cached&&cached.fingerprint===mark){images[key]=cached;continue;}
+          report("preparing","Preparing picture "+done+" of "+ids.length,{done,total:ids.length},false);
           const value=await get(key);check(run);
           if(value==null){if(prefix==="img:")throw Error("A referenced picture could not be read. No library changes were made.");continue;}
           if(encoder.encode(value).length>128*1024*1024)throw Error("One picture exceeds the safe sync size. It remains on this device.");
@@ -57,7 +62,7 @@
       return images;
     }
     function portable(images){return Object.fromEntries(Object.entries(images).map(([k,v])=>[k,{hash:v.hash,parts:v.parts,bytes:v.bytes}]));}
-    async function publish(snapshot,images,run){
+    async function publish(snapshot,images,run,established){
       const extended=C.extension, base={format:1,entries:{}}, extra={format:1,entries:{}};
       for(const [key,entry]of Object.entries(snapshot.entries))(extended&&extended.kinds.includes(C.parts(key)[0])?extra:base).entries[key]=entry;
       const baseIds=new Set(refs(base)),extraIds=new Set(refs(extra));
@@ -77,7 +82,7 @@
       // Preview encodings can legitimately differ between devices. They are
       // disposable presentation caches, not conflicting original artwork.
       const revision=await hash(C.canonical({snapshot:base,images:Object.fromEntries(Object.entries(baseImages).filter(([key])=>key.startsWith("img:")).map(([key,d])=>[key,d.hash]))}));
-      await call("publish",{head:{format:1,index,revision,extensions}},run);invalidCache=false;return {library:revision,extension:extensionRevision};
+      await call("publish",{head:{format:1,index,revision,extensions,established:established===true}},run);invalidCache=false;return {library:revision,extension:extensionRevision};
     }
     async function readLocal(){
       const raw=Object.create(null);for(const [key]of Object.values(C.TABLES))raw[key]=await get(key);
@@ -102,7 +107,7 @@
         /* Publish only revisions already saved in the encrypted vault. A failed
            metadata write cannot be advertised as a successful peer save. */
         if(outgoingState!==local.stateRaw){await storage.syncCommit({[STATE]:outgoingState},{...local.raw,[STATE]:local.stateRaw});local.stateRaw=outgoingState;}
-        const revision=await publish(snapshot,images,run);
+        const revision=await publish(snapshot,images,run,local.state.approved);
         const discovered=await call("discover",{},run), peers=[],sources=[],snapshots=[snapshot];
         for(const peer of discovered.peers||[]){
           try{
@@ -122,12 +127,12 @@
             await C.validate(incoming.snapshot,hash);
             for(const [key,d]of Object.entries(incoming.images)){if(!/^(img:|th:)/.test(key))throw Error("Invalid picture key");descriptor(d);}
             remoteCache.set(peer.id,{revision:cacheKey,incoming});
-            snapshots.push(incoming.snapshot);sources.push({peer:peer.id,images:incoming.images});peers.push({id:peer.id,label:r.label||"Paired device",revision:r.head.revision,extensionRevision:extension&&extension.revision,online:true});
+            snapshots.push(incoming.snapshot);sources.push({peer:peer.id,images:incoming.images});peers.push({id:peer.id,label:r.label||"Paired device",revision:r.head.revision,extensionRevision:extension&&extension.revision,established:r.head.established===true,online:true});
           }catch(e){check(run);peers.push({id:peer.id,label:"Paired device",online:false,error:e.message});}
         }
         check(run);
         if(snapshots.length===1){report("waiting","Pairing is remembered. Waiting for another open, unlocked device on this network.",{peers,preview:null});return;}
-        if(!local.state.approved&&settings.device!==settings.primary&&!peers.some(p=>p.id===settings.primary&&p.online)){report("waiting","Open the primary device to finish the first comparison.",{peers});return;}
+        if(!local.state.approved&&settings.device!==settings.primary&&!peers.some(p=>p.online&&(p.id===settings.primary||p.established))){report("waiting","Open the starting device or any device that has completed its first sync to compare this library safely.",{peers});return;}
         const merged=await C.merge(snapshots,settings.primary,hash);
         /* Remote deletion is recoverable here even if this replica did not have
            the sender's bin entry yet. No image is ever deleted by sync. */
@@ -171,11 +176,11 @@
           report(synced?"synced":"checking",synced?"Up to date with "+online.length+" online device"+(online.length===1?"":"s")+".":"Exchanging changes with paired devices…",{peers,preview:null,lastSynced:synced?Date.now():current.lastSynced});
         }
       }catch(e){if(run===epoch){if(/referenced sync chunk|referenced chunk|checksum/i.test(e.message))invalidCache=true;report("error",e.message+" Local changes are retained; sync retries automatically.");}}
-      finally{busy=false;if(!stopped&&run===epoch)timer=setTimeout(tick,options.intervalMs||5000);}
+      finally{if(settings&&settings.enabled&&ready())firstCheck=false;busy=false;if(!stopped&&run===epoch)timer=setTimeout(tick,options.intervalMs||5000);}
     }
     async function configure(action,args={}){
       if(busy&&action!=="leave")throw Error("Wait for the current sync check to finish before changing the group.");
-      epoch++;approval=null;invalidCache=true;clearTimeout(timer);remoteCache.clear();
+      epoch++;approval=null;invalidCache=true;firstCheck=true;clearTimeout(timer);remoteCache.clear();
       if(action!=="accept-request")await transport.call("pause",{});
       for(let i=0;busy&&i<200;i++)await sleep(50);
       if(busy)throw Error("Sync is still stopping. Try leaving again in a moment.");

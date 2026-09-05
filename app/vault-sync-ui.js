@@ -64,7 +64,8 @@
         h("label",{style:{display:"block",marginTop:16}},"Or join the primary device",h("textarea",{className:"input",value:code,rows:3,placeholder:"Paste its one-time pairing code",onChange:e=>setCode(e.target.value),style:{width:"100%",boxSizing:"border-box",resize:"vertical",marginTop:6}})),
         h("button",{className:"btn btn-brass",disabled:working||!code.trim().startsWith("RCVSYNC1."),onClick:()=>action(async()=>{await engine.configure("join",{label,code:code.trim()});setCode("");setScanning(false);setScanMessage("");})},"Remember and join group")
       ):h(React.Fragment,null,
-        h("div",{className:"backup-health good",role:"status","aria-live":"polite","data-vault-sync-status":s.phase},h("strong",null,settings.device===settings.primary?"Primary starting library":"Remembered sync group"),h("span",null,s.message||"Checking…")),
+        h("div",{className:"backup-health good",role:"status","aria-live":"polite","data-vault-sync-status":s.phase},h("strong",null,"Remembered sync group"),h("span",null,s.message||"Checking…")),
+        h("p",null,"After the first sync, devices are equal peers. Any synced computer, phone or tablet can share updates and pair another device; the original starting device can be offline."),
         s.preview&&h("div",{className:"backup-summary"},h("strong",null,"First-sync preview"),h("span",null,s.preview.added+" additions · "+s.preview.changed+" updates · "+s.preview.removed+" removals · "+s.preview.conflicts+" preserved conflict copies"),h("span",null,"Conflicting writing is kept as a separate copy. Synced record deletions are recoverable in the bin. No pictures are deleted by sync."),h("button",{className:"btn btn-primary",disabled:working,onClick:()=>engine.approve(s.preview.id)},"Approve merge and start automatic sync")),
         h("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
           h("button",{className:"btn btn-brass",disabled:working,onClick:()=>action(()=>engine.invite())},"Pair another device"),
@@ -81,6 +82,17 @@
       scanning&&h(React.Fragment,null,h("video",{ref:video,muted:true,playsInline:true,"aria-label":"Pairing QR camera",style:{display:"block",width:"100%",maxHeight:300,marginTop:8,borderRadius:8,objectFit:"contain",background:"#000"}}),cameras.length>1&&h("label",null,"Camera",h("select",{"aria-label":"Pairing camera",value:camera,onChange:e=>setCamera(e.target.value),style:{display:"block",width:"100%",minWidth:0}},h("option",{value:""},"Automatic camera"),cameras.map((c,i)=>h("option",{key:c.deviceId,value:c.deviceId},c.label||"Camera "+(i+1)))))),
       error&&h("p",{role:"alert",style:{color:"var(--danger)",overflowWrap:"break-word"}},error));
   }
+  function SyncProgress({status,onDetails}){
+    if(!status||!status.settings?.enabled||!["checking","preparing","receiving"].includes(status.phase))return null;
+    if(status.phase==="checking"&&status.initial===false)return null;
+    return h("div",{className:"sync-progress",role:"status","aria-live":"polite",style:{padding:"12px 14px",marginBottom:16,border:"1px solid var(--line2)",borderRadius:12,background:"var(--panel)",color:"var(--mut)",fontSize:13,minWidth:0}},
+      h("strong",{style:{color:"var(--text)"}},"Device sync"),
+      h("div",{style:{marginTop:4,overflowWrap:"break-word"}},status.message),
+      h("div",{style:{marginTop:4}},"You can keep using your library while devices catch up."),
+      status.phase==="preparing"&&status.total>0&&h("progress",{"aria-label":"Picture preparation",value:Math.min(status.done||0,status.total),max:status.total,style:{width:"100%",height:6,display:"block",marginTop:8}}),
+      onDetails&&h("button",{className:"btn btn-ghost",style:{marginTop:8},onClick:onDetails},"Sync details"));
+  }
+  host.RolecraftSyncProgress=SyncProgress;
   host.RolecraftSyncPanel=SyncPanel;
   host.RolecraftPairingQr={reader:qrReader,value:pairingValue};
 })(window);

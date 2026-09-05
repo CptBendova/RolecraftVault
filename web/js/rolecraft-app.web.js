@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.255";
+const APP_VERSION = "1.256";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.255";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.256 — current",
+  notes: ["Windows no longer decrypts entire pictures to check the local sync cache, and sync-bookkeeping saves no longer rebuild the full vault folder. Large picture checks run in small yielding batches, with less frequent progress repaints.","A non-blocking Device sync banner shows preparation and receiving progress while you continue using the library. Actual incoming record replacements retain their guarded saving screen and atomic commit.","The primary is only the starting library. Once a device has completed its first sync, it can help another device join even if the original tablet or computer is offline. Existing devices continue as equal peers; group identity and stored data are preserved.","Windows users need the full 1.256 installer for the startup fix. Android receives progress and equal-peer improvements in the signed APK. Install over the existing app without uninstalling. Android background suspension and locking still pause sync."]
+}, {
   heading: "1.255 — current",
   notes: ["Pair devices using a full-size QR on Windows, phones and tablets, with an offline camera reader and Scan QR image fallback. A computer can show its own join QR for a device already in your group to scan, with confirmation on the computer before it joins.","Refresh pairing QR adds another device at any time without leaving the group, even while pictures are preparing. Only the invitation expires after ten minutes; remembered group membership does not. Timestamp-only character and persona saves no longer create new conflict copies; genuinely different writing and pictures remain preserved.","Install the full Windows installer for the new native pairing support, or update the signed Android APK in place. Existing libraries and group membership are preserved. The in-app guide now explains QR pairing, refreshing expired invitations and safe conflict copies."]
 }, {
@@ -3445,7 +3448,7 @@ const GUIDE = [
     summary: "Pair computers, phones and tablets once, then keep their libraries up to date.",
     body: [
       "Open Settings on your most up-to-date device, such as your tablet, and choose Use this device as primary under Automatic device sync. This selects the preferred starting library, not a permanently required server.",
-      "Choose Pair another device to display a QR. On another phone, tablet or computer, choose Scan pairing QR or Scan QR image, then Remember and join group. A Windows computer can also Show QR to join an existing group: scan that computer from a paired device, choose Add scanned computer to this group, then accept on the computer. Invitations expire after ten minutes; Refresh pairing QR creates a fresh invitation without leaving your group, even during picture preparation. Group membership is remembered securely and does not expire.",
+      "Choose Pair another device to display a QR. On another phone, tablet or computer, choose Scan pairing QR or Scan QR image, then Remember and join group. A Windows computer can also Show QR to join an existing group: scan that computer from a paired device, choose Add scanned computer to this group, then accept on the computer. Invitations expire after ten minutes; Refresh pairing QR creates a fresh invitation without leaving your group, even during picture preparation. Group membership is remembered securely and does not expire. After the first sync, all devices are equal peers: any synced device can share updates or pair a new member while the original starting device is offline. Device sync progress appears above the library without blocking browsing.",
       "Review and approve the first comparison on each device. Unique records are kept, and conflicting writing is kept as separate copies labelled sync conflict. Once paired, later changes travel in both directions. Record removals received by another device stay recoverable in its bin. Sync never deletes picture files.",
       "Keep the apps open and unlocked while syncing. Windows may be minimized. Android pauses when backgrounded or locked and resumes when open and unlocked. Finish editing before incoming changes can be applied. Verified downloaded chunks are reused after interruptions, and Up to date appears after connected peers have published matching revisions.",
       "Use a trusted private local network and allow the Windows app through the firewall on private networks if prompted. Guest networks can isolate devices. If a peer is missing, reopen and unlock both apps, check Wi-Fi and firewall access, then choose Check now. Do not keep creating new groups to fix a temporary disconnection.",
@@ -17018,7 +17021,7 @@ function RolecraftVault() {
       height: "100vh",
       padding: "30px 34px 70px"
     }
-  }, view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
+  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onDetails:()=>setShowSettings(true)}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
     const rng = mulberry32(dashSeed);
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;

@@ -24,12 +24,12 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.255";
+const FACTORY_BUILD = "1.256";
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.255";
+const UPDATE_COMPAT_BUILD = "1.256";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1639,6 +1639,30 @@ function writeValue(key, value) {
   writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
   rememberHash(key, value);
 }
+/* Sync fingerprints are local cache stamps, not transfer content hashes.
+   Atomic replacement changes this identity without decrypting the picture. */
+function syncFingerprint(key) {
+  if (isLocked()) throw new Error("locked");
+  if (typeof key !== "string" || !/^(img:|th:)/.test(key)) throw new Error("Invalid picture key");
+  try {
+    const st = fs.statSync(keyToFile(key));
+    return ["file", st.ino, st.size, st.mtimeMs, st.ctimeMs].join(":");
+  } catch (e) { if (e.code === "ENOENT") return null; throw e; }
+}
+async function syncFingerprints(keys) {
+  if (isLocked()) throw new Error("locked");
+  if (!Array.isArray(keys) || keys.length > 5000) throw new Error("Too many picture keys");
+  const marks = {}; let yielded = Date.now();
+  for (let i = 0; i < keys.length; i++) {
+    marks[keys[i]] = syncFingerprint(keys[i]);
+    if (i % 64 === 63 || Date.now() - yielded > 12) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (isLocked()) throw new Error("locked");
+      yielded = Date.now();
+    }
+  }
+  return marks;
+}
 function restoreTargets(spec) {
   const exact = new Set(Array.isArray(spec && spec.exact) ? spec.exact.filter(k => typeof k === "string") : []);
   const prefixes = Array.isArray(spec && spec.prefixes) ? spec.prefixes.filter(k => typeof k === "string") : [];
@@ -2283,13 +2307,9 @@ app.whenReady().then(() => {
   require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
   ipcMain.handle("vault-sync-fingerprint", (_e, key) => {
     if (isLocked()) throw new Error("locked");
-    return hashOfRecord(key);
+    return syncFingerprint(key);
   });
-  ipcMain.handle("vault-sync-fingerprints", (_e, keys) => {
-    if (isLocked()) throw new Error("locked");
-    if (!Array.isArray(keys) || keys.length > 5000) throw new Error("Too many picture keys");
-    return Object.fromEntries(keys.map(key => [key, hashOfRecord(key)]));
-  });
+  ipcMain.handle("vault-sync-fingerprints", (_e, keys) => syncFingerprints(keys));
   ipcMain.handle("vault-sync-image", (_e, key, value) => {
     if (isLocked()) throw new Error("locked");
     if (typeof key !== "string" || !/^(img:|th:)/.test(key)) throw new Error("Sync can only stage pictures here");
@@ -2301,6 +2321,11 @@ app.whenReady().then(() => {
   ipcMain.handle("vault-sync-commit", (_e, values, expected) => {
     if (isLocked()) throw new Error("locked");
     for (const [key, value] of Object.entries(expected || {})) if (readValue(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
+    if (Object.keys(values).length === 1 && Object.prototype.hasOwnProperty.call(values, "sync:state")) {
+      if (activeRestore) throw new Error("another restore is already running");
+      writeValue("sync:state", values["sync:state"]);
+      return true;
+    }
     const token = beginVaultRestore({ exact: Object.keys(values), linkUnchanged: true });
     try {
       for (const [key, value] of Object.entries(values)) setVaultRestoreValue(token, key, value);

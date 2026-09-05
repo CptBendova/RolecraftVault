@@ -2,6 +2,14 @@
 
 ## Remembered multi-device sync
 
+Windows sync cache fingerprints use encrypted-file stat identities, not decrypted
+picture content. Yield during bulk checks and keep lock guards after each yield.
+A sync:state-only compare-and-swap uses the existing atomic single-file write;
+never rebuild the whole vault for bookkeeping. Multi-record replacements remain
+atomic. Advertise established=true only from durably approved local sync state.
+A newcomer may compare with the starting device or any established peer; the
+starting device is not a permanent server. Keep explicit first-merge approval.
+
 QR pairing uses the bundled qrcode encoder through version 40 and offline jsQR
 decoder, both loaded by desktop and web/mobile entry points. The native reverse
 join offer is ephemeral, encrypted to the join QR key, and requires local accept.
