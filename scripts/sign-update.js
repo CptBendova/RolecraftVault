@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
+const isReleaseTag = tag => /^v[0-9]+\.[0-9]+$/.test(tag);
 
 const root = path.join(__dirname, "..");
 /* --shell / --no-shell override the check below; they are pulled out first so
@@ -51,7 +52,7 @@ function shellChangedSinceLastRelease() {
   let tag;
   try {
     tag = git(["tag", "--list", "v*", "--sort=-v:refname"])
-      .split("\n").map(s => s.trim()).filter(Boolean)
+      .split("\n").map(s => s.trim()).filter(isReleaseTag)
       .find(t => t !== "v" + version);
   } catch { return null; }
   if (!tag) return null;

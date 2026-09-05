@@ -34,6 +34,12 @@ Rolecraft Vault is free to download and use under the [licence](LICENSE).
 
 ## What it does
 
+Version 1.252 improves consistent character/persona search, natural ordering of
+numbered names, keyboard activation of cards and gallery tiles, and safe retry
+when storage cannot be read. The in-app guide covers those behaviours and
+clarifies how protected drafts differ from saved records. Upgrade in place;
+application identities and vault folders have not changed.
+
 - Keeps **characters** with any number of alternate versions.
 - Separates **personas**, **lorebooks**, and reusable **prompt collections**.
   Lorebooks support remembered grid/list views, World or Personal grouping, and

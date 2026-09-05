@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.251";
+const APP_VERSION = "1.252";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.251";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.251 — current",
+  heading: "1.252 — current",
+  notes: ["Character and persona search now use the same normalization and include saved tags and search terms. Numbered names sort naturally, so Chapter 2 comes before Chapter 10, while case differences no longer split otherwise similar names.", "Persona cards and gallery tiles now respond to Space as well as Enter. Keyboard actions on controls inside a card no longer trigger the surrounding card too. The storage-error screen has a safe Retry opening vault action and clearer advice not to reset your data.", "The interface, guide and release tooling received a cross-platform regression audit covering phone and tablet layouts, themes, Quality and Performance modes, imports, exports, protected storage, image ownership and transfer safety. Shared search and keyboard logic is consolidated instead of duplicated. The release signer now ignores tags outside the app's normal version format.", "Windows 1.251 users can use the signed interface update or the full installer; Android users can install the 1.252 APK over the existing app. Application IDs, vault folders and signing identities are unchanged. Do not uninstall first."]
+}, {
+  heading: "1.251",
   notes: ["Lorebooks now have proper Grid and List entry views, remembered separately from prompt collections. Books can be filed as World lore or Personal lore, filtered from the Lorebooks screen, and changed later without moving or rewriting any entries.", "Open a lorebook to see every character and persona attached to it, with direct links back to those records. A character or persona can still use as many lorebooks as needed. Character editors now have one-tap Planned, WIP and Done workflow tags; the Characters screen can filter by status or sort the whole library from Planned through Done.", "Lorebook JSON import now reads current standalone lorebook v3 files, data-wrapped exports and lorebooks embedded inside character-card JSON, as well as the existing Rolecraft, Chub and CharSnap shapes. Triggers written as comma, semicolon or line-separated text are kept instead of being silently dropped, and several common content field names are accepted.", "Secure Markdown web links in displayed writing are clickable and open in the device's normal browser, without navigating the vault away. The in-app guide and public README cover the new organisation, views, links and import compatibility. Windows users can use the update file or full installer; Android receives the same interface and importer in the 1.251 APK."]
 }, {
   heading: "1.250",
@@ -1311,6 +1314,9 @@ function zipWriter() {
 function downloadBlob(blob, filename) {
   return saveFile(blob, filename); // see saveFile: the phone cannot use an <a download>
 }
+// Shared local export adapter for optional edition workspaces. It preserves the
+// native Android Downloads picker and the ordinary Windows save workflow.
+window.__rcvSaveFile = saveFile;
 const extOf = u => {
   const m = /^data:image\/([\w+]+)/.exec(u || "");
   const e = m ? m[1].toLowerCase() : "jpeg";
@@ -1327,7 +1333,7 @@ const extOf = u => {
 /* Sorting names with no comparator compares UTF-16 code units, which puts
    every capital ahead of every lowercase letter: Beta, Zebra, aardvark, apple.
    Tag, bucket and book names are typed by hand and are full of mixed case. */
-const byName = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+const byName = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
 const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 const cleanName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
 /* CON, PRN, AUX, NUL, COM1..9 and LPT1..9 are device names on Windows, and an
@@ -3419,7 +3425,9 @@ const GUIDE = [
         "On Windows and the web edition, Stats, the theme, locking, this guide and Settings sit at the bottom of the left column.",
         "The theme button changes the look of the app. Settings offers Light, Dark, CharSnap and Custom. Custom has colour pickers for the background, cards, accent and text, and remembers the palette on this device.",
         "Escape closes whatever is open, and every window also has an X in its top corner.",
-        "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
+        "Keyboard users can open character cards, persona cards and gallery tiles with Enter or Space. Buttons within a card keep their own actions.",
+        "Character and persona search includes names, descriptions, tags and search terms, ignores surrounding spaces, and is case-insensitive. Name sorting puts numbered names in natural order, such as Chapter 2 before Chapter 10.",
+        "Press Save to update a record. Recovery drafts are protected as you write; they do not replace the saved record. Closing an editor with unsaved writing asks first. If storage cannot be read, use Retry opening vault and keep the original files rather than resetting the vault."
       ],
       "Rolecraft Vault comes as a Windows app, an Android app, and a web edition that runs in a browser. They share the same library and interface. Windows can share a vault over local Wi-Fi and install signed update files, Android can receive that transfer and updates from an APK, and the web edition uses backup files instead."
     ]
@@ -4796,9 +4804,17 @@ function usesPointerDrag(e) {
    Swallowing the key is half the point. Deliberately not used on text inputs,
    where Enter commits and a space is a space. */
 function activates(e) {
+  if (e.target && e.currentTarget && e.target !== e.currentTarget) return false;
   if (e.key !== "Enter" && e.key !== " ") return false;
   e.preventDefault();
   return true;
+}
+function matchesLibrarySearch(record, query) {
+  const needle = String(query || "").trim().toLocaleLowerCase();
+  if (!needle) return true;
+  return [record.name, record.tagline, record.story, record.personality,
+    record.role, record.description, ...toTermList(record.tags), ...toTermList(record.searchables)]
+    .some(value => String(value || "").toLocaleLowerCase().includes(needle));
 }
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
@@ -6569,7 +6585,7 @@ function ImageGridView({
       boxShadow: sel[it.imgId] ? "0 0 0 2px var(--brass-line)" : undefined
     },
     onClick: () => { if (!thumbDrag) setLb(i); },
-    onKeyDown: e => e.key === "Enter" && setLb(i)
+    onKeyDown: e => activates(e) && setLb(i)
   }, /*#__PURE__*/React.createElement("span", {
     /* the tick stays put once something is selected, so a part-selected grid
        can be read without sweeping the pointer over it */
@@ -14750,6 +14766,7 @@ function RolecraftVault() {
     };
   }, []);
   const lockVault = async () => {
+    window.dispatchEvent(new Event("rcv-locking"));
     if (window.auth) await window.auth.lock();
     setReady(false);
     setChars([]);
@@ -16484,7 +16501,7 @@ function RolecraftVault() {
   const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !workflowFilter || characterWorkflowStatus(c) === workflowFilter)/* Every other list guards its fields; this one concatenated name, story and
    personality raw, so a character missing any of them had the literal word
    "undefined" folded into what gets searched — and typing it matched them. */
-.filter(c => !charQ.trim() || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "status" ? workflowStatusRank(a) - workflowStatusRank(b) || byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+.filter(c => matchesLibrarySearch(c, charQ)).sort((a, b) => sort === "name" ? byName(a.name || "", b.name || "") : sort === "status" ? workflowStatusRank(a) - workflowStatusRank(b) || byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   /* This copied every character, persona, lore entry and prompt in the vault
      into a new object, sorted the lot, and threw all but six away — and it ran
      on every render, including while typing in a search box on a completely
@@ -16675,7 +16692,11 @@ function RolecraftVault() {
       marginTop: 16,
       lineHeight: 1.6
     }
-  }, "Restore your most recent export, or reopen the app to try again. Don't add or edit anything until it opens normally.")));
+  }, "Reopen the app to try again. Keep the original files and your latest backup; don't reset the vault to resolve a storage error."), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    style: { marginTop: 16 },
+    onClick: () => window.location.reload()
+  }, "Retry opening vault")));
   /* First paint must not mount extra screens. 1.178 did, and on a phone that
      threw before auth had been read, so the lock screen never appeared. */
   if (!authState.checked) return /*#__PURE__*/React.createElement("div", {
@@ -18149,7 +18170,7 @@ function RolecraftVault() {
     }
   }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !overlayOpen && (() => {
     const needle = personaQ.trim().toLowerCase();
-    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" || sort === "status" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => matchesLibrarySearch(p, needle)).slice().sort((a, b) => sort === "name" || sort === "status" ? byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
     return /*#__PURE__*/React.createElement("div", {
       style: sheetOpen ? {
         display: "none"
@@ -18559,7 +18580,7 @@ function RolecraftVault() {
         if (n[p.id]) delete n[p.id];else n[p.id] = true;
         return n;
       }) : setViewPersonaId(p.id),
-      onKeyDown: e => e.key === "Enter" && (pSelMode ? setPSelected(s => {
+      onKeyDown: e => activates(e) && (pSelMode ? setPSelected(s => {
         const n = {
           ...s
         };

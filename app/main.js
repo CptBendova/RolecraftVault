@@ -24,7 +24,7 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.251";
+const FACTORY_BUILD = "1.252";
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
