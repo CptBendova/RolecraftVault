@@ -2,6 +2,16 @@
 
 ## Remembered multi-device sync
 
+QR pairing uses the bundled qrcode encoder through version 40 and offline jsQR
+decoder, both loaded by desktop and web/mobile entry points. The native reverse
+join offer is ephemeral, encrypted to the join QR key, and requires local accept.
+Refreshing an invitation must not wait for picture preparation or change group
+identity. Expiry belongs to the invitation, never membership. Optional index
+descriptors stay outside the shared library payload; unsupported indices are
+not downloaded or interpreted. Keep all record/image validation and write guards.
+Timestamp-only character/persona revisions may coalesce their clocks, but real
+writing and image differences must still preserve conflict copies.
+
 Automatic sync is a separate protocol from passive one-time transfer. The
 native Windows transport and Android VaultSyncPlugin serve only immutable,
 encrypted chunks. Pairing secrets use safeStorage/Keystore. Authenticated UDP

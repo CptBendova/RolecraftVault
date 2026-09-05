@@ -13,7 +13,7 @@ public static void main(String[] args)throws Exception{Scanner in=new Scanner(Sy
 }`;
 fs.writeFileSync(file,harness);
 const key=crypto.randomBytes(32).toString("hex"),values=["", "Mixed Unicode 😀 雪\n".repeat(9000),crypto.randomBytes(120000).toString("base64")],jobs=[];
-for(const value of values)for(const aad of ["request","response","blob:"+crypto.createHash("sha256").update(value).digest("hex")]){jobs.push({action:"seal",aad,value,expected:value});jobs.push({action:"unseal",aad,value:seal(value,key,aad),expected:value});}
+for(const value of values)for(const aad of ["request","response","pair-offer","pair-reply","blob:"+crypto.createHash("sha256").update(value).digest("hex")]){jobs.push({action:"seal",aad,value,expected:value});jobs.push({action:"unseal",aad,value:seal(value,key,aad),expected:value});}
 jobs.push({action:"unseal",aad:"response",value:seal("secret",key,"request"),reject:true});
 const java=process.env.JAVA_HOME?path.join(process.env.JAVA_HOME,"bin",process.platform==="win32"?"java.exe":"java"):"java";
 const result=spawnSync(java,[file],{input:jobs.map(j=>[j.action,key,j.aad,Buffer.from(j.value).toString("base64")].join("\t")).join("\n")+"\n",encoding:"utf8",maxBuffer:12*1024*1024,timeout:60000});

@@ -24,8 +24,8 @@ android {
         applicationId "com.cptbendova.rolecraftvault"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1254
-        versionName "1.254"
+        versionCode 1255
+        versionName "1.255"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

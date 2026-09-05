@@ -15,12 +15,45 @@ function createTransport({directory,protect,unprotect,unlocked,network={}}){
   const cfgFile=path.join(directory,"pairing.bin"),chunksDir=path.join(directory,"chunks"),rootFile=path.join(directory,"head.bin");
   let cfg=null,server=null,udp=null,ip=null,port=0,lease=0,epoch=0,starting=null,retained=new Set();
   const peers=new Map(),nonces=new Map(),connections=new Set();
+  let enrollment=null,enrollServer=null;
+  function stopEnrollment(){enrollment=null;if(enrollServer)enrollServer.close();enrollServer=null;}
+  function joinInfo(){if(enrollment&&Date.now()>enrollment.expires)stopEnrollment();return enrollment?{code:enrollment.code,pendingLabel:enrollment.received&&enrollment.received.label,expires:enrollment.expires}:null;}
+  async function joinRequest(args){
+    load();if(cfg)throw Error("This device already belongs to a group");stopEnrollment();const address=localAddresses()[0];if(!address)throw Error("Connect to the same private local network first");
+    const pending={key:crypto.randomBytes(32).toString("hex"),id:crypto.randomUUID(),namespace:args.namespace||"library1",label:String(args.label||os.hostname()).slice(0,80),expires:Date.now()+10*60000,received:null};enrollment=pending;
+    const s=http.createServer(async(req,res)=>{
+      try{
+        if(!unlocked()||enrollment!==pending||Date.now()>pending.expires||!allowed(req.socket.remoteAddress)||req.method!=="POST"||req.url!=="/pair")throw Error("Pairing unavailable");
+        const chunks=[];let length=0;for await(const piece of req){length+=piece.length;if(length>16384)throw Error("Pairing message too large");chunks.push(piece);}
+        const data=JSON.parse(unseal(Buffer.concat(chunks).toString(),pending.key,"pair-offer"));
+        if(data.request!==pending.id||typeof data.code!=="string"||data.code.length>2000||!data.code.startsWith("RCVSYNC1."))throw Error("Invalid pairing offer");
+        const invite=JSON.parse(Buffer.from(data.code.slice(9),"base64url").toString());if(invite.namespace!==pending.namespace||!allowed(invite.ip)||invite.expires<Date.now())throw Error("Incompatible invitation");
+        if(!unlocked()||enrollment!==pending||Date.now()>pending.expires)throw Error("Pairing expired");
+        if(pending.received&&pending.received.code!==data.code)throw Error("Another offer is waiting for approval");
+        pending.received={code:data.code,label:String(data.label||"Paired device").slice(0,80)};
+        res.writeHead(200,{"Content-Type":"text/plain","Cache-Control":"no-store"});res.end(seal(JSON.stringify({ok:true,request:pending.id}),pending.key,"pair-reply"));
+      }catch(_){if(!res.headersSent)res.writeHead(409);res.end();}
+    });
+    enrollServer=s;s.requestTimeout=10000;s.headersTimeout=10000;s.maxConnections=4;
+    s.on("connection",socket=>{connections.add(socket);socket.on("close",()=>connections.delete(socket));socket.setTimeout(10000,()=>socket.destroy());});
+    await new Promise((resolve,reject)=>{s.once("error",reject);s.listen(0,address,resolve);});
+    if(enrollment!==pending||!unlocked()){s.close();throw Error("Pairing cancelled");}
+    pending.code="RCVJOIN1."+Buffer.from(JSON.stringify({key:pending.key,id:pending.id,ip:address,port:s.address().port,namespace:pending.namespace,expires:pending.expires})).toString("base64url");return info();
+  }
+  async function offerJoin(code){
+    let target;try{if(!String(code).startsWith("RCVJOIN1.")||code.length>2000)throw Error();target=JSON.parse(Buffer.from(code.slice(9),"base64url").toString());}catch(_){throw Error("Scan a device's join-request QR");}
+    if(!allowed(target.ip)||!Number.isInteger(target.port)||target.port<1024||target.port>65535||!/^[a-f0-9]{64}$/.test(target.key)||!/^[a-f0-9-]{36}$/.test(target.id)||target.namespace!==cfg.namespace||!Number.isSafeInteger(target.expires)||target.expires<Date.now()||target.expires>Date.now()+15*60000)throw Error("Device QR is expired or incompatible");
+    const run=epoch,invite=(await call("invite")).code,body=seal(JSON.stringify({request:target.id,code:invite,label:cfg.label}),target.key,"pair-offer");
+    return new Promise((resolve,reject)=>{const req=http.request({host:target.ip,port:target.port,localAddress:ip,path:"/pair",method:"POST",headers:{"Content-Type":"text/plain","Content-Length":Buffer.byteLength(body)},timeout:10000},res=>{
+      let text="";res.on("data",piece=>{text+=piece;if(text.length>16384)req.destroy(Error("Invalid pairing reply"));});res.on("error",reject);res.on("end",()=>{try{guard();if(run!==epoch||res.statusCode!==200)throw Error("Pairing was cancelled or another offer is waiting");const reply=JSON.parse(unseal(text,target.key,"pair-reply"));if(!reply.ok||reply.request!==target.id)throw Error("Invalid pairing reply");resolve({ok:true});}catch(e){reject(e);}});
+    });req.on("socket",socket=>{connections.add(socket);socket.on("close",()=>connections.delete(socket));});req.on("timeout",()=>req.destroy(Error("Device is unavailable. Keep its pairing QR open and try again.")));req.on("error",reject);req.end(body);});
+  }
   function guard(){if(!unlocked())throw Error("Unlock the vault to sync");}
   function active(){return unlocked()&&Date.now()<lease&&cfg;}
   function atomic(file,bytes){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+".tmp";fs.writeFileSync(tmp,bytes);fs.renameSync(tmp,file);}
   function load(){guard();if(!cfg&&fs.existsSync(cfgFile))cfg=JSON.parse(unprotect(fs.readFileSync(cfgFile)));if(cfg&&(!/^[a-f0-9]{64}$/.test(cfg.key)||!/^[a-f0-9-]{36}$/.test(cfg.device)))throw Error("Pairing is damaged. Leave the group and pair again.");return cfg;}
   function save(c){guard();atomic(cfgFile,protect(JSON.stringify(c)));cfg=c;}
-  function info(){return {enabled:!!cfg,device:cfg&&cfg.device,primary:cfg&&cfg.primary,label:cfg&&cfg.label,group:cfg&&digest(cfg.key).slice(0,24),namespace:cfg&&cfg.namespace};}
+  function info(){return {enabled:!!cfg,device:cfg&&cfg.device,primary:cfg&&cfg.primary,label:cfg&&cfg.label,group:cfg&&digest(cfg.key).slice(0,24),namespace:cfg&&cfg.namespace,canShowJoinRequest:true,joinRequest:joinInfo()};}
   function pause(){epoch++;lease=0;if(server)server.close();if(udp)udp.close();for(const socket of connections)socket.destroy();connections.clear();server=null;udp=null;starting=null;ip=null;port=0;peers.clear();nonces.clear();retained.clear();}
   function remember(p){if(!cfg||p.id===cfg.device||typeof p.id!=="string"||!/^[a-f0-9-]{36}$/.test(p.id)||!allowed(p.ip)||!Number.isInteger(p.port)||p.port<1024||p.port>65535)return;peers.set(p.id,{id:p.id,ip:p.ip,port:p.port,seen:Date.now()});while(peers.size>32)peers.delete(peers.keys().next().value);}
   function signedPacket(type,nonce){const body=[type,digest(cfg.key).slice(0,24),cfg.device,nonce,Date.now(),port].join("|");return body+"|"+mac(cfg.key,body);}
@@ -80,10 +113,20 @@ function createTransport({directory,protect,unprotect,unlocked,network={}}){
     });
   }
   async function call(method,args={}){
-    if(method==="pause"){pause();return {paused:true};}
+    if(method==="pause"){stopEnrollment();pause();return {paused:true};}
     guard();
     if(method==="status"){load();return info();}
+    if(method==="upgradeNamespace"){
+      load();if(!cfg||cfg.namespace!==args.from||args.to!=="library1")throw Error("Incompatible group upgrade");
+      pause();if(fs.existsSync(rootFile))fs.unlinkSync(rootFile);save({...cfg,namespace:args.to});return info();
+    }
+    if(method==="joinRequest")return joinRequest(args);
     if(method==="configure"){
+      if(args.action==="accept-request"){
+        if(!enrollment||!enrollment.received||enrollment.expires<Date.now())throw Error("No current pairing offer. Show a new QR and scan again.");
+        args={action:"join",code:enrollment.received.code,namespace:enrollment.namespace,label:enrollment.label};
+      }
+      stopEnrollment();
       pause();
       if(args.action==="leave"){if(fs.existsSync(cfgFile))fs.unlinkSync(cfgFile);cfg=null;return info();}
       let next;
@@ -97,6 +140,7 @@ function createTransport({directory,protect,unprotect,unlocked,network={}}){
       if(fs.existsSync(rootFile))fs.unlinkSync(rootFile);save(next);await resume();if(next.seed)remember(next.seed);return info();
     }
     await resume();guard();
+    if(method==="offerJoin")return offerJoin(args.code);
     if(method==="invite"){return {code:"RCVSYNC1."+Buffer.from(JSON.stringify({key:cfg.key,primary:cfg.primary,device:cfg.device,namespace:cfg.namespace,ip,port,expires:Date.now()+10*60000})).toString("base64url")};}
     if(method==="discover"){
       if(cfg.seed&&!peers.has(cfg.seed.id))remember(cfg.seed);
@@ -126,7 +170,7 @@ function createTransport({directory,protect,unprotect,unlocked,network={}}){
     }
     throw Error("Unknown sync method");
   }
-  return {call,pause,privateIp,info};
+  return {call,pause:()=>{stopEnrollment();pause();},privateIp,info};
 }
 function setupVaultSync({ipcMain,app,safeStorage,isLocked,getWindow}){
   const t=createTransport({directory:path.join(app.getPath("userData"),"vault-sync"),unlocked:()=>!isLocked(),protect:text=>{if(!safeStorage.isEncryptionAvailable())throw Error("Windows secure storage is unavailable");return safeStorage.encryptString(text);},unprotect:bytes=>safeStorage.decryptString(bytes)});

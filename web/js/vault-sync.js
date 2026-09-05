@@ -58,14 +58,26 @@
     }
     function portable(images){return Object.fromEntries(Object.entries(images).map(([k,v])=>[k,{hash:v.hash,parts:v.parts,bytes:v.bytes}]));}
     async function publish(snapshot,images,run){
-      const text=C.canonical({format:1,group:settings.group,snapshot,images:portable(images)});
+      const extended=C.extension, base={format:1,entries:{}}, extra={format:1,entries:{}};
+      for(const [key,entry]of Object.entries(snapshot.entries))(extended&&extended.kinds.includes(C.parts(key)[0])?extra:base).entries[key]=entry;
+      const baseIds=new Set(refs(base)),extraIds=new Set(refs(extra));
+      const select=ids=>Object.fromEntries(Object.entries(images).filter(([key])=>ids.has(key.slice(key.indexOf(":")+1))));
+      const baseImages=select(baseIds),extraImages=select(extraIds);
+      const text=C.canonical({format:1,group:settings.group,snapshot:base,images:portable(baseImages)});
       if(encoder.encode(text).length>LIMIT)throw Error("The writing index exceeds the safe sync size. All local data is unchanged.");
       const index=await stage(text,run),keep=[...new Set([...index.parts,...Object.values(images).flatMap(d=>d.parts)])];
+      const extensions={};let extensionRevision=null;
+      if(extended){
+        const extraText=C.canonical({format:1,group:settings.group,snapshot:extra,images:portable(extraImages)});
+        if(encoder.encode(extraText).length>LIMIT)throw Error("The optional writing index exceeds the safe sync size.");
+        const descriptor=await stage(extraText,run);keep.push(...descriptor.parts);
+        extensionRevision=await hash(C.canonical(extra));extensions[extended.id]={index:descriptor,revision:extensionRevision};
+      }
       await call("beginPublish",{},run);for(let i=0;i<keep.length;i+=1024)await call("retain",{hashes:keep.slice(i,i+1024)},run);
       // Preview encodings can legitimately differ between devices. They are
       // disposable presentation caches, not conflicting original artwork.
-      const revision=await hash(C.canonical({snapshot,images:Object.fromEntries(Object.entries(images).filter(([key])=>key.startsWith("img:")).map(([key,d])=>[key,d.hash]))}));
-      await call("publish",{head:{format:1,index,revision}},run);invalidCache=false;return revision;
+      const revision=await hash(C.canonical({snapshot:base,images:Object.fromEntries(Object.entries(baseImages).filter(([key])=>key.startsWith("img:")).map(([key,d])=>[key,d.hash]))}));
+      await call("publish",{head:{format:1,index,revision,extensions}},run);invalidCache=false;return {library:revision,extension:extensionRevision};
     }
     async function readLocal(){
       const raw=Object.create(null);for(const [key]of Object.values(C.TABLES))raw[key]=await get(key);
@@ -78,6 +90,7 @@
       try{
         if(!ready()){await transport.call("pause",{}).catch(()=>{});report("paused","Pairing is remembered. Open and unlock the app to resume.");return;}
         settings=await call("status",{},run);
+        if(settings.enabled&&options.previousNamespace&&settings.namespace===options.previousNamespace)settings=await call("upgradeNamespace",{from:options.previousNamespace,to:options.namespace||"library1"},run);
         if(!settings.enabled){report("off","Choose the most up-to-date device as primary, or join its remembered group.",{settings,preview:null,peers:[]});return;}
         report("checking","Checking for changes on this local network…",{settings});
         let local=await readLocal();check(run);
@@ -95,12 +108,21 @@
           try{
             const r=await call("index",{peer:peer.id},run);if(!r.head)continue;
             const cached=remoteCache.get(peer.id);
-            const incoming=cached&&cached.revision===r.head.revision?cached.incoming:JSON.parse(await download(r.head.index,peer.id,run,LIMIT));
+            const extension=C.extension&&r.head.extensions&&r.head.extensions[C.extension.id];
+            const cacheKey=r.head.revision+":"+(extension?extension.revision:"");
+            let incoming=cached&&cached.revision===cacheKey?cached.incoming:JSON.parse(await download(r.head.index,peer.id,run,LIMIT));
+            if(!(cached&&cached.revision===cacheKey)&&extension){
+              const extra=JSON.parse(await download(extension.index,peer.id,run,LIMIT));
+              if(extra.format!==1||extra.group!==settings.group||!extra.images||!extra.snapshot||Object.keys(extra.snapshot.entries||{}).some(key=>!C.extension.kinds.includes(C.parts(key)[0])))throw Error("Incompatible optional sync index");
+              await C.validate(extra.snapshot,hash);
+              for(const key of Object.keys(extra.snapshot.entries))if(Object.prototype.hasOwnProperty.call(incoming.snapshot.entries,key))throw Error("Duplicate optional sync record");
+              incoming={...incoming,snapshot:{format:1,entries:{...incoming.snapshot.entries,...extra.snapshot.entries}},images:{...incoming.images,...extra.images}};
+            }
             if(incoming.format!==1||incoming.group!==settings.group||!incoming.images||typeof incoming.images!=="object")throw Error("Peer has an incompatible sync index");
             await C.validate(incoming.snapshot,hash);
             for(const [key,d]of Object.entries(incoming.images)){if(!/^(img:|th:)/.test(key))throw Error("Invalid picture key");descriptor(d);}
-            remoteCache.set(peer.id,{revision:r.head.revision,incoming});
-            snapshots.push(incoming.snapshot);sources.push({peer:peer.id,images:incoming.images});peers.push({id:peer.id,label:r.label||"Paired device",revision:r.head.revision,online:true});
+            remoteCache.set(peer.id,{revision:cacheKey,incoming});
+            snapshots.push(incoming.snapshot);sources.push({peer:peer.id,images:incoming.images});peers.push({id:peer.id,label:r.label||"Paired device",revision:r.head.revision,extensionRevision:extension&&extension.revision,online:true});
           }catch(e){check(run);peers.push({id:peer.id,label:"Paired device",online:false,error:e.message});}
         }
         check(run);
@@ -145,7 +167,7 @@
           if(changed)await options.onApplied();
           report("saved","Changes saved here. Waiting for other devices to confirm their copies.",{peers,preview:null});
         }else{
-          const online=peers.filter(p=>p.online),synced=online.length&&online.every(p=>p.revision===revision);
+          const online=peers.filter(p=>p.online),synced=online.length&&online.every(p=>p.revision===revision.library&&(!p.extensionRevision||p.extensionRevision===revision.extension));
           report(synced?"synced":"checking",synced?"Up to date with "+online.length+" online device"+(online.length===1?"":"s")+".":"Exchanging changes with paired devices…",{peers,preview:null,lastSynced:synced?Date.now():current.lastSynced});
         }
       }catch(e){if(run===epoch){if(/referenced sync chunk|referenced chunk|checksum/i.test(e.message))invalidCache=true;report("error",e.message+" Local changes are retained; sync retries automatically.");}}
@@ -154,7 +176,7 @@
     async function configure(action,args={}){
       if(busy&&action!=="leave")throw Error("Wait for the current sync check to finish before changing the group.");
       epoch++;approval=null;invalidCache=true;clearTimeout(timer);remoteCache.clear();
-      await transport.call("pause",{});
+      if(action!=="accept-request")await transport.call("pause",{});
       for(let i=0;busy&&i<200;i++)await sleep(50);
       if(busy)throw Error("Sync is still stopping. Try leaving again in a moment.");
       const r=await transport.call("configure",{...args,action,namespace:options.namespace||"library1"});settings=r;
@@ -162,7 +184,9 @@
       clearTimeout(timer);timer=setTimeout(tick,0);return r;
     }
     return {supported:!!transport&&!!storage.syncCommit,subscribe(fn){listeners.add(fn);fn(current);return()=>listeners.delete(fn);},start(){if(transport&&!stopped)tick();},stop(){stopped=true;epoch++;clearTimeout(timer);if(transport)transport.call("pause",{}).catch(()=>{});},configure,
-      async invite(){if(busy)throw Error("Wait for the current sync check to finish.");const r=await transport.call("invite",{});report(current.phase,current.message,{code:r.code});return r.code;},
+      async invite(){const run=epoch;check(run);const r=await call("invite",{},run);report(current.phase,current.message,{code:r.code});return r.code;},
+      async requestJoin(label){const r=await call("joinRequest",{label,namespace:options.namespace||"library1"});settings=r;report("off","Scan this QR using a device already in your group.",{settings:r});},
+      async offerJoin(code){return call("offerJoin",{code});},
       approve(id){approval=id;clearTimeout(timer);if(!busy)timer=setTimeout(tick,0);},
       retry(){clearTimeout(timer);if(!busy)timer=setTimeout(tick,0);}
     };
