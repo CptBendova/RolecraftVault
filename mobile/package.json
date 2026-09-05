@@ -11,7 +11,7 @@
   "private": true,
   "license": "SEE LICENSE IN ../LICENSE",
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
+    "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "8.4.2",
     "@capacitor/core": "^8.5.0",
     "@capacitor/filesystem": "^8.1.3"
