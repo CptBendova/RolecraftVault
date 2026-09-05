@@ -5,7 +5,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
@@ -30,7 +29,7 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        // Allow owner-initiated screenshots; hide task previews separately on 13+.
         if (Build.VERSION.SDK_INT >= 33) {
             setRecentsScreenshotEnabled(false);
         }

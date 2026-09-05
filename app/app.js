@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.258";
+const APP_VERSION = "1.259";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.258";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.259",
+  notes: ["Android now allows screenshots. Android 13 and newer still hide app-switcher previews; screenshots you save are outside the encrypted vault. Install the updated APK over the existing app without uninstalling. Windows behaviour is unchanged."]
+}, {
   heading: "1.258",
   notes: ["Automatic sync no longer repeatedly prepares missing optional thumbnail previews. Original pictures remain required and verified.", "Picture preparation always reaches its final count, and completed sync clears old progress counts instead of appearing stuck near the end. Windows and Android share the same fix."]
 }, {
