@@ -24,12 +24,12 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.245";
+const FACTORY_BUILD = "1.257";
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.245";
+const UPDATE_COMPAT_BUILD = "1.257";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -546,6 +546,16 @@ function writeAllSync(fd, value) {
     if (!written) throw new Error("The transfer file could not be fully written");
     at += written;
   }
+}
+function readExactSync(fd, length, position = 0) {
+  const buf = Buffer.alloc(length);
+  let at = 0;
+  while (at < length) {
+    const got = fs.readSync(fd, buf, at, length - at, position + at);
+    if (!got) throw new Error("The file ended before its recorded length");
+    at += got;
+  }
+  return buf;
 }
 
 /* Streams the vault to disk one record at a time as encrypted NDJSON.
@@ -1200,22 +1210,23 @@ function startTransferServer() {
    payload, and only then writes anything into the vault. Bounded memory, and a
    corrupt or wrong-code transfer can never leave the vault half-written. */
 function decryptTransferFile(encPath, plainPath, secret, report) {
-  const size = fs.statSync(encPath).size;
   const HEAD = 5 + 16 + 12;
-  if (size < HEAD + 16) throw new Error("transfer file too small");
   const fdIn = fs.openSync(encPath, "r");
-  const head = Buffer.alloc(HEAD);
-  fs.readSync(fdIn, head, 0, HEAD, 0);
-  if (head.slice(0, 5).toString() !== "RCVX2") { fs.closeSync(fdIn); throw new Error("not a Rolecraft transfer"); }
-  const salt = head.slice(5, 21);
-  const iv = head.slice(21, 33);
-  const tag = Buffer.alloc(16);
-  fs.readSync(fdIn, tag, 0, 16, size - 16);
-  const d = crypto.createDecipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
-  d.setAuthTag(tag);
-  try { fs.unlinkSync(plainPath); } catch (e) {}
-  const fdOut = fs.openSync(plainPath, "w");
+  let fdOut = null;
   try {
+    /* Inspect and read the descriptor we actually opened. A path can be
+       replaced between stat() and open(), especially in a shared directory. */
+    const size = fs.fstatSync(fdIn).size;
+    if (size < HEAD + 16) throw new Error("transfer file too small");
+    const head = readExactSync(fdIn, HEAD, 0);
+    if (head.slice(0, 5).toString() !== "RCVX2") throw new Error("not a Rolecraft transfer");
+    const salt = head.slice(5, 21);
+    const iv = head.slice(21, 33);
+    const tag = readExactSync(fdIn, 16, size - 16);
+    const d = crypto.createDecipheriv("aes-256-gcm", keyFrom(secret, salt), iv);
+    d.setAuthTag(tag);
+    try { fs.unlinkSync(plainPath); } catch (e) {}
+    fdOut = fs.openSync(plainPath, "w");
     let pos = HEAD;
     const stop = size - 16;
     const buf = Buffer.alloc(1 << 20);
@@ -1231,15 +1242,14 @@ function decryptTransferFile(encPath, plainPath, secret, report) {
     const fin = d.final(); // throws if the code is wrong or bytes were tampered with
     if (fin.length) writeAllSync(fdOut, fin);
   } finally {
-    fs.closeSync(fdIn);
-    fs.closeSync(fdOut);
+    try { fs.closeSync(fdIn); } catch (e) {}
+    if (fdOut !== null) try { fs.closeSync(fdOut); } catch (e) {}
   }
 }
 
 /* Reads the decrypted NDJSON in chunks so a huge vault never becomes one
    JavaScript string. Two passes: verify the header, then write records. */
 function eachTransferLine(plainPath, onLine) {
-  const size = fs.statSync(plainPath).size;
   const fd = fs.openSync(plainPath, "r");
   const buf = Buffer.alloc(1 << 20);
   const decoder = new StringDecoder("utf8");
@@ -1254,6 +1264,7 @@ function eachTransferLine(plainPath, onLine) {
     }
   };
   try {
+    const size = fs.fstatSync(fd).size;
     while (pos < size && !stop) {
       const got = fs.readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
       if (got <= 0) break;
@@ -1628,6 +1639,30 @@ function writeValue(key, value) {
   writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
   rememberHash(key, value);
 }
+/* Sync fingerprints are local cache stamps, not transfer content hashes.
+   Atomic replacement changes this identity without decrypting the picture. */
+function syncFingerprint(key) {
+  if (isLocked()) throw new Error("locked");
+  if (typeof key !== "string" || !/^(img:|th:)/.test(key)) throw new Error("Invalid picture key");
+  try {
+    const st = fs.statSync(keyToFile(key));
+    return ["file", st.ino, st.size, st.mtimeMs, st.ctimeMs].join(":");
+  } catch (e) { if (e.code === "ENOENT") return null; throw e; }
+}
+async function syncFingerprints(keys) {
+  if (isLocked()) throw new Error("locked");
+  if (!Array.isArray(keys) || keys.length > 5000) throw new Error("Too many picture keys");
+  const marks = {}; let yielded = Date.now();
+  for (let i = 0; i < keys.length; i++) {
+    marks[keys[i]] = syncFingerprint(keys[i]);
+    if (i % 64 === 63 || Date.now() - yielded > 12) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (isLocked()) throw new Error("locked");
+      yielded = Date.now();
+    }
+  }
+  return marks;
+}
 function restoreTargets(spec) {
   const exact = new Set(Array.isArray(spec && spec.exact) ? spec.exact.filter(k => typeof k === "string") : []);
   const prefixes = Array.isArray(spec && spec.prefixes) ? spec.prefixes.filter(k => typeof k === "string") : [];
@@ -1643,7 +1678,13 @@ function beginVaultRestore(spec) {
   fs.mkdirSync(stage, { recursive: false });
   try {
     for (const key of allKeys()) {
-      if (!targets.has(key)) fs.copyFileSync(keyToFile(key), path.join(stage, encodeURIComponent(key) + ".dat"));
+      if (!targets.has(key)) {
+        const destination = path.join(stage, encodeURIComponent(key) + ".dat");
+        if (spec && spec.linkUnchanged) {
+          try { fs.linkSync(keyToFile(key), destination); }
+          catch (e) { fs.copyFileSync(keyToFile(key), destination); }
+        } else fs.copyFileSync(keyToFile(key), destination);
+      }
     }
   } catch (e) {
     try { fs.rmSync(stage, { recursive: true, force: true }); } catch (e2) {}
@@ -1832,13 +1873,15 @@ function updateFileArg(args) {
 let pendingUpdateFile = updateFileArg(process.argv);
 function openUpdateFile(file, win) {
   let result;
+  let fd = null;
   try {
-    const st = fs.statSync(file);
+    fd = fs.openSync(file, "r");
+    const st = fs.fstatSync(fd);
     if (!st.isFile() || st.size > 64 * 1024 * 1024) throw new Error("That update file is too large");
-    result = installUpdateText(fs.readFileSync(file, "utf8"));
+    result = installUpdateText(readExactSync(fd, st.size).toString("utf8"));
   } catch (err) {
     result = { ok: false, error: err && err.message ? err.message : "Couldn't read that update file" };
-  }
+  } finally { if (fd !== null) try { fs.closeSync(fd); } catch (e) {} }
   try { if (win && !win.isDestroyed()) win.webContents.send("update-file-result", result); } catch (e) {}
   return result;
 }
@@ -2261,6 +2304,35 @@ app.whenReady().then(() => {
   finishPendingRewrap();
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));
+  require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
+  ipcMain.handle("vault-sync-fingerprint", (_e, key) => {
+    if (isLocked()) throw new Error("locked");
+    return syncFingerprint(key);
+  });
+  ipcMain.handle("vault-sync-fingerprints", (_e, keys) => syncFingerprints(keys));
+  ipcMain.handle("vault-sync-image", (_e, key, value) => {
+    if (isLocked()) throw new Error("locked");
+    if (typeof key !== "string" || !/^(img:|th:)/.test(key)) throw new Error("Sync can only stage pictures here");
+    const old = readValue(key);
+    if (old != null && old !== value) throw new Error("A different picture already uses this identity. No picture was overwritten.");
+    if (old == null) writeValue(key, value);
+    return true;
+  });
+  ipcMain.handle("vault-sync-commit", (_e, values, expected) => {
+    if (isLocked()) throw new Error("locked");
+    for (const [key, value] of Object.entries(expected || {})) if (readValue(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
+    if (Object.keys(values).length === 1 && Object.prototype.hasOwnProperty.call(values, "sync:state")) {
+      if (activeRestore) throw new Error("another restore is already running");
+      writeValue("sync:state", values["sync:state"]);
+      return true;
+    }
+    const token = beginVaultRestore({ exact: Object.keys(values), linkUnchanged: true });
+    try {
+      for (const [key, value] of Object.entries(values)) setVaultRestoreValue(token, key, value);
+      commitVaultRestore(token);
+    } catch (e) { abortVaultRestore(token); throw e; }
+    return true;
+  });
   ipcMain.handle("vault-set", (e, key, value) => { if (isLocked()) throw new Error("locked"); writeValue(key, value); return true; });
   // deleting is as destructive as writing, so it is gated the same way — a locked
   // vault that could still have records removed is not locked

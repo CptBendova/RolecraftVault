@@ -1,5 +1,55 @@
 # Rolecraft Vault — project notes
 
+## Remembered multi-device sync
+
+Windows sync cache fingerprints use encrypted-file stat identities, not decrypted
+picture content. Yield during bulk checks and keep lock guards after each yield.
+A sync:state-only compare-and-swap uses the existing atomic single-file write;
+never rebuild the whole vault for bookkeeping. Multi-record replacements remain
+atomic. Advertise established=true only from durably approved local sync state.
+A newcomer may compare with the starting device or any established peer; the
+starting device is not a permanent server. Keep explicit first-merge approval.
+
+QR pairing uses the bundled qrcode encoder through version 40 and offline jsQR
+decoder, both loaded by desktop and web/mobile entry points. The native reverse
+join offer is ephemeral, encrypted to the join QR key, and requires local accept.
+Refreshing an invitation must not wait for picture preparation or change group
+identity. Expiry belongs to the invitation, never membership. Optional index
+descriptors stay outside the shared library payload; unsupported indices are
+not downloaded or interpreted. Keep all record/image validation and write guards.
+Timestamp-only character/persona revisions may coalesce their clocks, but real
+writing and image differences must still preserve conflict copies.
+
+Automatic sync is a separate protocol from passive one-time transfer. The
+native Windows transport and Android VaultSyncPlugin serve only immutable,
+encrypted chunks. Pairing secrets use safeStorage/Keystore. Authenticated UDP
+discovery (44218) and peer gossip replace old addresses; never overwrite a
+discovered endpoint with the original invitation's seed address.
+
+The renderer merges per-record vector clocks, previews initial changes and
+preserves concurrent writing as deterministic conflict copies. Image originals
+are never overwritten or deleted. Previews may differ across devices without
+blocking original-image convergence. Only currently applied records hold image
+references, so purging a deleted conflict does not demand its pictures forever.
+Records and causal state commit in small compare-and-swap checkpoints, only
+after every original referenced by that record arrives. Never store unsaved
+records in the local causal snapshot: a restart would infer false deletions.
+Verified image-cache descriptors checkpoint independently of writing edits and
+survive later publishing passes. Initial consent (accepted) is durable, distinct
+from completed first reconciliation (approved/established). Keep deletions until
+their recovery-bin records are saved. A foreground status heartbeat renews the
+native serving lease during long preparation; lock/background guards still win.
+Windows stages unchanged files with hard links and replaces files atomically;
+Android compares encrypted pointers in the same IndexedDB transaction that
+writes values and fingerprints. Failed old-file cleanup must never delete new
+committed payloads. Keep the save overlay until UI records have reloaded.
+
+Pause while locked or Android is backgrounded. This is foreground/resumable
+sync, not an always-running Android background service. Export backups before
+initial reconciliation. Tests cover four-way convergence, later edits, deletion
+recovery, restart/discovery, native codec interoperability, IDB races and phone
+layout. Physical-device Wi-Fi/firewall/lifecycle checks still matter.
+
 A private, offline roleplay library: characters, personas, lorebooks and prompts,
 with encrypted local storage. Ships as a Windows Electron app, plus an embeddable
 web edition. Built for CharSnap creators.
@@ -184,6 +234,14 @@ string), plus optional `scenario, example_message, system_prompt,
 always_active_system_prompt, creator_comment, variant_name, variant_tagline`.
 Emitting the 16-key export shape fails validation. Lorebook import uses the Chub
 structure plus CharSnap's own fields, and every entry needs ≥1 trigger.
+
+Lorebook files are not reliably flat. Standalone v3 books use `{spec:
+"lorebook_v3", data:{entries:[...]}}`, while character cards put the same book
+under `data.character_book`; older Chub and CharSnap files keep `entries` at the
+root. Some generators also write triggers as comma-separated text rather than
+an array. `normalizeLoreImport` deliberately unwraps all of these shapes and
+normalises `triggers`, `keys`, `key`, or `keywords` through `toTermList`. Do not
+make the root-level `entries` check strict again.
 
 There are **two importers**: "Import JSON" (Basics tab) takes a whole character;
 "Import Variant" (Details tab) takes a **bare variant object with the fields at the
@@ -537,6 +595,33 @@ empty books and covers survive a round trip.
 
 1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
 
+## Public Android exports (1.243, 1.248)
+
+Standard 1.253 makes full backup exports public-Downloads-only. Never silently
+fall back to an app-private file and then advance backup health. The handler's
+entire preparation and write run inside one error boundary, with a single-run
+guard and persistent status. Empty image references are ignored only while
+collecting IDs; the original records remain unchanged in the backup. The shared
+imageIdsOf helper must be top-level: backupInspection is also top-level and
+previously threw on bin records when that helper lived inside RolecraftVault.
+Native finish checks that MediaStore actually published the completed row.
+Worktree builds may reference existing signing material through
+ROLECRAFT_KEYSTORE_PROPERTIES and ROLECRAFT_SIGNING_KEY_PATH without copying it.
+
+An HTML download link is swallowed by the Capacitor WebView, and Capacitor's
+Filesystem enum does not expose modern public Downloads or Pictures
+collections. `FileExportPlugin` is therefore the owner of user-visible exports.
+JSON, text, backups and ZIP archives go through `MediaStore.Downloads` in
+bounded writes. Individual pictures go through `MediaStore.Images` with
+`Pictures/Rolecraft Vault` as their relative path so Gallery apps can see them.
+Android 8 and 9 use the matching public directory and must run the media scanner
+after finishing a picture. They also require the native `FileExportPlugin` to
+request `WRITE_EXTERNAL_STORAGE` before opening that public directory; declaring
+the permission in the manifest does not grant it at runtime. Keep the requested collection explicit in the JS
+bridge, accept it only for an `image/*` MIME type natively, and leave the
+app-private Filesystem path as a failure fallback rather than the advertised
+destination.
+
 ## Phone copies dying around 130 MB (1.166)
 
 A Capacitor HTTP response is read entirely into a Java byte array, then base64, then a JS string. Around 130 MB that stops, which is why computer-to-computer copies (streamed to disk) worked and PC-to-phone did not.
@@ -711,8 +796,9 @@ keeps doing unnecessary work:
   real video only when a large live crest is visible in Quality; Performance
   must not download or initialise a decoder for it.
 - Canvas dust takes its colour from the current theme. Pass the theme through as
-  a dependency so switching Dark, Light and CharSnap rebuilds the motes with the
-  new `--brass` value immediately, without a reload.
+  a dependency so switching Dark, Light, CharSnap or Custom, including changing
+  the live Custom accent, rebuilds the motes with the new `--brass` value
+  immediately without a reload.
 - Pausing dust means cancelling its pending animation frame. A loop that keeps
   requesting a frame and merely skips drawing still wakes the renderer sixty
   times a second under every panel. Resume it when the library is visible again.
@@ -724,6 +810,13 @@ Short entrance motion for panels belongs to Quality and is theme-neutral.
 Performance and reduced-motion remove it through the same global gates. Run the
 real renderer check below whenever changing the theme root, ambient layer, crest,
 panels, or Graphics setting.
+
+Custom theme memory lives beside `rcv-theme` in localStorage, not inside the
+encrypted vault, because its colours must be available before unlock. Store only
+the four user-facing colours. `customThemeVars` owns every derived colour and the
+contrast protection; do not start persisting individual CSS variables or let a
+Settings preview bypass that function. The same inline variables must be present
+on locked, loading, error and ready roots so no state flashes back to Dark.
 
 ### Responsive dashboard, libraries and image grid (1.238)
 
@@ -778,6 +871,17 @@ panels, or Graphics setting.
   exactly 4/3/2. The whole tile already opens the image, so Android hides the
   duplicate corner open button and keeps Select and Blur in opposite corners.
 
+### Android 15/16 system bars (1.247)
+
+Target SDK 35 made edge-to-edge mandatory and target SDK 36 removed the opt-out.
+`WindowCompat.setDecorFitsSystemWindows(window, true)` is therefore not a safe
+way to protect the WebView on current Android. `MainActivity` applies system-bar
+and display-cutout insets to the native content container on API 35+, then zeros
+only those handled inset types before they reach the WebView. Do not return
+`WindowInsetsCompat.CONSUMED`: keyboard inset changes still need to reach the
+WebView or focused editor fields can disappear behind the IME. Older supported
+Android versions keep the reliable fitted-window behavior.
+
 ## Testing notes
 
 `npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits
@@ -803,6 +907,7 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-touch-targets.js` | controls staying big enough to hit with a finger |
 | `test-perf-mode.js` | what performance mode turns off |
 | `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Read the canvas `fillStyle`, not random anti-aliased pixels. Needs Electron |
+| `test-custom-theme.js` | Custom colour controls, live derived palette, accessible text, phone-width fit and persistence across a reload. Needs Electron |
 | `test-ui-layout-audit.js` | all primary screens, records and editors fitting phone/tablet/desktop/wide viewports; Dashboard hierarchy and picture count; working library card sizes; and five centred Android navigation cells. Needs Electron |
 | `test-device-unlock-screen.js` | a real locked Android render with biometric enrollment, including the unlock action. It catches component-scoped platform flags that only fail for protected vaults. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |

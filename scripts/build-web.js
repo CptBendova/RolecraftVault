@@ -45,7 +45,8 @@ try { new Function(web); } catch (e) {
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, web);
 console.log("Wrote " + path.relative(root, outPath) + " (" + Math.round(web.length / 1024) + " KB)");
-for (const name of ["crest-loop.mp4", "crest-256.png", "crest-1024.png"]) {
+for (const name of ["vault-sync-core.js", "vault-sync.js", "vault-sync-ui.js"]) fs.copyFileSync(path.join(root,"app",name),path.join(root,"web","js",name));
+for (const name of ["crest-loop.mp4", "crest-256.png", "crest-1024.png", "qrcode.js", "jsQR.js", "jsQR-LICENSE.txt", "jsQR-NOTICE.txt"]) {
   const from = path.join(root, "app", "vendor", name);
   if (!fs.existsSync(from)) continue;
   const dest = path.join(root, "web", "vendor", name);

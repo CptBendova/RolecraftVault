@@ -10,7 +10,8 @@ def ksFile = { String path ->
     def f = new File(path)
     return f.isAbsolute() ? f : rootProject.file(path)
 }
-def keystorePropsFile = rootProject.file("keystore.properties")
+def signingPropertiesPath = System.getenv("ROLECRAFT_KEYSTORE_PROPERTIES")
+def keystorePropsFile = signingPropertiesPath ? new File(signingPropertiesPath) : rootProject.file("keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
@@ -23,8 +24,8 @@ android {
         applicationId "com.cptbendova.rolecraftvault"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1245
-        versionName "1.245"
+        versionCode 1257
+        versionName "1.257"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -37,7 +38,8 @@ android {
             if (keystoreProps['storeFile']) {
                 // Absolute paths do not survive a move to another machine, so a
                 // relative one is resolved against mobile/android/ instead.
-                storeFile ksFile(keystoreProps['storeFile'])
+                storeFile signingPropertiesPath && !new File(keystoreProps['storeFile']).isAbsolute()
+                    ? new File(keystorePropsFile.parentFile, keystoreProps['storeFile']) : ksFile(keystoreProps['storeFile'])
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']

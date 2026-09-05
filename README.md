@@ -34,10 +34,33 @@ Rolecraft Vault is free to download and use under the [licence](LICENSE).
 
 ## What it does
 
+Version 1.254 adds **Settings → Automatic device sync** for Windows and Android.
+Start on the most up-to-date device, choose it as primary, then scan or paste its
+pairing code on the others. Review the first merge before approving it. Pairing
+is remembered securely; later edits sync both ways without another code.
+Unique writing and conflict copies are retained, and received record deletions
+stay recoverable in the bin. Picture files are never deleted by sync.
+
+Keep devices on the same private network, open and unlocked. Windows can be
+minimized; Android pauses in the background and resumes when reopened. Permit
+the Windows app through the private-network firewall if prompted. Guest Wi-Fi
+may block discovery. Sync is not a backup: export each library before the first
+merge and keep periodic backups. Windows needs the full 1.254 installer; install
+the APK over the existing Android app without uninstalling.
+
+Version 1.252 improves consistent character/persona search, natural ordering of
+numbered names, keyboard activation of cards and gallery tiles, and safe retry
+when storage cannot be read. The in-app guide covers those behaviours and
+clarifies how protected drafts differ from saved records. Upgrade in place;
+application identities and vault folders have not changed.
+
 - Keeps **characters** with any number of alternate versions.
 - Separates **personas**, **lorebooks**, and reusable **prompt collections**.
+  Lorebooks support remembered grid/list views, World or Personal grouping, and
+  direct links to every character or persona using them.
 - Stores portraits, banners, galleries, albums, tags, buckets, and per-picture
-  blur choices.
+  blur choices. Characters can be marked Planned, WIP, or Done and filtered or
+  sorted by that workflow status.
 - Provides built-in and private templates, plus safe text-only duplication that
   never makes two records compete for ownership of the same picture.
 - Protects in-progress writing with recoverable encrypted drafts and a visible
@@ -50,7 +73,8 @@ Rolecraft Vault is free to download and use under the [licence](LICENSE).
 - Uses phone-sized navigation and Android system Back behavior in the APK.
 
 Rolecraft Vault reads and writes **CharSnap** characters and lorebooks, and
-imports **Chub** lorebooks and **Tavern** v1/v2 character cards. Text, JSON,
+imports **Chub**, standalone lorebook v3, embedded character-card lorebooks, and
+**Tavern** v1/v2 character cards. Text, JSON,
 pictures, and complete encrypted backups can be exported so the library is not
 locked to one application.
 
@@ -65,14 +89,14 @@ stores biometric data or the master password.
 
 The renderer cannot initiate network traffic. Release builds fail their checks
 if the interface gains `fetch`, `XMLHttpRequest`, `WebSocket`, remote scripts, or
-remote assets. Nothing in a vault is uploaded, synced, analysed, or available to
-the copyright holder.
+remote assets. Nothing in a vault is uploaded to a cloud service, analysed, or
+made available to the copyright holder.
 
-The only data connection is a transfer the user starts over their own local
-network. A Windows PC can share an encrypted copy with another PC or an Android
-device using a one-time pairing code. The sharing device is not modified, and
-the transfer never passes through a third-party server. Android currently
-receives from Windows; it does not act as the sender.
+Data connections stay on the local network in the privileged native shell.
+One-time transfer serves a copy from Windows without modifying the sharing
+device. Separately, explicitly paired automatic sync lets Windows and Android
+exchange later changes in both directions. Pairing is OS-protected and chunks
+are authenticated and encrypted; neither mode uses a third-party server.
 
 Keep independent backups of anything important. Offline storage protects
 privacy, but it also means nobody else can retrieve a forgotten password or

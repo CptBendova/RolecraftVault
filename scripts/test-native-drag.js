@@ -33,6 +33,10 @@ setTimeout(() => finish(2, "  timed out"), 90000);
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1400, height: 1400 });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
+  /* GitHub's Windows desktop is only 1024x720, so Windows constrains the
+     requested test window. Zoom the disposable page out enough to keep two
+     aside tiles simultaneously hit-testable for a real source/target drag. */
+  win.webContents.setZoomFactor(0.7);
   await new Promise(r => setTimeout(r, 2500));
 
   await win.webContents.executeJavaScript(`(async () => {
@@ -50,6 +54,11 @@ app.whenReady().then(async () => {
   })()`);
   await win.webContents.reload();
   await new Promise(r => setTimeout(r, 3000));
+  /* Native mouse input is focus-sensitive on hosted Windows desktops. The
+     first drag can otherwise work while a later one is silently discarded. */
+  win.show();
+  win.focus();
+  await new Promise(r => setTimeout(r, 500));
 
   const open = async where => await win.webContents.executeJavaScript(`(async () => {
     const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -61,6 +70,16 @@ app.whenReady().then(async () => {
     ${where === "grid" ? `const g = btn(/^Grid$/); if (!g) return { fail: "no Grid button" }; g.click(); await sleep(1300);` : ``}
     const sel = ${where === "grid" ? `".imggrid [data-imgid]"` : where === "aside" ? `".cpage-aside .tile"` : `".card"`};
     let tiles = [...document.querySelectorAll(sel)];
+    if (sel === ".cpage-aside .tile") {
+      /* This check is about Chromium's native drag loop, not the responsive
+         aside layout (covered by test-ui-layout-audit). A 1024x720 hosted
+         desktop exposes only one aside tile, so stage the real draggable DOM
+         nodes in a visible row without replacing their React handlers. */
+      tiles.filter(t => t.draggable).forEach((t, i) => Object.assign(t.style, {
+        position: "fixed", left: (24 + i * 116) + "px", top: "120px",
+        width: "96px", height: "96px", zIndex: "2147483000"
+      }));
+    }
     if (${JSON.stringify("sections")} === ${JSON.stringify("PLACEHOLDER")}) {}
     if (sel === ".card") {
       // only the prose cards, and only ones fully on screen: a target below the
@@ -78,7 +97,18 @@ app.whenReady().then(async () => {
     };
     // drag the first movable tile onto the last one
     const grips = [...document.querySelectorAll(".draghandle")];
-    const movable = sel === ".card" ? tiles : tiles.filter(t => t.draggable);
+    let movable = sel === ".card" ? tiles : tiles.filter(t => t.draggable);
+    if (sel === ".cpage-aside .tile") {
+      /* Small virtual displays can clip the bottom of the aside. Drive only
+         tiles whose centres can actually receive native pointer input. */
+      movable = movable.filter(t => {
+        const r = t.getBoundingClientRect();
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        const hit = x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+          ? document.elementFromPoint(x, y) : null;
+        return r.width > 0 && r.height > 0 && hit && (hit === t || t.contains(hit));
+      });
+    }
     if (movable.length < 2) return { fail: "not enough movable in " + sel };
     // sections are dragged by their grip; tiles by themselves
     const src = sel === ".card" ? grips[0] : movable[0];

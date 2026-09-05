@@ -13,6 +13,10 @@ const parseTargets = [
   "app/main.js",
   "app/preload.js",
   "app/app.js",
+  "app/vault-sync-core.js",
+  "app/vault-sync.js",
+  "app/vault-sync-ui.js",
+  "app/vault-sync-transport.js",
   "installer/main.js",
   "installer/preload.js",
   "web/js/rolecraft-app.web.js",
@@ -23,6 +27,12 @@ const parseTargets = [
 ];
 
 const offlineTargets = [
+  "app/vault-sync-core.js",
+  "app/vault-sync.js",
+  "app/vault-sync-ui.js",
+  "web/js/vault-sync-core.js",
+  "web/js/vault-sync.js",
+  "web/js/vault-sync-ui.js",
   "app/app.js",
   "web/js/rolecraft-app.web.js",
   "web/js/rolecraft-web-platform.js",
