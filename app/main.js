@@ -24,12 +24,12 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.253";
+const FACTORY_BUILD = "1.254";
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.246";
+const UPDATE_COMPAT_BUILD = "1.254";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1654,7 +1654,13 @@ function beginVaultRestore(spec) {
   fs.mkdirSync(stage, { recursive: false });
   try {
     for (const key of allKeys()) {
-      if (!targets.has(key)) fs.copyFileSync(keyToFile(key), path.join(stage, encodeURIComponent(key) + ".dat"));
+      if (!targets.has(key)) {
+        const destination = path.join(stage, encodeURIComponent(key) + ".dat");
+        if (spec && spec.linkUnchanged) {
+          try { fs.linkSync(keyToFile(key), destination); }
+          catch (e) { fs.copyFileSync(keyToFile(key), destination); }
+        } else fs.copyFileSync(keyToFile(key), destination);
+      }
     }
   } catch (e) {
     try { fs.rmSync(stage, { recursive: true, force: true }); } catch (e2) {}
@@ -2274,6 +2280,34 @@ app.whenReady().then(() => {
   finishPendingRewrap();
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));
+  require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
+  ipcMain.handle("vault-sync-fingerprint", (_e, key) => {
+    if (isLocked()) throw new Error("locked");
+    return hashOfRecord(key);
+  });
+  ipcMain.handle("vault-sync-fingerprints", (_e, keys) => {
+    if (isLocked()) throw new Error("locked");
+    if (!Array.isArray(keys) || keys.length > 5000) throw new Error("Too many picture keys");
+    return Object.fromEntries(keys.map(key => [key, hashOfRecord(key)]));
+  });
+  ipcMain.handle("vault-sync-image", (_e, key, value) => {
+    if (isLocked()) throw new Error("locked");
+    if (typeof key !== "string" || !/^(img:|th:)/.test(key)) throw new Error("Sync can only stage pictures here");
+    const old = readValue(key);
+    if (old != null && old !== value) throw new Error("A different picture already uses this identity. No picture was overwritten.");
+    if (old == null) writeValue(key, value);
+    return true;
+  });
+  ipcMain.handle("vault-sync-commit", (_e, values, expected) => {
+    if (isLocked()) throw new Error("locked");
+    for (const [key, value] of Object.entries(expected || {})) if (readValue(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
+    const token = beginVaultRestore({ exact: Object.keys(values), linkUnchanged: true });
+    try {
+      for (const [key, value] of Object.entries(values)) setVaultRestoreValue(token, key, value);
+      commitVaultRestore(token);
+    } catch (e) { abortVaultRestore(token); throw e; }
+    return true;
+  });
   ipcMain.handle("vault-set", (e, key, value) => { if (isLocked()) throw new Error("locked"); writeValue(key, value); return true; });
   // deleting is as destructive as writing, so it is gated the same way — a locked
   // vault that could still have records removed is not locked

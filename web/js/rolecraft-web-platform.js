@@ -626,16 +626,25 @@
       return { key: key, stored: r[0], hash: r[1], staged: null };
     });
   }
-  function commitStorageReplacement(prepared, removed) {
+  function commitStorageReplacement(prepared, removed, expected) {
     return db().then(function (d) {
       return new Promise(function (res, rej) {
         var tx = d.transaction(STORE, "readwrite"), os = tx.objectStore(STORE);
         tx.oncomplete = function () { res(true); };
         tx.onabort = tx.onerror = function () { rej(tx.error || new Error("restore did not commit")); };
-        removed.forEach(function (key) { os.delete("v:" + key); os.delete("h:" + key); });
-        prepared.forEach(function (item) {
-          os.put(item.stored, "v:" + item.key);
-          os.put(item.hash, "h:" + item.key);
+        var keys = Object.keys(expected || {}), left = keys.length;
+        function write() {
+          if (securityCache && !masterKey) { tx.abort(); return; }
+          removed.forEach(function (key) { os.delete("v:" + key); os.delete("h:" + key); });
+          prepared.forEach(function (item) { os.put(item.stored, "v:" + item.key); os.put(item.hash, "h:" + item.key); });
+        }
+        if (!left) write();
+        keys.forEach(function (key) {
+          var request = os.get("v:" + key);
+          request.onsuccess = function () {
+            if ((request.result == null ? null : request.result) !== expected[key]) { tx.abort(); return; }
+            if (--left === 0) write();
+          };
         });
       });
     });
@@ -643,7 +652,7 @@
   function replaceStorage(values, spec) {
     var has = replacementTargets(spec), incoming = Object.keys(values || {});
     if (incoming.some(function (key) { return !has(key); })) return Promise.reject(new Error("key is outside the restore"));
-    var affected = [], oldStored = [], prepared = [];
+    var affected = [], oldStored = [], prepared = [], committed = false;
     return loadSecurity().then(function (s) {
       if (s && !masterKey) throw new Error("locked");
       return ensureWrapKey();
@@ -661,12 +670,14 @@
       });
       return chain;
     }).then(function () {
-      return commitStorageReplacement(prepared, affected);
+      return commitStorageReplacement(prepared, affected, spec && spec.expectedPointers);
     }).then(function () {
-      return Promise.all(oldStored.map(dropPayloadFile));
+      committed = true;
+      return Promise.all(oldStored.map(function (stored) { return dropPayloadFile(stored).catch(function () { return true; }); }));
     }).then(function () {
       return { replaced: prepared.length };
     }).catch(function (e) {
+      if (committed) throw e;
       return Promise.all(prepared.map(function (item) { return item.staged ? dropPayloadFile(item.staged) : null; }))
         .then(function () { throw e; });
     });
@@ -679,6 +690,36 @@
 
   /* ---------- window.storage ---------- */
   window.storage = {
+    fingerprints: function (keys) {
+      return db().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx=d.transaction(STORE,"readonly"), os=tx.objectStore(STORE), out={};
+        tx.oncomplete=function(){resolve(out);};tx.onerror=tx.onabort=function(){reject(tx.error||new Error("Could not inspect pictures"));};
+        keys.forEach(function(key){var request=os.get("h:"+key);request.onsuccess=function(){out[key]=request.result||null;};});
+      }); });
+    },
+    fingerprint: function (key) { return idbGet("h:" + key).then(function (stored) { return stored || null; }); },
+    syncImage: function (key, value) {
+      if (!/^(img:|th:)/.test(key)) return Promise.reject(new Error("Only pictures can be staged"));
+      return loadSecurity().then(function (s) { if (s && !masterKey) throw new Error("locked"); return ensureWrapKey(); }).then(ensureVaultDir).then(function () {
+        return idbGet("v:" + key);
+      }).then(function (stored) {
+        if (stored != null) return plainFromStored(stored, masterKey).then(function (old) { if (old !== value) throw new Error("A different picture already uses this identity. Nothing was overwritten."); return true; });
+        return prepareReplacementValue(key, value).then(function (item) {
+          var expected = {}; expected[key] = null;
+          return commitStorageReplacement([item], [], expected).catch(function (e) { return (item.staged ? dropPayloadFile(item.staged) : Promise.resolve()).then(function () { throw e; }); });
+        });
+      });
+    },
+    syncCommit: function (values, expected) {
+      var pointers = {}, chain = Promise.resolve();
+      Object.keys(expected || {}).forEach(function (key) {
+        chain = chain.then(function () { return idbGet("v:" + key); }).then(function (stored) {
+          pointers[key] = stored == null ? null : stored;
+          return stored == null ? null : plainFromStored(stored, masterKey);
+        }).then(function (value) { if (value !== expected[key]) throw new Error("Library changed during sync. Your edit has been preserved."); });
+      });
+      return chain.then(function () { return replaceStorage(values, { exact: Object.keys(values), expectedPointers: pointers }); });
+    },
     get: function (key) {
       return loadSecurity().then(function (s) {
         if (s && !masterKey) throw new Error("locked");

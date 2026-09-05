@@ -9,6 +9,10 @@ ipcRenderer.on("update-file-result", (_e, payload) => {
 contextBridge.exposeInMainWorld("rcvInstalledApp", true);
 
 contextBridge.exposeInMainWorld("storage", {
+  syncCommit: (values, expected) => ipcRenderer.invoke("vault-sync-commit", values, expected),
+  syncImage: (key, value) => ipcRenderer.invoke("vault-sync-image", key, value),
+  fingerprint: key => ipcRenderer.invoke("vault-sync-fingerprint", key),
+  fingerprints: keys => ipcRenderer.invoke("vault-sync-fingerprints", keys),
   get: async (key) => {
     const value = await ipcRenderer.invoke("vault-get", key);
     if (value === null || value === undefined) throw new Error("key not found: " + key);
@@ -32,6 +36,7 @@ contextBridge.exposeInMainWorld("storage", {
   },
 });
 
+contextBridge.exposeInMainWorld("vaultSync", { call: (method, args) => ipcRenderer.invoke("vault-sync", method, args || {}) });
 contextBridge.exposeInMainWorld("auth", {
   status: () => ipcRenderer.invoke("auth-status"),
   setPassword: (pw) => ipcRenderer.invoke("auth-set-password", pw),

@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.253";
+const APP_VERSION = "1.254";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,7 +26,10 @@ const APP_VERSION = "1.253";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.253 — current",
+  heading: "1.254 — current",
+  notes: ["Automatic device sync can start from your most up-to-date phone, tablet or Windows computer. Pair each device once in Settings; the group is remembered securely and devices rediscover each other on the local network without new codes.", "The first comparison asks you to approve its merge. Unique records are retained, conflicting writing is preserved as separate copies, and later edits can travel in either direction. Synced record removals stay recoverable in the bin; sync never deletes picture files. Privacy blur marks travel with the library while device settings stay local.", "Transfers use encrypted, verified chunks and reuse completed downloads after interruptions. Incoming records are saved together only after their pictures arrive and only if local editing has not changed the library. Sync pauses while locked or Android is in the background, and resumes when open and unlocked. This is not a backup: keep periodic exports.", "Windows requires the full 1.254 installer for the new native sync transport. Install the Android APK over the existing standard app without uninstalling. Pair on the same private network and allow the Windows app through the private-network firewall if prompted. The guide includes the setup and recovery steps."]
+}, {
+  heading: "1.253",
   notes: ["Backup export now has a persistent progress panel, picture counts and a final filename and location. Errors remain visible instead of disappearing after Preparing backup. Repeated taps cannot start competing backups.", "Fixed backup failures caused by empty picture references and a bin-image helper that was out of scope. Damaged records and unreadable pictures stop safely with a visible error; existing library data is never rewritten by export.", "Android full backups must finish in public Downloads. A failed Downloads write no longer silently falls back to hidden app storage or marks the backup reminder as successful. Install this APK over the standard app without uninstalling to retain its library."]
 }, {
   heading: "1.252",
@@ -628,6 +631,7 @@ const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(
    a failed read as "no data" is how a transient error used to turn into an empty
    library, which the next save then wrote over the top of the real one. */
 const isMissingKey = e => /not found/i.test(e && e.message || "");
+let pendingVaultWrites = 0;
 async function sGet(key) {
   try {
     const r = await window.storage.get(key);
@@ -643,11 +647,14 @@ async function sGet(key) {
    it had saved when nothing was written. Anything not caught locally reaches the
    unhandledrejection handler installed with the toaster. */
 async function sSet(key, value) {
+  pendingVaultWrites++;
   try {
     return await window.storage.set(key, value);
   } catch (e) {
     console.error("save failed", key, e);
     throw e;
+  } finally {
+    pendingVaultWrites--;
   }
 }
 async function sList() {
@@ -657,17 +664,22 @@ async function sList() {
   };
 }
 async function sDel(key) {
+  pendingVaultWrites++;
   try {
     return await window.storage.delete(key);
   } catch {
     return null;
+  } finally {
+    pendingVaultWrites--;
   }
 }
 async function sReplace(values, spec) {
   if (!window.storage || typeof window.storage.replace !== "function") {
     throw new Error("This restore needs the current app shell");
   }
-  return window.storage.replace(values, spec);
+  pendingVaultWrites++;
+  try { return await window.storage.replace(values, spec); }
+  finally { pendingVaultWrites--; }
 }
 function compressImage(file, maxDim = 1000, quality = 0.85) {
   return new Promise((resolve, reject) => {
@@ -3425,6 +3437,19 @@ const tokenHint = (key, kind, extra) => rec => {
    the search all read from one place, and so a wording fix is a wording fix. */
 const GUIDE = [
   {
+    id: "device-sync",
+    title: "Automatic device sync",
+    summary: "Pair computers, phones and tablets once, then keep their libraries up to date.",
+    body: [
+      "Open Settings on your most up-to-date device, such as your tablet, and choose Use this device as primary under Automatic device sync. This selects the preferred starting library, not a permanently required server.",
+      "Choose Pair another device. On each other computer, phone or tablet, scan its pairing QR or paste the code and choose Remember and join group. Pairing codes expire after ten minutes; after a successful pairing, the group is remembered securely and no new code is needed when returning to the same local network.",
+      "Review and approve the first comparison on each device. Unique records are kept, and conflicting writing is kept as separate copies labelled sync conflict. Once paired, later changes travel in both directions. Record removals received by another device stay recoverable in its bin. Sync never deletes picture files.",
+      "Keep the apps open and unlocked while syncing. Windows may be minimized. Android pauses when backgrounded or locked and resumes when open and unlocked. Finish editing before incoming changes can be applied. Verified downloaded chunks are reused after interruptions, and Up to date appears after connected peers have published matching revisions.",
+      "Use a trusted private local network and allow the Windows app through the firewall on private networks if prompted. Guest networks can isolate devices. If a peer is missing, reopen and unlock both apps, check Wi-Fi and firewall access, then choose Check now. Do not keep creating new groups to fix a temporary disconnection.",
+      "Sync is not a backup. Export a backup from each device before the first merge and continue periodic exports afterwards. Device passwords, unlock settings, application settings and pairing secrets are not copied into another vault or backup. Leaving a group stops this device; it does not revoke other members. To replace a shared pairing secret, create and pair a new group."
+    ]
+  },
+  {
     "id": "start",
     "title": "Getting started",
     "summary": "What the vault is, and how the app is laid out.",
@@ -3688,7 +3713,7 @@ const GUIDE = [
     "body": [
       "The Android app is the same library, on a device you can carry. It is a separate download from the releases page, a file ending in .apk, and it needs Android 8 or newer.",
       "Install a new one straight over the old one. Do not uninstall first: uninstalling takes that device's vault with it, because the vault lives inside the app.",
-      "A phone or tablet can receive a copy of your vault, but it cannot send one, so the computer is always the one that shares. Start on the Windows app, press Share this vault, and scan the QR with the phone. During a large copy Android shows an ongoing notification and keeps Wi-Fi awake, so the screen may be turned off. Do not force-stop either app until both devices say Complete.",
+      "The one-time Share this vault tool still starts from Windows and lets Android receive. For automatic transfer in either direction, including Android to Windows, use Automatic device sync instead. A phone or tablet can be the primary starting device. Keep automatic sync open and unlocked on Android; unlike the one-time transfer service, it pauses in the background.",
       "Moving pictures around uses your finger rather than a mouse:",
       [
         "One finger on a picture moves it. Touch it and it answers, and it goes with your finger from the moment you move.",
@@ -12156,6 +12181,8 @@ function SettingsModal({
   lastBackup,
   backupDue,
   backupExport,
+  syncEngine,
+  syncStatus,
   perfMode,
   setPerfMode,
   onVaultReplaced,
@@ -12985,7 +13012,7 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
+  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), window.RolecraftSyncPanel && React.createElement(window.RolecraftSyncPanel, {engine:syncEngine,status:syncStatus,renderQr:code=>React.createElement(TransferQr,{text:code})}), /*#__PURE__*/React.createElement("div", {
     className: "backup-health " + (backupDue ? "due" : "good")
   }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), React.createElement(BackupExportStatus, { status: backupExport }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -14104,6 +14131,28 @@ function RolecraftVault() {
   const [backupExport, setBackupExport] = useState(null);
   const [backupExportOpen, setBackupExportOpen] = useState(false);
   const backupExportBusy = useRef(false);
+  const vaultSyncRef = useRef(null);
+  const vaultSyncReload = useRef(null);
+  const [vaultSyncStatus, setVaultSyncStatus] = useState(null);
+  useEffect(() => {
+    if (!window.RolecraftVaultSync) return;
+    const engine = window.RolecraftVaultSync.create({
+      storage: window.storage,
+      namespace: window.RolecraftSyncNamespace || "library1",
+      ready: () => !!document.querySelector('.rcv[data-rcv-state="ready"]'),
+      canApply: () => !pendingVaultWrites && !backupExportBusy.current && !document.activeElement?.matches("input, textarea, [contenteditable=true]") && document.querySelectorAll(".modal-back:not(.sync-saving)").length <= (document.querySelector(".vault-sync-panel") ? 1 : 0),
+      imageIds: (kind, record) => {
+        if (kind === "trash") return record.record ? imageIdsOf(record.type, record.record) : [];
+        if (["bucket", "personaBucket", "loreBook", "promptBook"].includes(kind)) return record.cover ? [record.cover] : [];
+        return imageIdsOf(kind, record);
+      },
+      onApplied: () => new Promise(resolve => { const timer=setTimeout(resolve,15000); vaultSyncReload.current = () => { clearTimeout(timer); resolve(); }; setVaultTick(t => t + 1); })
+    });
+    vaultSyncRef.current = engine;
+    const off = engine.subscribe(setVaultSyncStatus);
+    engine.start();
+    return () => { off(); engine.stop(); vaultSyncRef.current = null; };
+  }, []);
   const refreshDrafts = useCallback(() => {
     sGet(DRAFT_INDEX_KEY).then(v => {
       try { setDrafts(v ? JSON.parse(v).filter(Boolean) : []); } catch (e) { setDrafts([]); }
@@ -14217,6 +14266,8 @@ function RolecraftVault() {
         });
       } catch (e) {
         setLoadError([]); // storage itself failed; damaged list is unknown
+      } finally {
+        if (vaultSyncReload.current) { vaultSyncReload.current(); vaultSyncReload.current = null; }
       }
     })();
   }, [authState.checked, authState.locked, vaultTick]);
@@ -20348,6 +20399,8 @@ function RolecraftVault() {
     lastBackup: lastBackup,
     backupDue: backupDue,
     backupExport: backupExport,
+    syncEngine: vaultSyncRef.current,
+    syncStatus: vaultSyncStatus,
     textSize: textSize,
     setTextSize: applyTextSize,
     cardSize: cardSize,
@@ -20476,7 +20529,7 @@ function RolecraftVault() {
       if (e.target.files[0]) handleJsonImportFile(e.target.files[0]);
       e.target.value = "";
     }
-  }), backupExportOpen && backupExport && React.createElement("div", {
+  }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
     className: "modal-back", style: { zIndex: 125 }
   }, React.createElement("div", {
     className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",

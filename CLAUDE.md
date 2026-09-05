@@ -1,5 +1,30 @@
 # Rolecraft Vault — project notes
 
+## Remembered multi-device sync
+
+Automatic sync is a separate protocol from passive one-time transfer. The
+native Windows transport and Android VaultSyncPlugin serve only immutable,
+encrypted chunks. Pairing secrets use safeStorage/Keystore. Authenticated UDP
+discovery (44218) and peer gossip replace old addresses; never overwrite a
+discovered endpoint with the original invitation's seed address.
+
+The renderer merges per-record vector clocks, previews initial changes and
+preserves concurrent writing as deterministic conflict copies. Image originals
+are never overwritten or deleted. Previews may differ across devices without
+blocking original-image convergence. Only currently applied records hold image
+references, so purging a deleted conflict does not demand its pictures forever.
+Records and sync state commit with compare-and-swap after all originals arrive.
+Windows stages unchanged files with hard links and replaces files atomically;
+Android compares encrypted pointers in the same IndexedDB transaction that
+writes values and fingerprints. Failed old-file cleanup must never delete new
+committed payloads. Keep the save overlay until UI records have reloaded.
+
+Pause while locked or Android is backgrounded. This is foreground/resumable
+sync, not an always-running Android background service. Export backups before
+initial reconciliation. Tests cover four-way convergence, later edits, deletion
+recovery, restart/discovery, native codec interoperability, IDB races and phone
+layout. Physical-device Wi-Fi/firewall/lifecycle checks still matter.
+
 A private, offline roleplay library: characters, personas, lorebooks and prompts,
 with encrypted local storage. Ships as a Windows Electron app, plus an embeddable
 web edition. Built for CharSnap creators.

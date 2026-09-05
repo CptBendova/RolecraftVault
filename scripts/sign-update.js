@@ -58,7 +58,7 @@ function shellChangedSinceLastRelease() {
   if (!tag) return null;
   let diff;
   try {
-    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html"]);
+    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html", "app/vault-sync-core.js", "app/vault-sync.js", "app/vault-sync-ui.js", "app/vault-sync-transport.js"]);
   } catch { return null; }
   const touched = diff.split("\n").filter(l => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
   const real = touched.filter(l => !/^[+-]const FACTORY_BUILD = /.test(l));

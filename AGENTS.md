@@ -71,7 +71,15 @@ launch after each behavior change.
 The interface must never initiate network traffic. Do not add `fetch`,
 `XMLHttpRequest`, `WebSocket`, `sendBeacon`, remote scripts, or remote assets to
 `app/app.js` or the generated web bundle. Networking belongs only in
-`app/main.js`, and only for the user-initiated LAN transfer feature.
+`app/main.js`, `app/vault-sync-transport.js`, and the native Android shell, for
+user-initiated LAN transfer and explicitly paired automatic LAN sync.
+
+Automatic sync is separate from passive transfer. Its native shell serves
+immutable encrypted chunks and never writes vault records for a peer. Initial
+merges need a local preview/approval. The local apply uses compare-and-swap,
+preserves concurrent writing as conflict copies, and keeps deletions recoverable.
+Pairing secrets stay in OS-protected storage, never vault exports. Pause on lock
+or Android backgrounding; remember the group and rediscover changed local IPs.
 
 Run `npm run check` after renderer edits; its no-network sweep is mandatory.
 
