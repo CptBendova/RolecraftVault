@@ -1311,6 +1311,9 @@ function zipWriter() {
 function downloadBlob(blob, filename) {
   return saveFile(blob, filename); // see saveFile: the phone cannot use an <a download>
 }
+// Shared local export adapter for optional edition workspaces. It preserves the
+// native Android Downloads picker and the ordinary Windows save workflow.
+window.__rcvSaveFile = saveFile;
 const extOf = u => {
   const m = /^data:image\/([\w+]+)/.exec(u || "");
   const e = m ? m[1].toLowerCase() : "jpeg";
@@ -1327,7 +1330,7 @@ const extOf = u => {
 /* Sorting names with no comparator compares UTF-16 code units, which puts
    every capital ahead of every lowercase letter: Beta, Zebra, aardvark, apple.
    Tag, bucket and book names are typed by hand and are full of mixed case. */
-const byName = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+const byName = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
 const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 const cleanName = s => (String(s == null ? '' : s).replace(/[^\p{L}\p{N}\-_ ]+/gu, '').trim().replace(/ +/g, '-').slice(0, 40)) || 'untitled';
 /* CON, PRN, AUX, NUL, COM1..9 and LPT1..9 are device names on Windows, and an
@@ -4796,9 +4799,17 @@ function usesPointerDrag(e) {
    Swallowing the key is half the point. Deliberately not used on text inputs,
    where Enter commits and a space is a space. */
 function activates(e) {
+  if (e.target && e.currentTarget && e.target !== e.currentTarget) return false;
   if (e.key !== "Enter" && e.key !== " ") return false;
   e.preventDefault();
   return true;
+}
+function matchesLibrarySearch(record, query) {
+  const needle = String(query || "").trim().toLocaleLowerCase();
+  if (!needle) return true;
+  return [record.name, record.tagline, record.story, record.personality,
+    record.role, record.description, ...toTermList(record.tags), ...toTermList(record.searchables)]
+    .some(value => String(value || "").toLocaleLowerCase().includes(needle));
 }
 function textOfChar(c) {
   const parts = [c.name, ...VARIANT_TEXT_KEYS.map(k => c[k])];
@@ -6569,7 +6580,7 @@ function ImageGridView({
       boxShadow: sel[it.imgId] ? "0 0 0 2px var(--brass-line)" : undefined
     },
     onClick: () => { if (!thumbDrag) setLb(i); },
-    onKeyDown: e => e.key === "Enter" && setLb(i)
+    onKeyDown: e => activates(e) && setLb(i)
   }, /*#__PURE__*/React.createElement("span", {
     /* the tick stays put once something is selected, so a part-selected grid
        can be read without sweeping the pointer over it */
@@ -14750,6 +14761,7 @@ function RolecraftVault() {
     };
   }, []);
   const lockVault = async () => {
+    window.dispatchEvent(new Event("rcv-locking"));
     if (window.auth) await window.auth.lock();
     setReady(false);
     setChars([]);
@@ -16484,7 +16496,7 @@ function RolecraftVault() {
   const filteredChars = chars.filter(c => bucketFilter === null || (c.bucket || "").trim() === bucketFilter).filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).filter(c => !workflowFilter || characterWorkflowStatus(c) === workflowFilter)/* Every other list guards its fields; this one concatenated name, story and
    personality raw, so a character missing any of them had the literal word
    "undefined" folded into what gets searched — and typing it matched them. */
-.filter(c => !charQ.trim() || [c.name, (c.tags || []).join(" "), (c.searchables || []).join(" "), c.tagline, c.story, c.personality].map(v => v || "").join(" ").toLowerCase().includes(charQ.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "") : sort === "status" ? workflowStatusRank(a) - workflowStatusRank(b) || byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+.filter(c => matchesLibrarySearch(c, charQ)).sort((a, b) => sort === "name" ? byName(a.name || "", b.name || "") : sort === "status" ? workflowStatusRank(a) - workflowStatusRank(b) || byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
   /* This copied every character, persona, lore entry and prompt in the vault
      into a new object, sorted the lot, and threw all but six away — and it ran
      on every render, including while typing in a search box on a completely
@@ -16675,7 +16687,11 @@ function RolecraftVault() {
       marginTop: 16,
       lineHeight: 1.6
     }
-  }, "Restore your most recent export, or reopen the app to try again. Don't add or edit anything until it opens normally.")));
+  }, "Reopen the app to try again. Keep the original files and your latest backup; don't reset the vault to resolve a storage error."), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    style: { marginTop: 16 },
+    onClick: () => window.location.reload()
+  }, "Retry opening vault")));
   /* First paint must not mount extra screens. 1.178 did, and on a phone that
      threw before auth had been read, so the lock screen never appeared. */
   if (!authState.checked) return /*#__PURE__*/React.createElement("div", {
@@ -18149,7 +18165,7 @@ function RolecraftVault() {
     }
   }, c.tagline || (c.tags || []).join(" | ")))))))), view === "personas" && !overlayOpen && (() => {
     const needle = personaQ.trim().toLowerCase();
-    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => !needle || [p.name, p.tagline, p.role, p.description].some(v => (v || "").toLowerCase().includes(needle))).slice().sort((a, b) => sort === "name" || sort === "status" ? (a.name || "").localeCompare(b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
+    const shown = personas.filter(p => pBucketFilter === null || (p.bucket || "").trim() === pBucketFilter).filter(p => matchesLibrarySearch(p, needle)).slice().sort((a, b) => sort === "name" || sort === "status" ? byName(a.name || "", b.name || "") : sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "oldest" ? (a.createdAt || 0) - (b.createdAt || 0) : (b.createdAt || 0) - (a.createdAt || 0));
     return /*#__PURE__*/React.createElement("div", {
       style: sheetOpen ? {
         display: "none"
@@ -18559,7 +18575,7 @@ function RolecraftVault() {
         if (n[p.id]) delete n[p.id];else n[p.id] = true;
         return n;
       }) : setViewPersonaId(p.id),
-      onKeyDown: e => e.key === "Enter" && (pSelMode ? setPSelected(s => {
+      onKeyDown: e => activates(e) && (pSelMode ? setPSelected(s => {
         const n = {
           ...s
         };
