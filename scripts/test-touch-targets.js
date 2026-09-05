@@ -63,7 +63,8 @@ app.whenReady().then(async () => {
     out.pageMove = [...document.querySelectorAll(".btn-move")].map(box);
 
     const g = btn(/^Grid$/); if (g) { g.click(); await sleep(1100); }
-    out.chips = [...document.querySelectorAll("button.chip")].map(box);
+    out.hiddenChips = [...document.querySelectorAll("button.chip")].filter(b=>!b.getClientRects().length).map(b=>b.textContent);
+    out.chips = [...document.querySelectorAll("button.chip")].filter(b=>b.getClientRects().length).map(box);
     out.sideways = document.documentElement.scrollWidth > window.innerWidth + 1;
     return out;
   })()`);
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
   const smallest = list => list.reduce((m, b) => Math.min(m, b.w, b.h), Infinity);
 
   console.log("  running as the phone build: " + r.isCapacitor);
+  if (r.hiddenChips.length) console.log("  hidden controls excluded from touch measurements: " + r.hiddenChips.join(", "));
   console.log("");
   check("no grip is offered where dragging cannot work (dashboard)", r.dashGripsVisible === 0, "visible=" + r.dashGripsVisible);
   check("no grip is offered where dragging cannot work (sections)", r.pageGripsVisible === 0, "visible=" + r.pageGripsVisible);

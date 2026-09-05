@@ -24,12 +24,13 @@ for (let i = SRC.indexOf("{", start); i < SRC.length; i++) {
   else if (SRC[i] === "}") { depth--; if (depth === 0) { end = i + 1; break; } }
 }
 const lifted = SRC.slice(start, end);
+const isReleaseTag = require("vm").runInNewContext(SRC.match(/const isReleaseTag = ([^\n]+);/)[1]);
 console.log("lifted shellChangedSinceLastRelease (" + lifted.length + " chars) from sign-update.js");
 
 /* it closes over `root`, `version` and `execFileSync` */
 const make = (root, version) =>
-  new Function("root", "version", "execFileSync",
-    lifted + "; return shellChangedSinceLastRelease;")(root, version, execFileSync);
+  new Function("root", "version", "execFileSync", "isReleaseTag",
+    lifted + "; return shellChangedSinceLastRelease;")(root, version, execFileSync, isReleaseTag);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rcv-shell-"));
 const git = (repo, args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
@@ -117,6 +118,16 @@ console.log("");
   r.w("app/vendor/inter-400.woff2", "FONT");
   r.commit();
   check("a new font in app/vendor/ needs the installer", make(r.dir, "1.001")().needsShell, true);
+}
+
+// A non-release tag must not become the shell compatibility baseline.
+{
+  const r = repo("preview-tag");
+  r.w("app/main.js", 'const FACTORY_BUILD = "1.000";\nconst x = 2;\n'); r.commit();
+  git(r.dir, ["tag", "v9.999-preview"]);
+  r.w("app/main.js", 'const FACTORY_BUILD = "1.000";\nconst x = 1;\n'); r.commit();
+  const result = make(r.dir, "1.001")();
+  check("non-release tags cannot change shell routing", result.tag === "v1.000" && result.needsShell === false, true);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
