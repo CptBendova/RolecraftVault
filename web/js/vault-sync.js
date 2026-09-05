@@ -12,7 +12,7 @@
     let current={phase:"off",message:"Choose a primary device or join its group."};
     const remoteCache=new Map();
     const listeners=new Set();
-    function report(phase,message,extra={},force=true){if(!force&&Date.now()-lastPaint<750)return;lastPaint=Date.now();current={...current,...extra,phase,message,initial:firstCheck};for(const fn of listeners)fn(current);}
+    function report(phase,message,extra={},force=true){if(!force&&phase===current.phase&&Date.now()-lastPaint<750)return;lastPaint=Date.now();current={...current,...(phase!==current.phase?{done:null,total:null}:{}),...extra,phase,message,initial:firstCheck};for(const fn of listeners)fn(current);}
     const get=async key=>{try{const r=await storage.get(key);return r?r.value:null;}catch(e){if(/not found/i.test(e.message))return null;throw e;}};
     const ready=()=>options.ready()&&!(host.Capacitor&&document.hidden);
     const check=run=>{if(run!==epoch||stopped||!ready())throw Error("Sync paused. Open and unlock the app to resume.");};
@@ -63,6 +63,9 @@
         done++;
         for(const prefix of ["img:","th:"]){
           const key=prefix+id,mark=marks[key],cached=!invalidCache&&old&&old[key];
+          // Thumbnails are optional. A missing preview is not unfinished sync
+          // work, and must not be reread/restaged on every background pass.
+          if(prefix==="th:"&&mark==null)continue;
           if(mark!=null&&cached&&cached.fingerprint===mark){images[key]=cached;continue;}
           report("preparing","Preparing picture "+done+" of "+ids.length,{done,total:ids.length},false);
           const value=await get(key);check(run);
@@ -72,6 +75,7 @@
           if(++saved>=16||Date.now()-lastSave>2000){await rememberImages(images,run);saved=0;lastSave=Date.now();}
         }
       }}finally{if(saved)await rememberImages(images,run);}
+      if(current.phase==="preparing")report("preparing","Pictures prepared: "+ids.length+" of "+ids.length,{done:ids.length,total:ids.length});
       return images;
     }
     function portable(images){return Object.fromEntries(Object.entries(images).map(([k,v])=>[k,{hash:v.hash,parts:v.parts,bytes:v.bytes}]));}
@@ -115,6 +119,7 @@
         let snapshot=await C.scan(local.items,local.state.snapshot,settings.device,hash);
         await C.validate(snapshot,hash);
         const images=await localImages(snapshot,local.state.images,run);
+        if(current.phase==="preparing")report("checking","Pictures ready. Comparing saved changes with paired devices…");
         const refreshed=await readLocal();check(run);
         if(C.canonical(refreshed.raw)!==C.canonical(local.raw)){report("checking","Picture preparation saved. Picking up your latest writing on the next pass.");return;}
         local=refreshed;

@@ -692,12 +692,14 @@
   window.storage = {
     fingerprints: function (keys) {
       return db().then(function (d) { return new Promise(function (resolve, reject) {
-        var tx=d.transaction(STORE,"readonly"), os=tx.objectStore(STORE), out={};
-        tx.oncomplete=function(){resolve(out);};tx.onerror=tx.onabort=function(){reject(tx.error||new Error("Could not inspect pictures"));};
-        keys.forEach(function(key){var request=os.get("h:"+key);request.onsuccess=function(){out[key]=request.result||null;};});
+        var tx=d.transaction(STORE,"readonly"), os=tx.objectStore(STORE), out={}, legacy={};
+        tx.oncomplete=function(){Promise.all(Object.keys(legacy).map(function(key){return sha16plain(JSON.stringify(legacy[key])).then(function(mark){out[key]="stored:"+mark;});})).then(function(){resolve(out);},reject);};tx.onerror=tx.onabort=function(){reject(tx.error||new Error("Could not inspect pictures"));};
+        keys.forEach(function(key){var request=os.get("h:"+key);request.onsuccess=function(){out[key]=request.result||null;if(!request.result){var pointer=os.get("v:"+key);pointer.onsuccess=function(){if(pointer.result!=null)legacy[key]=pointer.result;};}};});
       }); });
     },
-    fingerprint: function (key) { return idbGet("h:" + key).then(function (stored) { return stored || null; }); },
+    // Old vaults can lack h: records. Fingerprint their immutable stored pointer
+    // without decrypting pictures or writing while locked; null means absent.
+    fingerprint: function (key) { return window.storage.fingerprints([key]).then(function (marks) { return marks[key]; }); },
     syncImage: function (key, value) {
       if (!/^(img:|th:)/.test(key)) return Promise.reject(new Error("Only pictures can be staged"));
       return loadSecurity().then(function (s) { if (s && !masterKey) throw new Error("locked"); return ensureWrapKey(); }).then(ensureVaultDir).then(function () {

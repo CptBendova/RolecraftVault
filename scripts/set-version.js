@@ -63,6 +63,12 @@ const edits = [
   },
 ];
 
+// Shell-owned assets require a full installer; future patches must not skip it.
+if (process.argv.includes("--shell")) edits.push({
+  file: "app/main.js", find: /^const UPDATE_COMPAT_BUILD = "[^"]*";$/m,
+  to: `const UPDATE_COMPAT_BUILD = "${version}";`,
+});
+
 let failed = false;
 for (const e of edits) {
   const p = path.join(root, e.file);

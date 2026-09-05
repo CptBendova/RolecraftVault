@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.257";
+const APP_VERSION = "1.258";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.257";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.258",
+  notes: ["Automatic sync no longer repeatedly prepares missing optional thumbnail previews. Original pictures remain required and verified.", "Picture preparation always reaches its final count, and completed sync clears old progress counts instead of appearing stuck near the end. Windows and Android share the same fix."]
+}, {
   heading: "1.257 — current",
   notes: ["First sync now saves completed records in small checkpoints, after each record's originals are verified. Text-only records can appear before the rest of the pictures, and interrupted picture preparation is remembered.", "A small local or remote writing edit no longer discards completed first-sync work. Initial approval is remembered while the remaining records resume; concurrent edits and picture collisions remain protected.", "A compact sync spinner replaces the large library banner. Open its details button for full progress in Settings. The connection lease stays renewed during long preparation while the app remains open and unlocked.", "Install the full Windows installer or update the signed APK in place. Existing library data and remembered pairing are preserved."]
 }, {
