@@ -30,6 +30,7 @@ check("the final public installer passes through Authenticode signing", /signWin
 check("the packaged app is rebuilt from the installed Electron runtime", /fs\.rmSync\(staged/.test(builder) && /copyDir\(electronDist, staged\)/.test(builder));
 check("Electron tests run from a disposable directory", /cwd: j\.electron \? runRoot : root/.test(runner));
 check("release checks run on GitHub", fs.existsSync(path.join(root, ".github", "workflows", "release-checks.yml")));
+check("Android dependency checks compile native code, not just web assets", /:app:assembleDebug/.test(workflow) && /JAVA_HOME_21_X64/.test(workflow));
 check("third-party CI actions are pinned to immutable revisions",
   !/uses:\s+actions\/(?:checkout|setup-node)@v\d/.test(workflow) &&
   pinnedActions.length === 4 && pinnedActions.every(match => match[1].length === 40));
