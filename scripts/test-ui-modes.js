@@ -101,7 +101,7 @@ const qualityProbe = `(async () => {
   const pausedHits = rafHits;
   const modal = document.querySelector(".modal");
   const modalRect = modal.getBoundingClientRect();
-  const optionNames = /^(Light|Dark|CharSnap|Quality|Performance|Small|Medium|Large|Normal|Higher|Maximum)$/;
+  const optionNames = /^(Light|Dark|CharSnap|Custom|Quality|Performance|Small|Medium|Large|Normal|Higher|Maximum)$/;
   const options = [...modal.querySelectorAll("button")].filter(b => optionNames.test((b.textContent || "").trim()));
   const optionsInside = options.every(b => {
     const r = b.getBoundingClientRect();
@@ -140,6 +140,13 @@ app.whenReady().then(async () => {
     webPreferences: { preload, contextIsolation: false, backgroundThrottling: false } });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
   await wait(1500);
+  /* Hosted Windows runners may inherit reduced motion from their virtual
+     desktop. Quality-mode expectations need an explicit normal-motion baseline;
+     the final section separately verifies the reduced-motion branch. */
+  await win.webContents.debugger.attach("1.3");
+  await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+    media: "screen", features: [{ name: "prefers-reduced-motion", value: "no-preference" }]
+  });
   await setStored(win, "dark", "quality");
   win.show();
   await wait(350);
@@ -176,7 +183,6 @@ app.whenReady().then(async () => {
   check("nothing decorative is still animating", p.animated === 0, "animated=" + p.animated);
 
   console.log("\nreduced motion while Quality is selected");
-  await win.webContents.debugger.attach("1.3");
   await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
     media: "screen", features: [{ name: "prefers-reduced-motion", value: "reduce" }]
   });

@@ -46,6 +46,10 @@ const lifted = [
   lift("setSaveNotice"),
   lift("downloadExport"),
   lift("writeSomewhere", "async function "),
+  lift("readBlobSlice"),
+  lift("streamBlobChunks"),
+  lift("streamBlobDownload"),
+  lift("streamBlobSomewhere"),
   lift("phoneSave"),
   lift("appendJsonText"),
   lift("streamJsonSomewhere"),
@@ -65,11 +69,19 @@ const build = env => new Function("window", "document", "URL", "FileReader", "Bl
 function makeEnv(capacitor) {
   const log = { anchorClicks: [], writes: [], revoked: 0, notices: [] };
   class FakeBlob {
-    constructor(parts) { this.parts = parts || []; this.size = String(parts && parts[0] || "").length; }
+    constructor(parts, options) {
+      this.parts = parts || [];
+      this.text = this.parts.map(x => String(x || "")).join("");
+      this.size = this.text.length;
+      this.type = options && options.type || "";
+    }
+    slice(start, end) {
+      return new FakeBlob([this.text.slice(start, end)], { type: this.type });
+    }
   }
   class FakeReader {
     readAsDataURL(blob) {
-      const text = String((blob.parts && blob.parts[0]) || "");
+      const text = blob.text || "";
       this.result = "data:application/json;base64," + Buffer.from(text, "utf8").toString("base64");
       setTimeout(() => this.onload && this.onload(), 0);
     }
@@ -93,6 +105,15 @@ const wait = () => new Promise(r => setTimeout(r, 30));
   check("current Android exports use the public Downloads collection",
     /MediaStore\.Downloads\.EXTERNAL_CONTENT_URI/.test(EXPORT_PLUGIN) &&
     /Environment\.DIRECTORY_DOWNLOADS/.test(EXPORT_PLUGIN) && /IS_PENDING/.test(EXPORT_PLUGIN));
+  check("individual Android pictures use a public Gallery-visible collection",
+    /MediaStore\.Images\.Media\.EXTERNAL_CONTENT_URI/.test(EXPORT_PLUGIN) &&
+    /Environment\.DIRECTORY_PICTURES/.test(EXPORT_PLUGIN) &&
+    /Pictures\/Rolecraft Vault/.test(EXPORT_PLUGIN) &&
+    /MediaScannerConnection\.scanFile/.test(EXPORT_PLUGIN));
+  check("picture downloads offer files or a ZIP instead of forcing an archive",
+    /const askImageExport =/.test(SRC) &&
+    /Save individual files/.test(SRC) && /Create ZIP/.test(SRC) &&
+    /collection: "pictures", quiet: true/.test(SRC));
   check("Android's picker accepts JSON files as labelled by common Downloads apps",
     /const JSON_FILE_ACCEPT = "\.json,application\/json,text\/json,text\/plain,application\/octet-stream"/.test(SRC) &&
     (SRC.match(/accept: JSON_FILE_ACCEPT/g) || []).length >= 4);
@@ -101,10 +122,35 @@ const wait = () => new Promise(r => setTimeout(r, 30));
   {
     const { env, log, FakeBlob } = makeEnv(undefined);
     const api = build(env);
-    api.saveFile(new FakeBlob(["hello"]), "backup.json");
-    await wait();
+    await api.saveFile(new FakeBlob(["hello"]), "backup.json");
     check("desktop still saves through the download link", log.anchorClicks.length === 1, "clicks=" + log.anchorClicks.length);
     check("and with the right filename", log.anchorClicks[0] === "backup.json", String(log.anchorClicks[0]));
+  }
+
+  /* ---- a picture on the phone: public Pictures, not a zip in Downloads ---- */
+  {
+    const written = [];
+    const cap = { nativePromise: async (plugin, method, opts) => {
+      written.push({ plugin, method, opts });
+      if (method === "begin") return { token: "picture-1", location: "Pictures/Rolecraft Vault" };
+      if (method === "finish") return { location: "Pictures/Rolecraft Vault" };
+      return {};
+    } };
+    const { env, log, FakeBlob } = makeEnv(cap);
+    const api = build(env);
+    const notices = [];
+    api.setSaveNotice(m => notices.push(m));
+    const where = await api.saveFile(new FakeBlob(["jpeg"], { type: "image/jpeg" }), "portrait.jpg", {
+      collection: "pictures"
+    });
+    const begin = written.find(x => x.method === "begin");
+    check("phone picture saves request the Pictures collection",
+      begin && begin.opts.collection === "pictures" && begin.opts.mime === "image/jpeg",
+      begin && JSON.stringify(begin.opts));
+    check("the picture does not fall back to a swallowed download link", log.anchorClicks.length === 0);
+    check("the result names the Gallery-visible album",
+      where === "Pictures/Rolecraft Vault" && notices.length === 1 && /Pictures\/Rolecraft Vault/.test(notices[0]),
+      notices[0] || "(silent)");
   }
 
   /* ---- the phone: the plugin is used and the link is never touched ---- */
@@ -120,8 +166,7 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     const api = build(env);
     const notices = [];
     api.setSaveNotice(m => notices.push(m));
-    api.saveFile(new FakeBlob(["hello"]), "backup.json");
-    await wait();
+    await api.saveFile(new FakeBlob(["hello"]), "backup.json");
     check("the phone does not use the download link", log.anchorClicks.length === 0, "clicks=" + log.anchorClicks.length);
     check("it writes through the public Downloads bridge", written.length === 3 && written.every(x => x.plugin === "FileExport"),
       written.map(x => x.plugin + "." + x.method).join(", "));
@@ -146,8 +191,7 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     const api = build(env);
     const notices = [];
     api.setSaveNotice(m => notices.push(m));
-    api.saveFile(new FakeBlob(["hello"]), "backup.json");
-    await wait();
+    await api.saveFile(new FakeBlob(["hello"]), "backup.json");
     check("a refused folder is not the end of it", tried.length > 1, "tried " + tried.join(" then "));
     check("and the message names where it really landed", notices.length === 1 && /private/.test(notices[0]), notices[0] || "(silent)");
   }
@@ -159,8 +203,7 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     const api = build(env);
     const notices = [];
     api.setSaveNotice(m => notices.push(m));
-    api.saveFile(new FakeBlob(["hello"]), "backup.json");
-    await wait();
+    await api.saveFile(new FakeBlob(["hello"]), "backup.json");
     check("a failure is said out loud, not swallowed", notices.length === 1 && /Couldn't save/.test(notices[0]), notices[0] || "(silent)");
   }
 
@@ -187,6 +230,26 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     check("one public download is opened and finished", written[0].method === "begin" && written[written.length - 1].method === "finish");
     check("every bridge value stays bounded", writes.every(x => String(x.opts.data).length <= 256 * 1024));
     check("streamed JSON is written as UTF-8", writes.every(x => x.opts.encoding === "utf8") && where === "Downloads");
+  }
+
+  /* ---- a large Android Blob/ZIP: bounded base64 bridge calls ---- */
+  {
+    const written = [];
+    const cap = { nativePromise: async (plugin, method, opts) => {
+      written.push({ plugin, method, opts });
+      if (method === "begin") return { token: "zip-1", location: "Downloads" };
+      if (method === "finish") return { location: "Downloads" };
+      return {};
+    } };
+    const { env, FakeBlob } = makeEnv(cap);
+    const api = build(env);
+    const where = await api.saveFile(new FakeBlob(["z".repeat(700000)], { type: "application/zip" }), "pictures.zip");
+    const writes = written.filter(x => x.plugin === "FileExport" && x.method === "append");
+    const restored = Buffer.concat(writes.map(x => Buffer.from(x.opts.data, "base64"))).toString("utf8");
+    check("large phone ZIPs are streamed instead of copied into one bridge value", writes.length >= 4,
+      "calls=" + writes.length);
+    check("every ZIP bridge value stays bounded", writes.every(x => String(x.opts.data).length <= 256 * 1024));
+    check("streamed ZIP chunks rebuild the exact original", restored === "z".repeat(700000) && where === "Downloads");
   }
 
   console.log("");

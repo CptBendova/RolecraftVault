@@ -8,18 +8,23 @@
    skips strings, template literals, comments and regex literals so the huge
    amount of string data in the compiled interface cannot produce noise.
 
-   Also reports: `await` used inside a non-async function, and duplicate object
-   keys in a literal, both of which are silent. */
+   Also compiles each file with the native parser to reject syntax errors,
+   including `await` inside a non-async function. It never executes the file. */
 const fs = require("fs");
+const vm = require("vm");
 
 function scan(src, file) {
   const findings = [];
   const N = src.length;
+  // The JavaScript parser understands nested async functions and arrows. A
+  // brace-depth approximation can flag valid await after an inner callback,
+  // or miss illegal await by accidentally popping the enclosing function.
+  // Compile only; never execute scanned application code.
+  try { new vm.Script(src, { filename: file }); }
+  catch (error) { return [{ type: "syntax", line: 1, detail: error.message }]; }
 
   /* scope stack: each entry maps name -> {kind, line} */
   const scopes = [new Map()];
-  /* function stack: is the function we are inside async? */
-  const fns = [{ async: true, name: "<top>" }];  // top level: await is allowed in modules, do not flag
 
   const lineAt = pos => src.slice(0, pos).split("\n").length;
 
@@ -27,13 +32,6 @@ function scan(src, file) {
   let prevSig = "";           // previous significant character, for regex detection
   const idChar = c => /[A-Za-z0-9_$]/.test(c);
 
-  const readIdentBack = pos => {
-    let e = pos;
-    while (e > 0 && /\s/.test(src[e - 1])) e--;
-    let s = e;
-    while (s > 0 && idChar(src[s - 1])) s--;
-    return src.slice(s, e);
-  };
 
   while (i < N) {
     const c = src[i];
@@ -84,12 +82,6 @@ function scan(src, file) {
     if (c === "{") { scopes.push(new Map()); i++; prevSig = "{"; continue; }
     if (c === "}") {
       if (scopes.length > 1) scopes.pop();
-      if (fns.length > 1) {
-        /* a closing brace may end a function; approximate by popping when the
-           function's own brace depth is reached */
-        const top = fns[fns.length - 1];
-        if (top.depth === scopes.length) fns.pop();
-      }
       i++; prevSig = "}"; continue;
     }
 
@@ -99,8 +91,6 @@ function scan(src, file) {
       const word = src.slice(i, j);
 
       if (word === "function") {
-        const before = readIdentBack(i);
-        fns.push({ async: before === "async", depth: scopes.length + 1, name: word });
         i = j; prevSig = "id"; continue;
       }
       if (word === "const" || word === "let" || word === "var") {
@@ -129,11 +119,6 @@ function scan(src, file) {
            which reported every single const in the file. The initialiser after
            the `=` is still scanned, so arrow-function bodies are not skipped. */
         i = Math.max(k, j); prevSig = "id"; continue;
-      }
-      if (word === "await") {
-        const fn = fns[fns.length - 1];
-        if (fn && !fn.async) findings.push({ type: "await-in-sync", line: lineAt(i), detail: "await inside a function not marked async" });
-        i = j; prevSig = "id"; continue;
       }
 
       /* assignment to an existing binding?

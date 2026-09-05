@@ -213,6 +213,19 @@ const AUDIT = `(async () => {
       id: el.getAttribute('data-settings-choice'), lines: choiceTextLines(el),
       overflow: Math.max(0, el.scrollWidth - el.clientWidth), wrap: getComputedStyle(el).overflowWrap
     })) };
+  const pictureDownload = button(/^Download all images$/);
+  if (pictureDownload) pictureDownload.click();
+  await sleep(180);
+  const exportBack = [...document.querySelectorAll('.modal-back')]
+    .find(el => /Before you export/.test(el.textContent || ''));
+  const exportModal = exportBack && exportBack.querySelector('.modal');
+  out.pictureExport = {
+    present: visible(exportModal),
+    overflow: exportModal ? Math.max(0, exportModal.scrollWidth - exportModal.clientWidth) : 999,
+    choices: exportModal ? [...exportModal.querySelectorAll('button')].map(el => (el.textContent || '').trim()) : []
+  };
+  if (exportBack) exportBack.click();
+  await sleep(120);
   const closeSettings = () => {
     const back = document.querySelector('.modal-back');
     if (back) back.click();
@@ -363,8 +376,12 @@ app.whenReady().then(async () => {
       "overflow=" + r.settings.overflow + "px");
     check("card size lives in Settings with all three choices", r.settings.cardChoices === 3);
     check("the current guide is reachable from Settings", r.settings.guideAvailable);
+    check("picture exports offer individual files or ZIP and fit",
+      r.pictureExport.present && r.pictureExport.overflow <= 1 &&
+      r.pictureExport.choices.includes("Save individual files") && r.pictureExport.choices.includes("Create ZIP"),
+      "overflow=" + r.pictureExport.overflow + "px choices=" + r.pictureExport.choices.join(", "));
     if (size.android && !r.dashboard.tabletClass) {
-      check("Settings choices keep whole horizontal labels", r.settings.choices.length === 13 &&
+      check("Settings choices keep whole horizontal labels", r.settings.choices.length === 14 &&
         r.settings.choices.every(item => item.lines === 1 && item.overflow <= 1 && item.wrap !== "anywhere"),
         r.settings.choices.map(item => item.id + "=" + item.lines + " line(s)/" + item.overflow + "px/" + item.wrap).join(", "));
       const widths = r.bottomNav.map(item => item.width);

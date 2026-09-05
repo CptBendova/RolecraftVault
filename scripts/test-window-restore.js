@@ -41,9 +41,14 @@ app.whenReady().then(() => {
   console.log("");
 
   const first = displays[0];
+  /* A hosted Windows runner has only a 1024x720 virtual display. Keep the
+     deliberately valid case inside the real work area instead of assuming a
+     desktop large enough for a 1000x700 client window. */
+  const fittingWidth = Math.max(240, Math.min(1000, first.width - 80));
+  const fittingHeight = Math.max(240, Math.min(700, first.height - 80));
   const CASES = [
     { name: "a position still on screen",
-      saved: { x: first.x + 40, y: first.y + 40, width: 1000, height: 700 }, keep: true },
+      saved: { x: first.x + 40, y: first.y + 40, width: fittingWidth, height: fittingHeight }, keep: true },
     { name: "far off to the left (monitor unplugged)",
       saved: { x: -4200, y: -3000, width: 1280, height: 820 } },
     { name: "far off to the right",
