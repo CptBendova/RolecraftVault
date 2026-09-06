@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.259";
+const APP_VERSION = "1.260";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.259";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.260",
+  notes: ["Saving a lorebook or prompt collection name without changing it now leaves its cover and settings intact. Empty rename submissions also do nothing.", "Duplicating characters/personas and using saved templates now preserve custom section order while assigning fresh section IDs. Character variants receive fresh nested section IDs and keep their own ordering too. The original records and pictures stay untouched.", "Native lorebook and prompt exports now re-import titled placeholders and picture-only entries even when their writing is empty. Their attached pictures and blur settings are retained instead of the entries being silently skipped. These fixes apply to Windows and Android."]
+}, {
   heading: "1.259",
   notes: ["Android now allows screenshots. Android 13 and newer still hide app-switcher previews; screenshots you save are outside the encrypted vault. Install the updated APK over the existing app without uninstalling. Windows behaviour is unchanged."]
 }, {
@@ -1809,7 +1812,7 @@ function normalizePromptImport(obj, fallbackCollection, keepBooks = true) {
     });
   }
   return {
-    entries: out.filter(r => r.content),
+    entries: obj && obj.app === "rolecraft-vault" ? out : out.filter(r => r.content),
     images,
     thumbs,
     blurred,
@@ -1865,7 +1868,7 @@ function normalizeLoreImport(obj, fallbackWorld, keepBooks = true) {
       });
     }
     return {
-      entries: out.filter(r => r.content),
+      entries: obj && obj.app === "rolecraft-vault" ? out : out.filter(r => r.content),
       images,
       thumbs,
       blurred,
@@ -13461,6 +13464,18 @@ const BUILT_IN_TEMPLATES = [{
 }];
 function textOnlyCopy(type, source, prefix) {
   const out = JSON.parse(JSON.stringify(source || {}));
+  const copySections = record => {
+    const keys = new Map();
+    record.sections = (record.sections || []).map(s => {
+      const id = uid();
+      keys.set("sec:" + s.id, "sec:" + id);
+      return { ...s, id };
+    });
+    if (Array.isArray(record.sectionOrder)) record.sectionOrder = record.sectionOrder
+      .filter(k => !String(k).startsWith("sec:") || keys.has(k))
+      .map(k => keys.get(k) || k);
+    return record;
+  };
   out.id = uid();
   out.createdAt = null;
   out.updatedAt = null;
@@ -13469,12 +13484,16 @@ function textOnlyCopy(type, source, prefix) {
   if (type === "character") {
     out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
     out.profileImg = null; out.banner = null; out.gallery = []; out.albums = []; out.imgMeta = {};
-    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
-    out.variants = (out.variants || []).map(v => ({ ...v, id: uid(), profileImg: null }));
+    copySections(out);
+    out.variants = (out.variants || []).map(v => {
+      const variant = { ...v, id: uid(), profileImg: null };
+      if (Array.isArray(variant.sections)) copySections(variant);
+      return variant;
+    });
   } else if (type === "persona") {
     out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
     out.avatar = null; out.gallery = []; out.albums = []; out.imgMeta = {};
-    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
+    copySections(out);
   } else {
     out.title = prefix && out.title ? "Copy of " + out.title : out.title || "";
     out.images = [];
@@ -19437,6 +19456,7 @@ function RolecraftVault() {
       onImportEntry: () => triggerJsonImport("lore", viewLoreBook || ""),
       onRename: async name => {
         const nm = name.trim();
+        if (!nm || nm === viewLoreBook) return;
         /* Renaming onto a book that already exists merged the two without a
            word and, worse, handed the target this book's cover — losing the
            cover it had, with the picture left behind in the vault. */
@@ -19676,6 +19696,7 @@ function RolecraftVault() {
       sampleName: "rolecraft-prompt-template.json",
       onRename: async name => {
         const nm = name.trim();
+        if (!nm || nm === viewPromptBook) return;
         // same as lorebooks: renaming onto an existing collection merged them silently
         const clash = [...new Set(prompts.map(x => (x.collection || "").trim()).concat(Object.keys(promptMeta || {})))]
           .find(w => w && w !== viewPromptBook && w.toLowerCase() === nm.toLowerCase());

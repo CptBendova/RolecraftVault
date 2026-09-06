@@ -114,6 +114,14 @@ Editing it by script is normal here. Two things bite repeatedly:
 
 ## Hard rules
 
+Standard 1.260: duplicate/template copies must remap sectionOrder alongside
+fresh section IDs, including variant sections. An unchanged or blank book rename
+must return before metadata moves: assigning and deleting the same key loses
+the cover/settings. Native lore/prompt imports retain empty-writing records,
+including titled placeholders and picture-only entries; third-party unrelated
+objects remain rejected. Regression tests execute the shipped copy, normalizers
+and both rename callbacks without touching a real vault.
+
 1. **The interface never touches the network.** No `fetch`, `XMLHttpRequest`,
    `WebSocket`, `sendBeacon`, or `http://` in `app/app.js` or the web bundle.
    `npm run check` enforces this. Networking lives *only* in `main.js`, and only
