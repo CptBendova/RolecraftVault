@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.260";
+const APP_VERSION = "1.261";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.260";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.261",
+  notes: ["Exporting all characters now shows persistent progress and readable errors instead of closing silently. Pictures are packaged individually rather than turning the entire library into one enormous JSON string. Missing pictures stop the export safely, and repeated clicks cannot start competing exports. Character exports do not mark a full backup as completed."]
+}, {
   heading: "1.260",
   notes: ["Saving a lorebook or prompt collection name without changing it now leaves its cover and settings intact. Empty rename submissions also do nothing.", "Duplicating characters/personas and using saved templates now preserve custom section order while assigning fresh section IDs. Character variants receive fresh nested section IDs and keep their own ordering too. The original records and pictures stay untouched.", "Native lorebook and prompt exports now re-import titled placeholders and picture-only entries even when their writing is empty. Their attached pictures and blur settings are retained instead of the entries being silently skipped. These fixes apply to Windows and Android."]
 }, {
@@ -12182,7 +12185,7 @@ function BackupExportStatus({ status }) {
     role: status.phase === "error" ? "alert" : "status",
     "aria-live": "polite",
     style: { overflowWrap: "break-word", minWidth: 0 }
-  }, React.createElement("strong", null, status.phase === "error" ? "Backup was not exported" : busy ? "Exporting backup" : "Backup exported"),
+  }, React.createElement("strong", null, status.kind === "characters" ? (status.phase === "error" ? "Characters were not exported" : busy ? "Exporting characters" : "Character export prepared") : status.phase === "error" ? "Backup was not exported" : busy ? "Exporting backup" : "Backup exported"),
     React.createElement("span", null, status.message),
     status.filename && React.createElement("span", null, "File: " + status.filename),
     status.location && React.createElement("span", null, "Location: " + status.location),
@@ -16057,20 +16060,64 @@ function RolecraftVault() {
     }, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + ".json", "Character exported" + (label ? " \u2014 " + label + " only" : " with all variants"));
   };
   const exportCharsJson = async () => {
-    const {
-      images,
-      thumbs
-    } = await collectImagesFor(chars, []);
-    return exportJSON({
-      app: "rolecraft-vault",
-      type: "characters",
-      version: 3,
-      exportedAt: new Date().toISOString(),
-      chars,
-      images,
-      thumbs,
-      blurred: Object.keys(blurred)
-    }, "rolecraft-characters.json", "Characters exported");
+    setBackupExportOpen(true);
+    if (backupExportBusy.current) return;
+    backupExportBusy.current = true;
+    const filename = "rolecraft-characters.json", startedAt = Date.now();
+    let lastPaint = 0;
+    const report = async (message, done = 0, total = 0) => {
+      if (Date.now() - lastPaint < 125 && done !== total) return;
+      lastPaint = Date.now();
+      setBackupExport({ kind: "characters", phase: "working", filename, startedAt, updatedAt: lastPaint, message, done, total });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    };
+    try {
+      await report("Preparing character export…");
+      const ids = [...new Set(chars.flatMap(c => charImgIds(c)).filter(Boolean))];
+      const write = async append => {
+        await append('{"app":"rolecraft-vault","type":"characters","version":3,"exportedAt":' + JSON.stringify(new Date().toISOString()) + ',"chars":[');
+        for (let i = 0; i < chars.length; i++) {
+          await report("Writing character " + (i + 1) + " of " + chars.length, i, chars.length);
+          await append((i ? "," : "") + JSON.stringify(chars[i]));
+        }
+        await append('],"images":{');
+        for (let i = 0; i < ids.length; i++) {
+          await report("Reading picture " + (i + 1) + " of " + ids.length, i, ids.length);
+          const value = (await sGet("img:" + ids[i])) || imgCache[ids[i]];
+          if (!value) throw new Error("A referenced picture could not be read. Export stopped rather than saving an incomplete file.");
+          await append((i ? "," : "") + JSON.stringify(ids[i]) + ":" + JSON.stringify(value));
+        }
+        await append('},"thumbs":{');
+        let comma = false;
+        for (let i = 0; i < ids.length; i++) {
+          await report("Reading preview " + (i + 1) + " of " + ids.length, i, ids.length);
+          const value = await sGet("th:" + ids[i]);
+          if (!value) continue;
+          await append((comma ? "," : "") + JSON.stringify(ids[i]) + ":" + JSON.stringify(value));
+          comma = true;
+        }
+        await append('},"blurred":' + JSON.stringify(ids.filter(id => blurred[id])) + "}");
+        await report("Preparing the download…", ids.length, ids.length);
+      };
+      const stream = phoneJsonStream(filename, write);
+      let saved;
+      if (stream) saved = await stream;
+      else {
+        // Blob fragments avoid V8's single-string size limit and release each
+        // picture's temporary JSON string before reading the next one.
+        const parts = [];
+        await write(async text => { parts.push(new Blob([text])); });
+        saved = await saveFile(new Blob(parts, { type: "application/json" }), filename);
+      }
+      if (!saved) throw new Error("The download could not be started. Check free space and try again.");
+      setBackupExport({ kind: "characters", phase: "success", filename, startedAt, updatedAt: Date.now(), location: typeof saved === "string" ? saved : "Downloads", message: stream ? "Characters and all referenced pictures were exported." : "Download started. Check Downloads for the completed file; keep Rolecraft open until it finishes." });
+      return saved;
+    } catch (e) {
+      setBackupExport({ kind: "characters", phase: "error", filename, startedAt, updatedAt: Date.now(), message: ((e && e.message) || String(e)) + " Your library has not been changed." });
+      return false;
+    } finally {
+      backupExportBusy.current = false;
+    }
   };
   /* Text-only exports: the same records with everything image-shaped removed, so
      the file is small enough to read, paste into something else, or hand to an AI.
@@ -20569,7 +20616,7 @@ function RolecraftVault() {
   }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
     className: "modal-back", style: { zIndex: 125 }
   }, React.createElement("div", {
-    className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",
+    className: "card modal", role: "dialog", "aria-modal": true, "aria-label": backupExport.kind === "characters" ? "Character export" : "Backup export",
     style: { maxWidth: 520, width: "100%", maxHeight: "85dvh", overflowY: "auto" }
   }, React.createElement(BackupExportStatus, { status: backupExport }), React.createElement("button", {
     className: "btn btn-primary",

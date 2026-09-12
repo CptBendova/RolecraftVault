@@ -603,6 +603,19 @@ empty books and covers survive a round trip.
 
 1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
 
+## All-character JSON exports (1.261)
+
+The character-library export used to collect every original and thumbnail and
+then JSON.stringify the whole object. Large libraries could exceed the engine's
+single-string limit before a download started. The confirmation callback did not
+observe the rejected promise, so no error appeared. This path now owns a caught,
+visible progress lifecycle, shares the backup busy guard (without updating backup
+health), deduplicates charImgIds, and serializes one record/picture at a time.
+Desktop builds Blob fragments; Android uses the existing public JSON stream.
+Unreadable originals abort rather than producing an apparently complete export.
+Desktop completion text says the download has started, not that disk completion
+was observed. The Electron regression verifies an actual completed download.
+
 ## Public Android exports (1.243, 1.248)
 
 Standard 1.253 makes full backup exports public-Downloads-only. Never silently
