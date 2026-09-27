@@ -70,6 +70,7 @@ console.log("\nwriting a record while the vault is locked");
       aesEncrypt: () => "Q0lQSEVSVEVYVA==",
       keyToFile: k => path.join(dir, encodeURIComponent(k) + ".dat"),
       rememberHash: () => {},
+      forgetRememberedRead: () => {}, rememberRead: () => {}, REMEMBERED_READ_KEYS: new Set(),
       isLocked: () => locked,
       masterKey,
       fs, path, crypto: require("crypto"), written

@@ -8,7 +8,7 @@ const disk=new Map(),handlers={},writes=[],restores=[];
 let locked=false,activeRestore=null;
 const context={
   ipcMain:{handle:(name,handler)=>{handlers[name]=handler;}},
-  isLocked:()=>locked,readValue:key=>disk.get(key)??null,
+  isLocked:()=>locked,readValue:key=>disk.get(key)??null,readValueRemembered:key=>disk.get(key)??null,
   writeValue:(key,value)=>{writes.push(key);disk.set(key,value);},
   beginVaultRestore:spec=>{const transaction={spec,values:new Map()};restores.push(transaction);return transaction;},
   setVaultRestoreValue:(transaction,key,value)=>{transaction.values.set(key,value);},
