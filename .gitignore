@@ -12,6 +12,8 @@ Thumbs.db
 
 # editor / local dev tooling
 .claude/
+.codex-remote-attachments/
+.gradle-codex-*/
 keys/*.jks
 keys/*.keystore
 keys/*.p12

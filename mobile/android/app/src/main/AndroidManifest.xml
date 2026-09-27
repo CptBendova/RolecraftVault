@@ -43,7 +43,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:taskAffinity="com.cptbendova.rolecraftvault"
+            android:taskAffinity="com.cptbendova.rolecraftvault.chat"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
@@ -67,6 +67,10 @@
 
         <service
             android:name=".TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".VaultSyncService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>

@@ -27,6 +27,19 @@
       });
     });
   }
+  function idbReadValues(keys) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(STORE, "readonly"), os = tx.objectStore(STORE), values = Object.create(null);
+        tx.oncomplete = function () { res(values); };
+        tx.onabort = tx.onerror = function () { rej(tx.error || new Error("storage read failed")); };
+        keys.forEach(function (key) {
+          var request = os.get("v:" + key);
+          request.onsuccess = function () { values[key] = request.result == null ? null : request.result; };
+        });
+      });
+    });
+  }
   function idbSet(k, v) {
     return db().then(function (d) {
       return new Promise(function (res, rej) {
@@ -276,9 +289,10 @@
       buf.subarray(17)
     ).then(function (pt) { return new Uint8Array(pt); });
   }
-  function writeBin(path, bytes) {
+  function writeBin(path, bytes, guard) {
     var off = 0, first = true;
     function next() {
+      if (guard) guard();
       if (off >= bytes.length) return Promise.resolve();
       var n = Math.min(BIN_CHUNK, bytes.length - off);
       var b64 = b64encode(bytes.subarray(off, off + n));
@@ -357,6 +371,28 @@
   var masterRaw = null;               // Uint8Array(32) while unlocked
   var masterKey = null;               // CryptoKey while unlocked
   var securityCache = undefined;
+  var storageEpoch = 0;
+  /* Checkpoints recheck the same raw library strings just read by the sync
+     engine. Remember only those exact reads, never photos or arbitrary keys.
+     A hit still reads the current encrypted pointer, then the commit compares
+     that pointer again in its write transaction. No plaintext survives lock. */
+  var syncReadKeys = new Set(["chars:all", "personas:all", "lore:all", "prompts:all", "trash:all", "chats:all",
+    "buckets:meta", "pbuckets:meta", "lore:meta", "prompts:meta", "blurset", "sync:state"]);
+  var syncReads = new Map(), syncReadBytes = 0, SYNC_READ_LIMIT = 32 * 1024 * 1024;
+  function clearSyncReads() { syncReads.clear(); syncReadBytes = 0; }
+  function rememberSyncRead(key, stored, value) {
+    if (!syncReadKeys.has(key)) return;
+    var old = syncReads.get(key);
+    if (old) { syncReadBytes -= old.bytes; syncReads.delete(key); }
+    if (typeof value !== "string" || typeof stored !== "string") return;
+    var bytes = 2 * (value.length + stored.length);
+    if (bytes > SYNC_READ_LIMIT) return;
+    while (syncReadBytes + bytes > SYNC_READ_LIMIT && syncReads.size) {
+      var first = syncReads.keys().next().value;
+      syncReadBytes -= syncReads.get(first).bytes; syncReads.delete(first);
+    }
+    syncReads.set(key, { stored: stored, value: value, bytes: bytes }); syncReadBytes += bytes;
+  }
 
   function loadSecurity() {
     if (securityCache !== undefined) return Promise.resolve(securityCache);
@@ -366,6 +402,7 @@
     });
   }
   function saveSecurity(s) {
+    clearSyncReads();
     securityCache = s || null;
     return s ? idbSet(SEC_KEY, JSON.stringify(s)) : idbDel(SEC_KEY);
   }
@@ -610,30 +647,68 @@
     if (!exact.length && !prefixes.length) throw new Error("restore has no target keys");
     return function (key) { return exact.indexOf(key) >= 0 || prefixes.some(function (p) { return key.indexOf(p) === 0; }); };
   }
-  function prepareReplacementValue(key, value) {
+  function prepareReplacementValue(key, value, guard) {
+    if (guard) guard();
     var text = String(value), bytes = nativeFs() && text.length > FS_LARGE ? te.encode(text) : null;
     if (bytes) {
       if (!wrapKey) return Promise.reject(new Error("locked"));
       var path = vaultPath(key) + ".restore-" + randomHex(8);
-      return Promise.all([encryptBytes(bytes, wrapKey).then(function (sealed) { return writeBin(path, sealed); }), sha16bytes(bytes)])
-        .then(function (r) { return { key: key, stored: BIN_MARK + path, hash: r[1], staged: BIN_MARK + path }; })
+      return Promise.all([encryptBytes(bytes, wrapKey).then(function (sealed) { return writeBin(path, sealed, guard); }), sha16bytes(bytes)])
+        .then(function (r) { if (guard) guard(); return { key: key, stored: BIN_MARK + path, hash: r[1], staged: BIN_MARK + path }; })
         .catch(function (e) { return dropPayloadFile(BIN_MARK + path).then(function () { throw e; }); });
     }
     var payloadP = masterKey
       ? aesEncrypt(text, masterKey).then(function (b) { return "pwd:" + b; })
       : Promise.resolve("raw:" + text);
     return Promise.all([payloadP, sha16plain(text)]).then(function (r) {
+      if (guard) guard();
       return { key: key, stored: r[0], hash: r[1], staged: null };
     });
   }
-  function commitStorageReplacement(prepared, removed, expected) {
+  function prepareSyncImage(key, value, guard) {
+    /* The sync protocol fingerprints the exact data URL. Only canonical base64
+       can be rebuilt byte-for-byte by bin2; unusual/legacy strings keep the
+       existing text path. Decode, never resize or re-encode the actual image. */
+    var text = String(value), comma = text.indexOf(","), prefix, body, bytes;
+    if (nativeFs() && text.length > FS_LARGE && comma > 0 && comma < 1024) {
+      prefix = text.slice(0, comma + 1);
+      body = text.slice(comma + 1);
+      if (/^data:image\/[a-z0-9.+-]+(?:;[^,\r\n]*)?;base64,$/i.test(prefix) &&
+          body.length > 0 && body.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(body)) {
+        var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
+        var last = alphabet.indexOf(body.charAt(body.length - padding - 1));
+        if (!padding || (last & (padding === 2 ? 15 : 3)) === 0) bytes = b64decode(body);
+      }
+    }
+    guard();
+    if (!bytes) return prepareReplacementValue(key, value, guard);
+    if (!wrapKey) return Promise.reject(new Error("locked"));
+    var path = vaultPath(key) + ".sync-" + randomHex(8);
+    var pointer = BIN2_MARK + JSON.stringify({ path: path, prefix: prefix });
+    return Promise.all([
+      encryptBytes(bytes, wrapKey),
+      sha16plain(text)
+    ]).then(function (r) {
+      guard();
+      return writeBin(path, r[0], guard).then(function () {
+        guard();
+        return { key: key, stored: pointer, hash: r[1], staged: pointer };
+      });
+    }).catch(function (e) {
+      return dropPayloadFile(pointer).then(function () { throw e; });
+    });
+  }
+  function commitStorageReplacement(prepared, removed, expected, guard) {
     return db().then(function (d) {
+      if (guard) guard();
       return new Promise(function (res, rej) {
         var tx = d.transaction(STORE, "readwrite"), os = tx.objectStore(STORE);
         tx.oncomplete = function () { res(true); };
         tx.onabort = tx.onerror = function () { rej(tx.error || new Error("restore did not commit")); };
         var keys = Object.keys(expected || {}), left = keys.length;
         function write() {
+          try { if (guard) guard(); } catch (e) { tx.abort(); return; }
           if (securityCache && !masterKey) { tx.abort(); return; }
           removed.forEach(function (key) { os.delete("v:" + key); os.delete("h:" + key); });
           prepared.forEach(function (item) { os.put(item.stored, "v:" + item.key); os.put(item.hash, "h:" + item.key); });
@@ -649,28 +724,34 @@
       });
     });
   }
-  function replaceStorage(values, spec) {
+  function replaceStorage(values, spec, guard) {
     var has = replacementTargets(spec), incoming = Object.keys(values || {});
     if (incoming.some(function (key) { return !has(key); })) return Promise.reject(new Error("key is outside the restore"));
     var affected = [], oldStored = [], prepared = [], committed = false;
     return loadSecurity().then(function (s) {
+      if (guard) guard();
       if (s && !masterKey) throw new Error("locked");
       return ensureWrapKey();
-    }).then(ensureVaultDir).then(dataKeys).then(function (keys) {
+    }).then(function () { if (guard) guard(); return ensureVaultDir(); }).then(function () {
+      if (guard) guard();
+      // Sync supplies an exact set. Avoid enumerating every picture pointer in
+      // a large Android vault for each small writing/cache checkpoint.
+      return spec && !((spec.prefixes || []).length) ? Array.from(new Set(spec.exact)) : dataKeys();
+    }).then(function (keys) {
+      if (guard) guard();
       affected = keys.filter(has);
-      var chain = Promise.resolve();
-      affected.forEach(function (key) {
-        chain = chain.then(function () { return idbGet("v:" + key); }).then(function (stored) { if (stored != null) oldStored.push(stored); });
+      return idbReadValues(affected).then(function (pointers) {
+        if (guard) guard();
+        affected.forEach(function (key) { if (pointers[key] != null) oldStored.push(pointers[key]); });
       });
-      return chain;
     }).then(function () {
       var chain = Promise.resolve();
       incoming.forEach(function (key) {
-        chain = chain.then(function () { return prepareReplacementValue(key, values[key]); }).then(function (item) { prepared.push(item); });
+        chain = chain.then(function () { return prepareReplacementValue(key, values[key], guard); }).then(function (item) { prepared.push(item); });
       });
       return chain;
     }).then(function () {
-      return commitStorageReplacement(prepared, affected, spec && spec.expectedPointers);
+      return commitStorageReplacement(prepared, affected, spec && spec.expectedPointers, guard);
     }).then(function () {
       committed = true;
       return Promise.all(oldStored.map(function (stored) { return dropPayloadFile(stored).catch(function () { return true; }); }));
@@ -683,6 +764,8 @@
     });
   }
   function setMaster(raw) {
+    storageEpoch++;
+    clearSyncReads();
     masterRaw = raw;
     if (!raw) { masterKey = null; return Promise.resolve(); }
     return importAesKey(raw).then(function (k) { masterKey = k; });
@@ -690,6 +773,30 @@
 
   /* ---------- window.storage ---------- */
   window.storage = {
+    stageSyncImage: function (key, fingerprint) {
+      if (!nativeFs() || !/^(img:|th:)/.test(key)) return Promise.resolve(null);
+      var epoch = storageEpoch, pointer;
+      function guard() { if (epoch !== storageEpoch || securityCache && !masterKey) throw new Error("locked"); }
+      return loadSecurity().then(function () { guard(); return ensureWrapKey(); }).then(function () {
+        guard(); return idbGet("v:" + key);
+      }).then(function (stored) {
+        guard(); pointer = stored;
+        if (typeof stored !== "string" || !/^(bin:|bin2:)/.test(stored)) return null;
+        if (stored.indexOf(BIN2_MARK) === 0) {
+          var p = JSON.parse(stored.slice(BIN2_MARK.length));
+          if (typeof p.prefix !== "string" || /[^\x00-\x7f]/.test(p.prefix) || !/^data:image\/[a-z0-9.+-]+(?:;[^,\r\n]*)?;base64,$/i.test(p.prefix)) return null;
+        }
+        return nativeFs().nativePromise("VaultSync", "dispatch", { method: "stageImage", args: {
+          key: key, pointer: stored, wrapKey: wrapRaw ? b64encode(wrapRaw) : null, masterKey: masterRaw ? b64encode(masterRaw) : null
+        } });
+      }).then(function (result) {
+        guard(); if (!result) return null;
+        return Promise.all([idbGet("v:" + key), window.storage.fingerprint(key)]).then(function (current) {
+          guard(); if (current[0] !== pointer || current[1] !== fingerprint) throw new Error("Picture changed during preparation. Retrying its latest saved version.");
+          return result.descriptor || null;
+        });
+      });
+    },
     fingerprints: function (keys) {
       return db().then(function (d) { return new Promise(function (resolve, reject) {
         var tx=d.transaction(STORE,"readonly"), os=tx.objectStore(STORE), out={}, legacy={};
@@ -702,39 +809,113 @@
     fingerprint: function (key) { return window.storage.fingerprints([key]).then(function (marks) { return marks[key]; }); },
     syncImage: function (key, value) {
       if (!/^(img:|th:)/.test(key)) return Promise.reject(new Error("Only pictures can be staged"));
-      return loadSecurity().then(function (s) { if (s && !masterKey) throw new Error("locked"); return ensureWrapKey(); }).then(ensureVaultDir).then(function () {
+      var epoch = storageEpoch;
+      function guard() { if (epoch !== storageEpoch || securityCache && !masterKey) throw new Error("locked"); }
+      return loadSecurity().then(function () { guard(); return ensureWrapKey(); }).then(function () {
+        guard(); return ensureVaultDir();
+      }).then(function () {
+        guard();
         return idbGet("v:" + key);
       }).then(function (stored) {
-        if (stored != null) return plainFromStored(stored, masterKey).then(function (old) { if (old !== value) throw new Error("A different picture already uses this identity. Nothing was overwritten."); return true; });
-        return prepareReplacementValue(key, value).then(function (item) {
+        guard();
+        if (stored != null) return plainFromStored(stored, masterKey).then(function (old) { guard(); if (old !== value) throw new Error("A different picture already uses this identity. Nothing was overwritten."); return true; });
+        return prepareSyncImage(key, value, guard).then(function (item) {
           var expected = {}; expected[key] = null;
-          return commitStorageReplacement([item], [], expected).catch(function (e) { return (item.staged ? dropPayloadFile(item.staged) : Promise.resolve()).then(function () { throw e; }); });
+          return commitStorageReplacement([item], [], expected, guard).catch(function (e) { return (item.staged ? dropPayloadFile(item.staged) : Promise.resolve()).then(function () { throw e; }); });
         });
       });
     },
     syncCommit: function (values, expected) {
-      var pointers = {}, chain = Promise.resolve();
-      Object.keys(expected || {}).forEach(function (key) {
-        chain = chain.then(function () { return idbGet("v:" + key); }).then(function (stored) {
-          pointers[key] = stored == null ? null : stored;
-          return stored == null ? null : plainFromStored(stored, masterKey);
-        }).then(function (value) { if (value !== expected[key]) throw new Error("Library changed during sync. Your edit has been preserved."); });
+      var pointers, epoch = storageEpoch;
+      function guard() { if (epoch !== storageEpoch || securityCache && !masterKey) throw new Error("locked"); }
+      return loadSecurity().then(function () { guard(); return ensureWrapKey(); }).then(function () {
+        guard(); return idbReadValues(Object.keys(expected || {}));
+      }).then(function (storedValues) {
+        guard(); pointers = storedValues;
+        var chain = Promise.resolve();
+        Object.keys(expected || {}).forEach(function (key) {
+          chain = chain.then(function () {
+            guard();
+            var stored = pointers[key], cached = syncReads.get(key);
+            if (cached && cached.stored === stored && cached.value === expected[key]) return;
+            return (stored == null ? Promise.resolve(null) : plainFromStored(stored, masterKey)).then(function (value) {
+              guard();
+              if (value !== expected[key]) throw new Error("Library changed during sync. Your edit has been preserved.");
+              rememberSyncRead(key, stored, value);
+            });
+          });
+        });
+        return chain;
+      }).then(function () {
+        guard(); return replaceStorage(values, { exact: Object.keys(values), expectedPointers: pointers }, guard);
       });
-      return chain.then(function () { return replaceStorage(values, { exact: Object.keys(values), expectedPointers: pointers }); });
     },
     get: function (key) {
+      var epoch = storageEpoch, chatChangeStarted = 0, chatChanges = 0;
+      function guard() { if (epoch !== storageEpoch || securityCache && !masterKey) throw new Error("locked"); }
+      function changedDuringRead() { return new Error(key === "chats:all" ? "Chat changed during sync. Retry opening Chat." : "Vault record changed during sync. Retry reading it."); }
+      function followChangedPointer(current, retries) {
+        if (current == null) throw changedDuringRead();
+        if (key !== "chats:all") {
+          if (retries > 0) return readCurrent(retries - 1);
+          throw changedDuringRead();
+        }
+        // A multi-record sync can retire several Chat files while one large
+        // read is in flight. Give that burst time to settle without looping
+        // forever if another writer keeps replacing the current pointer.
+        var now = Date.now();
+        if (!chatChangeStarted) chatChangeStarted = now;
+        if (++chatChanges > 24 || now - chatChangeStarted >= 8000) throw changedDuringRead();
+        return new Promise(function (resolve) { setTimeout(resolve, Math.min(chatChanges * 30, 150)); })
+          .then(function () { guard(); return readCurrent(retries); });
+      }
+      function readCurrent(retries) {
+        guard();
+        return idbGet("v:" + key).then(function (stored) {
+          guard();
+          if (stored == null) throw new Error("key not found: " + key);
+          var cached = syncReads.get(key);
+          var valueP = cached && cached.stored === stored ? Promise.resolve(cached.value) : plainFromStored(stored, masterKey);
+          return valueP.then(function (value) {
+            guard();
+            if (value === null || value === undefined) throw new Error("key not found: " + key);
+            // A Chat read can overlap a sync commit. Do not display an older
+            // transcript after its pointer has already been replaced.
+            var currentP = key === "chats:all" ? idbGet("v:" + key) : Promise.resolve(stored);
+            return currentP.then(function (current) {
+              guard();
+              if (current !== stored) return followChangedPointer(current, retries);
+              // After a pointer moves, require a brief stable window before
+              // returning Chat text to the caller.
+              var stableP = key === "chats:all" && chatChanges
+                ? new Promise(function (resolve) { setTimeout(resolve, 40); }).then(function () { guard(); return idbGet("v:" + key); })
+                : Promise.resolve(current);
+              return stableP.then(function (stable) {
+                guard();
+                if (stable !== stored) return followChangedPointer(stable, retries);
+                rememberSyncRead(key, stored, value);
+                return { key: key, value: value };
+              });
+            });
+          }, function (error) {
+            guard();
+            // Sync removes the predecessor only after its replacement pointer
+            // commits. A read already using that old file may lose the race
+            // between stat and readFile; follow only a newer live pointer.
+            if (!filePointerPath(stored)) throw error;
+            return idbGet("v:" + key).then(function (current) {
+              guard();
+              if (current !== stored) return followChangedPointer(current, retries);
+              throw error;
+            });
+          });
+        });
+      }
       return loadSecurity().then(function (s) {
+        guard();
         if (s && !masterKey) throw new Error("locked");
         return ensureWrapKey();
-      }).then(function () {
-        return idbGet("v:" + key);
-      }).then(function (stored) {
-        if (stored == null) throw new Error("key not found: " + key);
-        return plainFromStored(stored, masterKey);
-      }).then(function (value) {
-        if (value === null || value === undefined) throw new Error("key not found: " + key);
-        return { key: key, value: value };
-      });
+      }).then(function () { return readCurrent(2); });
     },
     set: function (key, value) {
       return loadSecurity().then(function (s) {

@@ -18,13 +18,38 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
+    private boolean syncForeground;
+    private boolean syncDestroying;
+
+    public boolean isSyncForeground() { return syncForeground; }
+
+    public void onSyncBackgroundStopped() {
+        if (bridge == null || bridge.getWebView() == null || syncDestroying || isDestroyed()) return;
+        WebView webView = bridge.getWebView();
+        webView.evaluateJavascript(
+            "(function(){try{if(typeof window.__rcvSyncBackgroundStopped==='function')window.__rcvSyncBackgroundStopped();}catch(e){}})();",
+            result -> { if (!syncForeground) { pingBackground(); webView.onPause(); } });
+    }
+
+    private void keepSyncWebViewRunning() {
+        if (!VaultSyncService.isActive() || bridge == null || bridge.getWebView() == null) return;
+        // Do not fake App foreground events: provider cancellation and all other
+        // plugin lifecycle callbacks still run through BridgeActivity normally.
+        bridge.getWebView().onResume();
+        bridge.getWebView().resumeTimers();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(TransferKeepAlivePlugin.class);
         registerPlugin(TransferTransportPlugin.class);
+        registerPlugin(VaultSyncPlugin.class);
         registerPlugin(DeviceUnlockPlugin.class);
         registerPlugin(FileExportPlugin.class);
-        registerPlugin(VaultSyncPlugin.class);
+        registerPlugin(OpenRouterPlugin.class);
+        registerPlugin(ImageGenerationPlugin.class);
+        registerPlugin(ProviderBalancesPlugin.class);
+        registerPlugin(ChatLinkPlugin.class);
         SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
 
@@ -55,6 +80,9 @@ public class MainActivity extends BridgeActivity {
         if (this.bridge == null) return;
         WebView webView = this.bridge.getWebView();
         if (webView == null) return;
+        // A paid voice request is started by a tap, but its MP3 only arrives
+        // after an asynchronous native call. Preserve that explicit playback.
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             View content = findViewById(android.R.id.content);
@@ -112,12 +140,29 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onPause() {
+        syncForeground = false;
         super.onPause();
         pingBackground();
+        keepSyncWebViewRunning();
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        keepSyncWebViewRunning();
+    }
+
+    @Override
+    public void onDestroy() {
+        syncForeground = false;
+        syncDestroying = true;
+        VaultSyncService.stop(this);
+        super.onDestroy();
     }
 
     @Override
     public void onResume() {
+        syncForeground = true;
         super.onResume();
         if (this.bridge == null) return;
         WebView webView = this.bridge.getWebView();

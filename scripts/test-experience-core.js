@@ -30,10 +30,11 @@ function liftFunction(source, name) {
   throw new Error("Unclosed " + name);
 }
 
-const backupInspection = new Function("charImgIds", "personaImgIds", "imageIdsOf",
+const backupPictureValid = new Function("atob", liftFunction(app, "backupPictureValid") + "; return backupPictureValid;")(atob);
+const backupInspection = new Function("charImgIds", "personaImgIds", "imageIdsOf", "backupPictureValid",
   liftFunction(app, "backupInspection") + "; return backupInspection;"
 )(c => c.profileImg ? [c.profileImg] : [], p => p.avatar ? [p.avatar] : [],
-  (_type, record) => record && record.profileImg ? [record.profileImg] : []);
+  (_type, record) => record && record.profileImg ? [record.profileImg] : [], backupPictureValid);
 
 let bad = 0;
 function check(label, ok) {
@@ -43,13 +44,13 @@ function check(label, ok) {
 
 const sound = backupInspection({
   app: "rolecraft-vault",
-  chars: [{ profileImg: "portrait" }], personas: [], lore: [], prompts: [],
-  images: { portrait: "data:image/png;base64,AA==" },
+  chars: [{ id: "character", profileImg: "portrait" }], personas: [], lore: [], prompts: [],
+  images: { portrait: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6Z5k8AAAAASUVORK5CYII=" },
   manifest: { appVersion: "9.999" }, exportedAt: "2026-01-01T00:00:00.000Z"
 });
 const missing = backupInspection({
   app: "rolecraft-vault",
-  chars: [{ profileImg: "gone" }], personas: [], lore: [], prompts: [], images: {}
+  chars: [{ id: "character", profileImg: "gone" }], personas: [], lore: [], prompts: [], images: {}
 });
 const wrong = backupInspection({ app: "some-other-app", chars: {} });
 const characterExport = backupInspection({
@@ -65,10 +66,10 @@ const missingCover = backupInspection({
 });
 
 check("a complete backup passes its real preview validator", sound.ok && !sound.warnings.length && sound.counts.chars === 1);
-check("missing pictures are reported before restore", missing.ok && missing.warnings.length === 1);
+check("missing pictures block restore before any replacement", !missing.ok && /referenced picture/.test(missing.fatal.join(" ")));
 check("the wrong format and damaged arrays fail closed", !wrong.ok && wrong.fatal.length >= 2);
-check("damaged records inside valid arrays fail closed", !malformed.ok && /damaged records/.test(malformed.fatal[0] || ""));
-check("book and collection covers are included in backup health", missingCover.warnings.length === 1);
+check("damaged records inside valid arrays fail closed", !malformed.ok && /damaged/.test(malformed.fatal.join(" ")));
+check("missing book and collection covers block restore", !missingCover.ok && /referenced picture/.test(missingCover.fatal.join(" ")));
 check("a single-record export can never be mistaken for a full backup",
   !characterExport.ok && /not a full vault backup/.test(characterExport.fatal[0] || ""));
 check("full restore uses the atomic storage replacement contract",
@@ -80,7 +81,7 @@ check("large text and high contrast support ship", app.includes('textSize === "m
 check("phone controls use the 48px target", /\.rcv \.btn,[^\n]+min-height: 48px; min-width: 48px;/.test(app));
 check("the renderer still delegates official downloads to the shell", app.includes("window.releasePage.open()") && preload.includes('ipcRenderer.invoke("release-page-open")'));
 check("first-run guidance is limited to installed Windows and real Android", preload.includes('exposeInMainWorld("rcvInstalledApp", true)') && app.includes("window.rcvInstalledApp === true"));
-check("the shell opens only the fixed official release path", main.includes('shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases/latest")'));
+check("the shell opens only the fixed official release path", main.includes('shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases")'));
 
 if (bad) {
   console.log("\n  The joined-up experience is incomplete.");

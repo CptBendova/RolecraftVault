@@ -1,12 +1,39 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, session, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, shell, session, screen, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { StringDecoder } = require("string_decoder");
+const { setupOpenRouterIpc } = require("./openrouter");
+const { migrateStandardVault, importedProfile, isStarterProfile, prepareChatEncryption } = require("./chat-migration");
+
+/* Keep the private edition's established data directory and encryption context
+   even though the unified product is now displayed simply as Rolecraft. Never
+   redirect an installed Chat vault to the standard edition's data folder. */
+app.setName("Rolecraft");
+if (!process.argv.some(arg => String(arg).toLowerCase().startsWith("--user-data-dir"))) {
+  app.setPath("userData", path.join(app.getPath("appData"), "Rolecraft Vault Chat"));
+}
 
 let dataDir, boundsFile, securityFile, rewrapFile, restoreJournalFile;
+const chatProfileRoot = app.getPath("userData");
+const ownInstance = app.requestSingleInstanceLock();
+let encryptionSetupError = null;
+if (ownInstance) {
+  try {
+    const testProfile = process.argv.some(arg => String(arg).toLowerCase().startsWith("--user-data-dir"));
+    // Disposable tests can use an already prepared context, but never inspect
+    // the user's standard profile while initializing a test vault.
+    const source = testProfile ? path.join(chatProfileRoot, "no-standard-profile") : path.join(app.getPath("appData"), "Rolecraft Vault");
+    const runtime = prepareChatEncryption(source, chatProfileRoot);
+    if (runtime !== chatProfileRoot) {
+      app.setPath("userData", runtime);
+      app.setPath("sessionData", runtime);
+    }
+  } catch (error) { encryptionSetupError = error; }
+}
 let masterKey = null; // Buffer(32) in memory only while unlocked
+let cancelChatRequests = () => {};
 let activeRestore = null;
 
 const ITER = 210000;
@@ -24,12 +51,13 @@ function saveSecurity(s) {
    signed with Ed25519; the public key below is baked in, so only packages signed
    with the matching private key (kept by the vault owner) will ever install.
    The same signed file format works for a future cloud updater. */
-const FACTORY_BUILD = "1.261";
+const FACTORY_BUILD = "1.336";
+const CHAT_EDITION = true;
 /* The oldest Windows shell that understands every bridge/API required by the
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.258";
+const UPDATE_COMPAT_BUILD = "1.336";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
@@ -1847,6 +1875,7 @@ function verifyPassword(pw) {
   return kdf(pw, Buffer.from(s.salt + ":key"));
 }
 function installUpdateText(text) {
+  if (CHAT_EDITION) return { ok: false, needsInstaller: true, error: "This Rolecraft installation requires its full installer. Older standard Vault .rcvup files are incompatible and cannot replace its chat interface." };
   let pkg;
   try { pkg = JSON.parse(text); } catch { return { ok: false, error: "Not a valid update file" }; }
   const v = verifyUpdatePackage(pkg);
@@ -1897,7 +1926,7 @@ function windowsHello(mode) {
     : "Windows.Security.Credentials.UI.UserConsentVerificationResult";
   const operation = check
     ? "$t::CheckAvailabilityAsync()"
-    : "$t::RequestVerificationAsync('Unlock Rolecraft Vault')";
+    : "$t::RequestVerificationAsync('Unlock Rolecraft')";
   const script = [
     "$ErrorActionPreference='Stop'",
     "Add-Type -AssemblyName System.Runtime.WindowsRuntime",
@@ -1951,7 +1980,7 @@ function setupAuthIpc() {
     } catch (err) { return { ok: false, error: err.message }; }
   });
   ipcMain.handle("updates-relaunch", () => { app.relaunch(); app.exit(0); });
-  ipcMain.handle("release-page-open", () => shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases/latest"));
+  ipcMain.handle("release-page-open", () => shell.openExternal("https:" + "//github.com/CptBendova/RolecraftVault/releases"));
   ipcMain.handle("auth-status", async () => {
     const s = loadSecurity();
     const hello = process.platform === "win32" && safeStorage.isEncryptionAvailable()
@@ -1964,7 +1993,7 @@ function setupAuthIpc() {
   const rewrapFailed = (err) => ({
     ok: false,
     error: fs.existsSync(rewrapFile)
-      ? "Vault re-encryption was interrupted. Close and reopen Rolecraft Vault so it can safely finish before you continue."
+      ? "Vault re-encryption was interrupted. Close and reopen Rolecraft so it can safely finish before you continue."
       : "Couldn't re-encrypt the vault: " + err.message + ". Nothing was changed.",
   });
 
@@ -2077,7 +2106,7 @@ function setupAuthIpc() {
     }
   });
 
-  ipcMain.handle("auth-lock", () => { masterKey = null; return { ok: true }; });
+  ipcMain.handle("auth-lock", () => { cancelChatRequests(); masterKey = null; return { ok: true }; });
   ipcMain.handle("vault-encrypted", () => ({
     dpapi: safeStorage.isEncryptionAvailable(),
     password: passwordSet(),
@@ -2151,7 +2180,7 @@ function createWindow() {
     width: saved ? saved.width : 1280, height: saved ? saved.height : 820,
     x: saved ? saved.x : undefined, y: saved ? saved.y : undefined,
     minWidth: 720, minHeight: 500, show: false,
-    backgroundColor: "#0a0e1c", title: "Rolecraft Vault", autoHideMenuBar: true,
+    backgroundColor: "#0a0e1c", title: "Rolecraft", autoHideMenuBar: true,
     // Without this the window, the taskbar and alt-tab all show Electron's
     // default icon, because the packaged exe is a renamed electron.exe.
     icon: path.join(__dirname, "icon.ico"),
@@ -2273,7 +2302,7 @@ process.on("unhandledRejection", err => {
    of a race silently overwrites the winner. A second launch hands its request
    to the copy already running instead, which also covers double-clicking the
    shortcut when the window is somewhere you cannot see. */
-if (!app.requestSingleInstanceLock()) {
+if (!ownInstance) {
   app.exit(0);
 } else {
   app.on("second-instance", (_event, commandLine) => {
@@ -2289,12 +2318,31 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 app.on("before-quit", () => stopTransferServer());
-app.whenReady().then(() => {
-  dataDir = path.join(app.getPath("userData"), "vault");
+app.whenReady().then(async () => {
+  let vaultProfile = chatProfileRoot;
+  try {
+    if (encryptionSetupError) throw encryptionSetupError;
+    const existing = importedProfile(vaultProfile);
+    if (existing) vaultProfile = existing;
+    else if (!process.argv.some(arg => String(arg).toLowerCase().startsWith("--user-data-dir")) && isStarterProfile(vaultProfile)) {
+      const source = path.join(app.getPath("appData"), "Rolecraft Vault");
+      if (fs.existsSync(path.join(source, "vault"))) {
+        const progress = new BrowserWindow({ width: 520, height: 230, resizable: false, title: "Preparing Rolecraft", autoHideMenuBar: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+        await progress.loadFile(path.join(__dirname, "chat-migration.html"));
+        progress.on("close", e => e.preventDefault());
+        try { vaultProfile = (await migrateStandardVault({ source, destination: vaultProfile })).profile; }
+        finally { progress.destroy(); }
+      }
+    }
+  } catch (error) {
+    dialog.showErrorBox("Your original library is safe", "Chat could not finish copying your standard library. No original records were changed.\n\n" + error.message);
+    app.quit(); return;
+  }
+  dataDir = path.join(vaultProfile, "vault");
   boundsFile = path.join(app.getPath("userData"), "window.json");
-  securityFile = path.join(app.getPath("userData"), "security.json");
-  rewrapFile = path.join(app.getPath("userData"), "rewrap.json");
-  restoreJournalFile = path.join(app.getPath("userData"), "restore.json");
+  securityFile = path.join(vaultProfile, "security.json");
+  rewrapFile = path.join(vaultProfile, "rewrap.json");
+  restoreJournalFile = path.join(vaultProfile, "restore.json");
   updatesDir = path.join(app.getPath("userData"), "updates");
   finishPendingRestore();
   fs.mkdirSync(dataDir, { recursive: true });
@@ -2304,7 +2352,7 @@ app.whenReady().then(() => {
   finishPendingRewrap();
 
   ipcMain.handle("vault-get", (e, key) => readValue(key));
-  require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
+  const syncTransport = require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
   ipcMain.handle("vault-sync-fingerprint", (_e, key) => {
     if (isLocked()) throw new Error("locked");
     return syncFingerprint(key);
@@ -2321,9 +2369,12 @@ app.whenReady().then(() => {
   ipcMain.handle("vault-sync-commit", (_e, values, expected) => {
     if (isLocked()) throw new Error("locked");
     for (const [key, value] of Object.entries(expected || {})) if (readValue(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
-    if (Object.keys(values).length === 1 && Object.prototype.hasOwnProperty.call(values, "sync:state")) {
+    const keys = Object.keys(values);
+    if (keys.length === 1 && (keys[0] === "sync:state" || keys[0] === "chats:draft-handoffs" || keys[0] === "chats:all")) {
+      if (keys[0] === "chats:draft-handoffs" && !Object.prototype.hasOwnProperty.call(expected || {}, keys[0])) throw new Error("Draft handoff compare-and-swap requires its expected value");
+      if (keys[0] === "chats:all" && !Object.prototype.hasOwnProperty.call(expected || {}, keys[0])) throw new Error("Chat compare-and-swap requires its expected value");
       if (activeRestore) throw new Error("another restore is already running");
-      writeValue("sync:state", values["sync:state"]);
+      writeValue(keys[0], values[keys[0]]);
       return true;
     }
     const token = beginVaultRestore({ exact: Object.keys(values), linkUnchanged: true });
@@ -2360,6 +2411,11 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(ALLOWED.has(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED.has(permission));
   setupAuthIpc();
+  const cancelRouter = setupOpenRouterIpc({ ipcMain, safeStorage, app, isLocked });
+  const cancelImages = require("./image-generation").setupImageGenerationIpc({ ipcMain, safeStorage, app, isLocked });
+  const cancelBalances = require("./provider-balances").setupProviderBalancesIpc({ ipcMain, safeStorage, app, shell, isLocked });
+  const cancelLink = require("./chat-link-server").setupChatLink({ ipcMain, safeStorage, app, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
+  cancelChatRequests = () => { cancelRouter(); cancelLink(); cancelImages(); cancelBalances(); syncTransport.pause(); };
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

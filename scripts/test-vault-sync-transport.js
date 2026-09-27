@@ -21,6 +21,10 @@ function make(name,network={}){const t=createTransport({directory:path.join(root
   assert(!fs.readFileSync(path.join(root,"tablet","chunks",chunk.hash),"utf8").includes("Private picture"));
   primary.pause();const restarted=make("tablet",{discoveryPort:45101});const remembered=await restarted.call("status");
   assert.equal(remembered.device,status.device);assert.equal(remembered.group,status.group);
+  const headBefore=fs.readFileSync(path.join(root,"tablet","head.bin"));
+  const serving=await restarted.call("serve");
+  assert.equal(serving.device,status.device);
+  assert(fs.readFileSync(path.join(root,"tablet","head.bin")).equals(headBefore),"Passive serving must not republish or change the saved head");
   // A restarted primary has a new listening port. Authenticated discovery must
   // supersede the address embedded in the original invitation permanently.
   const renewed=JSON.parse(Buffer.from((await restarted.call("invite")).code.slice(9),"base64url"));
@@ -36,11 +40,11 @@ function make(name,network={}){const t=createTransport({directory:path.join(root
   const realNow=Date.now;let elapsed=0;
   try{
     Date.now=()=>realNow()+elapsed;
-    elapsed=15000;await restarted.call("status");elapsed=25000;
-    assert.equal((await last.call("index",{peer:status.device})).label,"Tablet","An unlocked preparation heartbeat renews the serving lease");
-    locked=true;await assert.rejects(restarted.call("status"),/Unlock/);locked=false;
+    elapsed=15000;await restarted.call("serve");elapsed=25000;
+    assert.equal((await last.call("index",{peer:status.device})).label,"Tablet","An unlocked passive heartbeat renews the serving lease");
+    locked=true;await assert.rejects(restarted.call("serve"),/Unlock/);locked=false;
   }finally{Date.now=realNow;locked=false;}
-  console.log("PASS a busy unlocked device stays available beyond the old lease without weakening lock guards");
+  console.log("PASS passive serving stays available beyond one lease without weakening lock guards");
   restarted.pause();
   // The immutable download cache is usable even while the source is offline.
   for(const t of transports.filter(t=>t.info().label==="pc-two"))assert.equal((await t.call("chunk",{peer:status.device,hash:chunk.hash})).text,text);

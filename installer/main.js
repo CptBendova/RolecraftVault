@@ -2,21 +2,26 @@ const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync, spawn } = require("child_process");
+const { PRODUCT_NAME, LEGACY_ID, APP_EXE, LEGACY_EXE, defaultInstallDir, parseRegisteredInstallDir, cleanupLegacyBranding } = require("./identity");
 
-const APP_NAME = "Rolecraft Vault";
-const APP_EXE = "Rolecraft Vault.exe";
 const COMPANY = "Rolecraft";
 
 function payloadDir() {
   const packed = path.join(process.resourcesPath, "payload");
   if (fs.existsSync(path.join(packed, APP_EXE))) return packed;
-  const staged = path.join(__dirname, "..", "dist", "Rolecraft Vault");
+  const staged = path.join(__dirname, "..", "dist", LEGACY_ID);
   if (fs.existsSync(path.join(staged, APP_EXE))) return staged;
   return null;
 }
 
 function defaultDir() {
-  return path.join(process.env["ProgramFiles"] || "C:\\Program Files", APP_NAME);
+  try {
+    const key = `HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${LEGACY_ID}`;
+    const output = execFileSync("reg.exe", ["query", key, "/v", "InstallLocation"], { encoding: "utf8", windowsHide: true, timeout: 2500 });
+    const installed = parseRegisteredInstallDir(output);
+    if (installed && (fs.existsSync(path.join(installed, APP_EXE)) || fs.existsSync(path.join(installed, LEGACY_EXE)))) return installed;
+  } catch (e) { /* First install, or registry access unavailable. */ }
+  return defaultInstallDir(process.env["ProgramFiles"]);
 }
 
 function folderSize(dir) {
@@ -55,19 +60,21 @@ function writeUninstaller(dest, version) {
   const ico = path.join(dest, "resources", "app", "icon.ico");
   // PUBLIC is C:\Users\Public, not the desktop inside it. Joining the .lnk
   // straight onto it wrote the shortcut where nothing shows it.
-  const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", APP_NAME + ".lnk");
-  const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", APP_NAME);
-  const ps1 = path.join(dest, "Uninstall-RolecraftVault.ps1");
+  const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", PRODUCT_NAME + ".lnk");
+  const oldDesktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", LEGACY_ID + ".lnk");
+  const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", PRODUCT_NAME);
+  const oldStartDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", LEGACY_ID);
+  const ps1 = path.join(dest, "Uninstall-Rolecraft.ps1");
   const script = [
     "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
-    `$r = [System.Windows.Forms.MessageBox]::Show("Remove ${APP_NAME} from this computer?\`n\`nYour vault data in AppData is left alone.","${APP_NAME}","YesNo","Question")`,
+    `$r = [System.Windows.Forms.MessageBox]::Show("Remove ${PRODUCT_NAME} from this computer?\`n\`nYour vault data in AppData is left alone.","${PRODUCT_NAME}","YesNo","Question")`,
     'if ($r -ne "Yes") { exit 0 }',
     `Remove-Item -LiteralPath '${desktop.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath '${oldDesktop.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue`,
     `Remove-Item -LiteralPath '${startDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `Remove-Item -LiteralPath 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `Remove-Item -LiteralPath 'HKLM:\\Software\\Classes\\RolecraftVault.Update' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `Remove-Item -LiteralPath 'HKLM:\\Software\\Classes\\.rcvup' -Recurse -Force -ErrorAction SilentlyContinue`,
-    `Remove-Item -LiteralPath 'HKCU:\\Software\\${APP_NAME}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath '${oldStartDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${LEGACY_ID}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath 'HKCU:\\Software\\${LEGACY_ID}' -Recurse -Force -ErrorAction SilentlyContinue`,
     `$dest = '${dest.replace(/'/g, "''")}'`,
     'Start-Process -FilePath "$env:WINDIR\\System32\\cmd.exe" -ArgumentList @("/c","ping 127.0.0.1 -n 2 > nul & rd /s /q `"$dest`"") -WindowStyle Hidden',
     "exit 0"
@@ -75,11 +82,11 @@ function writeUninstaller(dest, version) {
   fs.writeFileSync(ps1, script, "utf8");
 
   const unCmd = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}"`;
-  const key = `HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}`;
+  const key = `HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${LEGACY_ID}`;
   const add = (name, type, value) => {
     execFileSync("reg.exe", ["add", key, "/v", name, "/t", type, "/d", value, "/f"], { windowsHide: true });
   };
-  add("DisplayName", "REG_SZ", APP_NAME);
+  add("DisplayName", "REG_SZ", PRODUCT_NAME);
   add("Publisher", "REG_SZ", COMPANY);
   add("DisplayVersion", "REG_SZ", version);
   add("InstallLocation", "REG_SZ", dest);
@@ -181,18 +188,19 @@ ipcMain.handle("setup-info", () => {
     defaultDir: dest,
     payloadOk: !!payload,
     payloadBytes: payload ? folderSize(payload) : 0,
-    alreadyInstalled: fs.existsSync(path.join(dest, APP_EXE))
+    alreadyInstalled: fs.existsSync(path.join(dest, APP_EXE)) || fs.existsSync(path.join(dest, LEGACY_EXE))
   };
 });
 
 ipcMain.handle("setup-pick-dir", async () => {
   const r = await dialog.showOpenDialog(win, {
-    title: "Install Rolecraft Vault to…",
+    title: "Install Rolecraft to…",
     properties: ["openDirectory", "createDirectory"],
     defaultPath: defaultDir()
   });
   if (r.canceled || !r.filePaths[0]) return null;
-  return path.join(r.filePaths[0], path.basename(r.filePaths[0]) === APP_NAME ? "" : APP_NAME);
+  const selected = r.filePaths[0];
+  return [PRODUCT_NAME, LEGACY_ID].includes(path.basename(selected)) ? selected : path.join(selected, PRODUCT_NAME);
 });
 
 ipcMain.handle("setup-install", async (_e, dir) => {
@@ -215,15 +223,16 @@ ipcMain.handle("setup-install", async (_e, dir) => {
     const ico = path.join(dest, "resources", "app", "icon.ico");
     // PUBLIC is C:\Users\Public, not the desktop inside it. Joining the .lnk
     // straight onto it wrote the shortcut where nothing shows it.
-    const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", APP_NAME + ".lnk");
-    const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", APP_NAME);
+    const desktop = path.join(process.env.PUBLIC || process.env.USERPROFILE, "Desktop", PRODUCT_NAME + ".lnk");
+    const startDir = path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", PRODUCT_NAME);
     fs.mkdirSync(startDir, { recursive: true });
     makeShortcut(desktop, exe, fs.existsSync(ico) ? ico : exe);
-    makeShortcut(path.join(startDir, APP_NAME + ".lnk"), exe, fs.existsSync(ico) ? ico : exe);
+    makeShortcut(path.join(startDir, PRODUCT_NAME + ".lnk"), exe, fs.existsSync(ico) ? ico : exe);
     writeUninstaller(dest, version);
-    writeUpdateAssociation(dest);
+    /* Do not claim the public edition's .rcvup association. */
+    const warnings = cleanupLegacyBranding(dest, process.env.PUBLIC || process.env.USERPROFILE, process.env.ProgramData || "C:\\ProgramData");
     installedDir = dest;
-    return { ok: true, dest };
+    return { ok: true, dest, warnings };
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : String(e) };
   }

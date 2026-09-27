@@ -41,7 +41,7 @@ function signWindowsFile(file) {
   if (pfx && !fs.existsSync(pfx)) throw new Error("Authenticode certificate was not found at the configured path");
   const tool = findSignTool();
   const args = ["sign", "/fd", "SHA256", "/td", "SHA256", "/tr",
-    process.env.ROLECRAFT_TIMESTAMP_URL || "http://timestamp.digicert.com", "/d", "Rolecraft Vault"];
+    process.env.ROLECRAFT_TIMESTAMP_URL || "http://timestamp.digicert.com", "/d", "Rolecraft"];
   if (pfx) {
     args.push("/f", pfx);
     if (process.env.ROLECRAFT_WINDOWS_CERTIFICATE_PASSWORD) {

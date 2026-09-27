@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
-<title>Rolecraft Vault</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+<title>Rolecraft</title>
+<link rel="stylesheet" href="chat.css">
 <style>
 @font-face { font-family: 'Inter'; font-weight: 400; src: url('vendor/fonts/inter-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-weight: 500; src: url('vendor/fonts/inter-latin-500-normal.woff2') format('woff2'); }
@@ -23,8 +24,19 @@ html,body{margin:0;padding:0;background:#0a0e1c}
 <script src="vendor/qrcode.js"></script>
 <script src="vendor/jsQR.js"></script>
 <script src="vault-sync-core.js"></script>
+<script src="vault-sync-review.js"></script>
 <script src="vault-sync.js"></script>
+<script src="vault-sync-background.js"></script>
 <script src="vault-sync-ui.js"></script>
+<script src="chat-draft-handoff.js"></script>
+<script src="private-sync.js"></script>
+<script src="provider-balances-ui.js"></script>
 <script src="app.js"></script>
+<script src="chat-sync-core.js"></script>
+<script src="chat-group-coordinator.js"></script>
+<script src="chat-knowledge-lanes.js"></script>
+<script src="chat-story-ledger.js"></script>
+<script src="chat-draft-handoff-controller.js"></script>
+<script src="chat.js"></script>
 </body>
 </html>

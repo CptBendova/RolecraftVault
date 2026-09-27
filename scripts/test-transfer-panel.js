@@ -158,6 +158,18 @@ app.whenReady().then(async () => {
   check("no bare 100% is left standing in for a result", !send.after.percent);
   check("a second device pulling clears the notice again", !send.second.complete);
 
+  const rejected = await win.webContents.executeJavaScript(`(async()=>{
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    window.transfer.preview=async()=>{throw Error('Fixture: phone storage could not be checked');};
+    const box=[...document.querySelectorAll('input')].find(i=>/code/i.test(i.placeholder||''));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(box,'RC-TEST-CODE');box.dispatchEvent(new Event('input',{bubbles:true}));await wait(100);
+    const check=[...document.querySelectorAll('button')].find(b=>/Check what would change/.test(b.textContent));check.scrollIntoView();check.click();await wait(300);
+    const notice=document.querySelector('[data-transfer-result]'),r=notice.getBoundingClientRect(),modal=notice.closest('.modal').getBoundingClientRect();
+    return {error:notice.textContent,role:notice.getAttribute('role'),visible:r.top>=modal.top-1&&r.bottom<=modal.bottom+1,retry:!check.disabled};
+  })()`);
+  check("a rejected preview reports the error and allows retry", rejected.error.includes('phone storage') && rejected.role==='alert' && rejected.retry);
+  check("a stopped transfer result is brought into view", rejected.visible);
+
   clearTimeout(bail);
   console.log("");
   console.log(bad ? "  " + bad + " thing(s) the transfer panel says are wrong."

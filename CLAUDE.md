@@ -1,6 +1,848 @@
 # Rolecraft Vault — project notes
 
+## Public Rolecraft transition (owner instruction, 27 September 2026)
+
+The owner authorized publishing the former private Chat edition as the public
+Rolecraft app on `CptBendova/RolecraftVault` master. Historical notes below
+describe earlier private development and do not override that decision. Keep
+existing GitHub history, installed data identities, encrypted user data and
+release signing identities intact. Public source and release artifacts must be
+reviewed so local vaults, exports, credentials and signing material stay local.
+
+## OpenRouter latest-model aliases (private 1.336)
+
+OpenRouter lists latest-family aliases such as `~deepseek/deepseek-pro-latest`
+with one leading tilde in the actual model ID. Chat can select them from the
+provider catalog; every native request, manual model control and synced
+memory/coordinator model must accept that exact safe prefix. Keep rejecting
+embedded, repeated or trailing tildes. Android's former rejection said "The
+chat request is invalid" before a provider call. `test-private-chat.js` and
+`test-chat-native-start-rejection.js` cover the actual Windows and Android
+request validators plus sync model fields.
+
+## Bulk Chat sync conflict cleanup (private 1.335)
+
+The Sync conflict review can move every live conflict copy, including copies
+on later review pages, to Recently deleted in one confirmed action. Capture
+each copy's revision when the user confirms; after queued saves finish, require
+the exact set and all revisions to remain current. Use one compare-and-swap
+Chat save so sync stamps recoverable tombstones together. Keep originals and
+unrelated stories untouched. A failed durable write must expose Retry save,
+using the existing merge-aware recovery rather than repeating blind deletes.
+`test-chat-conflict-bulk-ui.js` covers pagination, a queued draft save, stale
+revisions, retry recovery, tombstones and phone layout.
+
+## Chat conflict copies and review (private 1.334)
+
+Full-device sync can join two or more simultaneous append-only conversation
+paths only when each revision proves the same retained message base and every
+shared message is byte-for-byte unchanged. Identical message trees with only
+revision/timestamp differences also join; changed notes, memory, scene state,
+deleted turns and rewritten messages still keep recoverable copies. New copies
+of an existing conflict copy use the original conversation identity and one
+display suffix, not a nested chain. Do not automatically delete older copies.
+`test-chat-conflict-proliferation.js` covers three devices, unsafe edits, stale
+peer resurrection and both conflict-copy formats.
+
+The Chat conflict review pages eight copies and compares only the visible
+transcripts. Its delete action waits for queued local saves, then rechecks the
+selected revision before writing a recoverable tombstone. A failed save must
+keep the copy available for Retry save. `test-chat-conflict-review-ui.js`
+covers a held draft save, many long copies and phone-sized page controls.
+
+## Device sync reachability and the Sync settings section (private 1.333)
+
+Both transports keep one listening port for the life of a pairing (Node
+`cfg.listenPort`, Android prefs `listenPort`), falling back to a random port
+only if it is taken. Every lock, Android app switch and restart used to rebind
+to a new random port and clear the peer map, leaving UDP discovery (often
+blocked) as the only way back. Verified endpoints persist in the sealed pairing
+config (`endpoints`, newest 32) and are restored on resume as "known"
+candidates. Evidence has provenance: `direct` (authenticated inbound request
+after the nonce check, UDP, verified index reply) always wins; `gossip` carries
+the sender's `age` and never replaces an endpoint verified in the last five
+minutes; `known` (persisted or invitation seed) never replaces anything. The
+seed is only a hint for a device never reached. Discover returns fresh peers
+plus known candidates; offline ones back off in the engine as before.
+
+The Windows sync listener binds 0.0.0.0 and refuses requests whose local or
+remote address is not private; outgoing requests pick the source address on
+the peer's subnet (or let the OS route). Adapter ranking puts Wi-Fi/Ethernet
+first and Hyper-V/WSL/VMware/VirtualBox/Docker/VPN last; broadcasts follow each
+adapter's netmask. Requests use `agent:false` (a pooled keep-alive socket to a
+restarted peer failed with ECONNRESET) and a 3 s connect timeout. Refusals are
+empty responses with `X-RCV-Reason` (paused/auth/expired/busy/invalid) and
+`X-RCV-Time`; clients name clock skew over 90 s, locked peers, re-paired peers,
+closed apps and absent devices. Index replies list `cannotReach` (devices whose
+last connection attempt failed at network level in the last three minutes); the
+reached side reports `cannotReachMe`, so a one-way Windows firewall is flagged
+on the device that can fix it. `diagnose` is read-only (Windows adds the
+network category via a fixed PowerShell query). Engine fixes: manual refresh
+no longer pauses the listener; draft-lane returns set `manualRequested`; the
+publish keep set includes both base and extra images; clocks may carry up to
+1,024 entries; conversation joins accept an `originMessages` proof that
+survives pure local appends. Tests: `test-vault-sync-reachability.js` (real
+sockets, UDP deliberately split), `test-vault-sync-reachability-java.js`
+(lifted Android endpoint logic and wording), updated Android rebind/pipeline.
+
+Settings has a sticky header with section chips (`SettingsNav`) built from
+`data-settings-section` anchors; every section stays mounted. Order is
+Appearance, Security, Updates, Sync, Backup, Help. `window.__rcvSettingsSection`
+opens Settings at a section (the sync pill uses "sync"). The SyncPanel strips
+Electron's IPC error prefix, shows tone/last synced/per-device state and retry
+time, withdraws an expired QR, confirms Leave, and keeps primary, conflict
+review and computer reverse-pairing under Advanced (tests click those controls
+while the fold is closed; that works). In the unpaired state every control must
+stay outside folds. Keep layout-critical inline styles on the camera, selects
+and text fields: tests mount the panel outside `.rcv`. `test-settings-sync-ui.js`
+covers the chips, sticky header, sync deep link and panel states.
+
+## Chat panels and group chrome (private 1.331)
+
+Settings and the Scene panel use `PanelTabs` with `.rcchat-pane` sections.
+Inactive panes stay mounted but `hidden`, so drafts, pending saves and field
+IDs keep working; do not unmount them. `setSettings("device")` opens the
+Connection pane (sidebar button and missing-key prompts); `setSettings(true)`
+opens Story. Keep the modal header row sticky so Close stays reachable. The
+group scene summary (`GroupSceneStrip`) renders inside the header, never over
+the transcript; guard React number children (`count > 0 &&`, never
+`length &&`), which rendered a stray "000". The permanent speaker preflight row
+was removed; "Preview what they will see" lives in the speaker picker. The
+docked Scene panel needs `#rcv-chat-root .rcchat-modalback.rcchat-docked`
+specificity because the base modalback rule appears later in chat.css.
+ModalFrame marks explanatory paragraphs of 260+ characters `data-long` (a
+three-line, keyboard-expandable preview); notices, errors and previews are
+exempt. `scripts/test-chat-panels-ui.js` covers these. Chat saves use
+`storage.syncCommit`, not `storage.set`; UI fault-injection tests must intercept
+the current path without weakening separate CAS coverage. ScenePanel's own
+Retry scene save must call the merge-aware `retrySave` after a failed write,
+not call `persist` again (which refuses further saves until recovery). Verify
+the requested scene fields are still on the target chat after recovery before
+closing the panel; a concurrent alternate-device version may be kept as a
+separate conflict copy instead.
+
+## Manual Chat refresh and visible reload acknowledgement (private 1.319)
+
+Manual refresh suppresses peer polling and incoming merges, not passive sharing.
+While the vault is open and unlocked, the native `serve` operation keeps its
+authenticated LAN listener alive; a durable local Chat save stages and publishes
+the latest `stories1` head without fetching peers. The five-second status pulse
+renews the native 20-second serving lease. Lock, background without the explicit
+service, or app closure still pauses the listener. A receiving device's Refresh
+now can therefore fetch the source's latest saved chat even if that source uses
+manual mode. Do not let native peer wakes trigger an import in manual mode.
+
+After a sync commit, Chat and library reloads acknowledge only a current saved
+read. A busy editor, failed save, lock, in-flight local mutation, damaged vault
+load, or reload timeout must reject the acknowledgement so the sync engine can
+retry without overwriting edits. A previous render load must not acknowledge a
+newer sync checkpoint merely because it finished later.
+
+## Chat reading surface (private 1.316)
+
+Each turn renders through the memoized `ChatMessageRow` from primitive props
+plus the stable `rowActions` ref; do not pass freshly built objects or inline
+handlers, or typing and stream deltas will re-render every visible turn again.
+New ChatApp hooks go after the existing ones (the fake-React performance test
+relies on the state order). Reading position: `nearBottom` means "following".
+An upward wheel, touch or key gesture, or an upward scroll, stops following at
+once; returning within 24px of the end resumes it. Streaming growth while not
+following only raises the "New reply" jump control; never scroll the reader.
+A ResizeObserver on `.rcchat-transcript` keeps late layout (portraits, fonts)
+at the end only while following. Earlier turns auto-load only after a real
+gesture; keep the Show earlier button for pointer, keyboard and screen-reader
+users and for `.rcchat-messages>button` tests. `content-visibility:auto` is
+limited to turns beyond the newest 24 so phone windows and scrollTop-based
+reading tests stay exact; it never removes messages from context, search or
+sync. Turn menus and the composer status/price popovers must stay above later
+turns and the composer: MessageTools marks its article `data-menu`, flips up
+near the composer and closes on outside press, Escape and Back. Keep phone
+controls at 48px, composer radius 14px (phone) / 20px (desktop), and identical
+Quality/Performance geometry. `scripts/test-chat-reading-flow-ui.js` covers
+these behaviours.
+
+## Visible Chat sync and automatic paired replies (private 1.313)
+
+The older one-phone Chat link can exchange while Chat is visible when the
+newer Automatic device sync group is disabled. It remains bounded and is not a
+replacement for the chunked multi-device protocol: tell users to use Settings
+> Automatic device sync for larger histories and more than two devices. Reuse
+an unchanged snapshot fingerprint rather than sending the whole transcript
+through native bridges each poll. Only acknowledge a remote snapshot after
+encrypted local persistence succeeds. Keep local edit, scene-draft, reply,
+failed-save and lock guards. Enabling group sync may pause, but must not erase,
+the saved older one-phone pairing.
+
+Two-character automatic group replies are opt-in per conversation. Start only
+for a new user Send with the selected character and one other Present member.
+The second paid request reads the first durably saved reply on the same branch.
+Never restart a paid request automatically after interruption; use the existing
+explicit round review and recovery. The AI group coordinator updates inferred
+scene facts separately; manual scene notes remain optional overrides.
+
+## Interrupted group rounds and scene-save failures (private 1.312)
+
+Group reply plans are local recovery markers, not permission to send after a
+restart or Chat close. Validate the saved branch, speaker, and last completed
+reply before offering an explicit review of the remaining paid requests. A
+pending, failed, empty, or changed reply blocks resumption. Dismissing a marker
+does not delete any transcript messages. Scene-panel drafts must not report a
+successful save until encrypted storage resolves; on failure retain the draft
+and allow an explicit retry without losing later typing.
+
+## Chat launcher and group context (private 1.311)
+
+The Chat launcher is rendered by `ChatApp` into the Dashboard or sidebar slot.
+State referenced by its effects or render must be declared inside `ChatApp`, not
+inside a child panel: a missing binding can crash the renderer before the
+launcher appears. Exercise `test-chat-performance.js` and the real 360px/800px
+launcher UI test after moving hooks or navigation state.
+
+Group scene text fields now draft locally and flush after an idle pause, on blur
+or on panel close. A visible Save control remains while they are unsaved. Their
+field-level comparison is anchored to the original branch so an incoming sync
+or sibling branch cannot be overwritten by an old editor. Do not add a lock
+handler that delays Android's security lock indefinitely; an instant lock or a
+failed storage write can still interrupt a pending draft. The user must see a
+save failure and keep the editor open if a write fails.
+
+Group lore selection is capped and ranked only after whole-word matching. Keep
+the selected speaker's lore scope, persona and chat-attached books, and expose
+triggered but skipped entries in the context inspector and review export. Cast
+cards show manual presence over AI-inferred presence and label both knowledge
+sources; this is a storytelling aid, not a secrecy guarantee because transcript
+and cumulative memory remain shared. Branch previews use the branch checkpoint,
+never the current leaf's later scene facts.
+
+## Chat context, cost and review controls (private 1.310)
+
+Automatic and rebuild memory can use a per-conversation `memoryModel`, with an
+empty choice following the roleplay model. Its request retains the conversation's
+zero-retention choice and protected native key; selection never silently changes
+the reply model. Keep model catalog limits separate for the worker. Pre-send and
+group-round costs are only approximate catalog-based previews, not provider
+charges, and memory/coordinator calls may add cost. Unknown pricing must stay
+unavailable rather than becoming zero.
+
+Conversation search is local-only over saved message text, including inactive
+branches and older messages outside the render window. Jumping to a result must
+navigate its branch before revealing and scrolling to the turn. Search must not
+change transcript content, compaction, or the roleplay request. The AI scene
+review shows its source reply and before/after values; a user may selectively
+apply or correct AI-only fields. Current AI fields can be edited without
+changing manual scene or per-character notes. Every apply/correction remains
+conditional on the current branch and scene; preserve recoverable undo.
+
+Prompt cache measurements use provider-reported read/write tokens from saved
+replies on the active path. Missing usage is unknown, not zero, and read share
+is not a dollar-savings calculation. Stable directions precede changing scene
+facts in the system prompt while the user's priority-1 directions, selected
+character, privacy setting and prompt semantics remain unchanged. Do not add
+universal provider-specific cache controls or promise a cache hit. Keep the
+renderer offline and run focused search, memory, pricing, coordinator and cache
+regressions when changing this flow.
+
+## Optional AI group coordinator (private 1.308)
+
+Group chats can opt into an additional OpenRouter chat-completion check. Off is
+the default; Suggest stages an inspectable proposal, and Auto applies it.
+Automatic checks run on the first reply, on clear scene/cast transitions or a
+saved scene event, every third later group reply in the default Balanced mode,
+and once after the final reply of a queued round. Per-conversation frequency
+can instead be scene events only or every reply. The coordinator model can be
+selected separately from the roleplay model; an unset choice follows it.
+Analyze now deduplicates an identical scene/model/privacy input unless the
+user explicitly chooses Force another paid check. The fixed native
+Windows/Android bridge accepts bounded recent turns, cumulative memory excerpt,
+AI-tracked scene/cast notes and manual shared scene facts. It uses the protected
+inference key and the conversation's existing zero-retention choice. It never
+sends `sceneEvents` or user-authored per-speaker `knowledge`, starts another
+roleplay reply, edits a transcript or retries a paid request. Lock/background
+and closing Chat cancel the local check.
+
+AI output is untrusted and strictly validated. It may be a sparse update or an
+empty no-op; the scene field is a concise complete current state when changed,
+not a copy of the earlier memory or recent transcript. It writes only `aiSceneLocation`,
+`aiSceneState`, `castScene[*].aiPresence`/`aiKnowledge`, and an optional next
+speaker drawn from the active cast. The manual scene/location/presence/knowledge
+remain separate and authoritative. Branch checkpoints include the AI fields;
+sync validates both proposals and CAS-protected undo snapshots. Local extra-call
+cost bookkeeping counts repeated attempts, distinguishes unknown provider cost
+from zero, and never enters the synced chat record. A result cannot
+apply after the leaf, message text, scene or manual notes change. Earlier
+branches must never inherit a later AI recap. Keep the renderer offline and
+run the focused coordinator/branch tests after changing this flow.
+
+Private 1.315: the coordinator's short JSON response must not share a tiny
+completion allowance with a model's hidden reasoning. OpenRouter may return
+`finish_reason: length` after spending the allowance on thinking. The native
+bridges request low reasoning and a bounded 8,192-token completion ceiling for
+this auxiliary check only. Do not change the user's roleplay reasoning choice,
+privacy routing, transcript, or automatically retry a paid analysis. Reject a
+truncated result without applying scene notes.
+Record the cost of failed requests, but do not stamp their scene fingerprint as
+analyzed. This keeps an explicit retry available after an output-limit failure
+without triggering an automatic paid retry. Older 1.314 failure ledgers may
+already have the fingerprint and require the user's one-time Force action.
+
+## Group scene and cast controls (private 1.305)
+
+The same saved conversation and message ancestry serve every speaker. `participants`
+contains identity only, `activeSpeakerKey` names the next speaker, and each saved
+assistant turn owns its own `speaker`. The new cast picker uses `add-only` to add
+without silently switching. The `@name` picker now offers distinct actions:
+Address keeps the name in the draft and adds an absent character without changing
+the next speaker; Reply as selects that character and removes the typed shortcut.
+Enter defaults to Address. Removing a participant retains their earlier turns
+and branches. The new-chat wizard can start with a group, but does not insert a
+solo greeting for that group.
+
+Group requests include only the selected speaker's full character directions.
+Other active members contribute bounded identity reference; they must not carry
+another actor's system instructions. `sceneState` is shared current-scene text.
+`castScene` holds bounded presence and per-speaker knowledge notes; presence is
+not proof of what someone witnessed, and only the selected speaker's knowledge
+note is sent in that reply. Both fields validate in `chat-sync-core.js` before
+sync/restore. This is a storytelling aid, not a secrecy barrier: old transcript
+and cumulative memory are shared with every speaker. Never claim it hides a
+fact that has already entered those shared fields.
+
+Manual Send remains the default. The optional two- or three-speaker reply queue
+requires an explicit confirmation disclosing one potentially paid roleplay call
+per speaker and possible additional memory/Director calls. The order can be
+changed before confirmation. It chains only from a durably saved turn, selects
+each next speaker only after that save, and stops without auto-retry after an
+error, Stop, lock, close, background or failed save. Stop after current reply
+lets the in-flight answer finish but prevents the remaining paid calls. The
+unsent draft belongs to the first turn only; later turns add no synthetic user
+messages. Verify these boundaries with the focused group tests and the 360px
+renderer checks after changing request flow.
+
+## Group continuity and scoped context (private 1.307)
+
+`sceneVersions` is a sparse scene checkpoint map keyed by message ancestry, with
+`$root` as the fallback. Navigating, editing, deleting or forking an old branch
+restores only scene notes from its path; legacy chats with no checkpoints keep
+their current-leaf notes but conservatively clear unknown earlier-branch state.
+Cast membership remains current, while notes for removed characters move to
+`dormantCastScene` and return when that identity is re-added. Keep these maps and
+`sceneEvents` validated in `chat-sync-core.js` before sync or restore.
+
+The reviewed scene draft is made locally from recent turn excerpts and does not
+save until the user applies it. `sceneEvents` contains user-authored off-scene
+facts with an explicit recipient list; only events addressed to the selected
+speaker enter that speaker's temporary context. They never enter the shared
+transcript or automatic memory. This is not a privacy barrier for story facts
+already present in the shared transcript or memory, so the UI must say so.
+New groups default to the selected speaker's lorebooks; older group chats with
+no saved `groupLoreScope` retain all active cast books for compatibility. The
+speaker-only scope still includes persona and chat-attached books.
+Tests must prove no recipient event leaks into another speaker's request or the
+shared memory worker, and that old branches do not inherit future scene facts.
+
+## Premium visual system (private 1.304)
+
+A paint-level pass over both editions; storage, sync, provider and package
+identities are unchanged. The shared stylesheet ends with one clearly labelled
+1.304 block, and app/chat.css ends with its Chat counterpart. Keep these rules:
+
+- Titles (h1.serif, modal titles, Spotlight and the wordmark) use --font-display,
+  a system serif stack (Palatino Linotype on Windows, Noto Serif on Android). The
+  CSP blocks data: fonts, and a bundled font would be an app/vendor shell change,
+  so do not embed one casually.
+- Every theme's primary action follows its accent. Dark and Light set --btn-grad
+  to brass (Light dark brass with white text); .hero keeps the dark-stage brass.
+  The focus ring is --focus-ring (the accent) in every theme.
+- A chosen segmented Settings option is a raised surface with an inset accent
+  line, not a second solid primary. Quality's primary glow and Performance's
+  shadow reset both exclude .settings-choice, or the marker disappears.
+- Text over artwork sits on a fixed dark scrim in every theme. Light and Custom
+  redefine --brass there to --art-accent; plain Light brass measured 3.4:1.
+  Bucket covers get a bottom scrim; the New bucket card is excluded.
+- .rcv > .scrollbody has z-index 1 under the Android bars. A picture viewer or
+  slideshow inside it lifts the column with :has(.lb-root, .ss-root); without it
+  the viewer's Blur and Photo info controls were hidden under the bottom bar.
+- Android tablets can be wider than 760px, so touch sizing keys off .phone, not
+  the phone media query: rail items, actions, chips, close and blur are 48px.
+- Quality motion is opacity-led (views, sheets, first twelve cards/pictures,
+  image fade-in) so measured layout never moves; dialogs keep their lift. It is
+  gated by prefers-reduced-motion and removed by Performance. Nothing loops.
+- Custom palettes publish --scheme so native pop-ups match; Chat copies it.
+
+test-premium-visual.js checks these promises in all four themes and both modes,
+plus a 360px phone, an 800px Android tablet and reduced motion. It fails on 1.303.
+Two older UI checks were stale after 1.303 moved Chat and Prompt Vault; they now
+look for the launcher in the sidebar and reach Prompt Vault via the Dashboard.
+
+## One visible Rolecraft app (private 1.303)
+
+The former private Chat build is now the only user-facing Rolecraft app. This
+is a display and navigation consolidation, not a storage migration. Windows
+must keep the former Chat user-data profile, installation identity and trusted
+updater path; Android must keep the former Chat application ID and signing key.
+Changing either identity can strand the encrypted library, conversations or
+provider credentials. The older standard Android package remains separate and
+must be explicitly backed up or transferred before removal. Dashboard stays
+home, Chat is a fifth main destination, and Prompt Vault opens from Dashboard.
+The 27 September public transition above supersedes the earlier publication
+restriction; retain the installed data identities when publishing.
+
+## Earlier private Chat compaction and usage display (private 1.302)
+
+Automatic memory now also triggers on Send after about 5,000 estimated tokens
+of older post-checkpoint transcript are eligible, independent of a large model
+window. The 75% input-budget safeguard remains; each conversation can select
+8,000 estimated tokens or the older 75%-only behavior. Existing chat records
+need no migration: absent trigger setting means the new default, and merely
+opening a chat or viewing settings never calls the provider. The complete
+message tree and previous checkpoint stay untouched. Summaries still append
+only new chronological batches, retain recent turns verbatim and must commit
+before a roleplay reply uses them. A failed summary leaves prior memory and
+the unsent turn safe. UI token badges distinguish provider-reported input,
+output, cache reads, included reasoning and cost when available; never turn
+unavailable provider fields into zero or confuse app estimates with billing.
+Do not relax Require zero data retention to chase prompt-cache hits.
+
+## Read-only Chat review export (private 1.301)
+
+The original conversation JSON remains unchanged. A separate review export
+contains the full saved conversation tree and memory checkpoints, plus the
+current output of the real context assembler: provider usage retained on
+messages, permanent/temporary estimates, active lore, selected checkpoint and
+the request messages as of export. This preview excludes an unsent draft and
+must not be described as a replay of an earlier provider request. Do not add
+API keys, raw pictures, drafts, unrelated library records or creator memos.
+The operation must never mutate the vault or contact the provider. Android
+review files must save to public Downloads or fail visibly; a private-storage
+fallback makes a shareable review file impossible to find. Warn that the JSON
+is unencrypted and requires the user's deliberate attachment to share it.
+
+## Optional Jev Story Director (private 1.300)
+
+The Chat renderer contains no network primitive or key. Windows and Android
+native OpenRouter bridges accept one bounded, fixed-shape evaluation request
+and send it only to `/api/alpha/decisions` using the OS-protected inference
+key. The feature is off by default and per conversation. It is unavailable
+when Require zero data retention is on: the Decisions API does not document
+the same per-request `provider.zdr` contract used by chat completions. Never
+silently relax this privacy setting. The extra call follows a completed reply,
+not each streamed token; failures never retry or alter the saved reply.
+
+The scores live under the local `ui:chat-director:<id>` key, outside the
+synced chat record, transcript and compaction source. Coach mode considers the
+latest three completed assistant turns on the active path; at least two poor
+scores on a measure add a temporary note below priority 1 and 2 in the next
+request. A queued group round scores only its final reply, which includes the
+intermediate replies in its short history. Unscored or branched-away turns do
+not count, and an unscored latest reply cannot trigger an older coaching note.
+This is a local aid,
+not a guarantee of story quality and not a second model writing prose.
+
+## Chat continuity across paired devices (private 1.299)
+
+Conversations are synced as single indexed records, but their messages form a
+tree. Two up-to-date Chat peers may append different turns to the same observed
+base before either receives the other. The old whole-record conflict rule
+created duplicate chats and left one apparent timeline behind. The private
+sync core now joins only two proven append-only revisions: both must share the
+same last-applied message ID set, preserve every shared message byte-for-byte,
+and leave all non-message story settings unchanged. Both new leaves become
+selectable paths in one conversation. Deterministic ordering, clock ancestry
+and revision ancestry make the join converge on repeated exchanges. Deleting or
+editing existing text, changing memory/settings, a missing base proof, or an
+unsafe message graph retains the old recoverable conflict-copy behavior.
+
+The Chat-only lane may run after explicit first-library approval (`accepted`),
+even while encrypted pictures are unfinished. It must not mark that library
+`approved` or bypass the initial preview/consent step. Photo work remains
+paused in the foreground Chat view. Never use chat-only convergence as evidence
+that pictures or other library records have completed syncing.
+
+## Immediate Chat sync wakeups (private 1.306)
+
+The previous Chat-only lane polled every two seconds after each pass, spent
+another 750 ms discovering devices, and republished the entire library/photo
+head for every new message. On a large library or with an offline third peer,
+that looked like a failed sync. A successful encrypted `chats:all` save now
+wakes the local loop; native Windows and Android publishers send a signed,
+content-free UDP wake only after the story head is durably updated. Receivers
+deduplicate and authenticate it before scheduling an immediate index check.
+Wakes may be lost, so the periodic poll remains. They carry no chat text,
+secrets or acknowledgements and do not relax lock or background rules.
+
+An existing compatible library head can update only its `stories1` extension.
+The native fast path verifies the new extension chunks and atomically preserves
+the previous library index, picture references and establishment state. A
+missing, incompatible or damaged base falls back to the full retained publish.
+Chat options being open do not count as an active edit; reply generation,
+unsaved writes and message editing still defer incoming commits. Validate with
+`test-private-chat-sync-wake.js`, `test-private-chat-story-fast-publish.js`,
+`test-vault-sync-wake.js` and the four-device live-sync fixture.
+
+## Private Chat visual layout refresh (private 1.298)
+
+Performance chat messages need a single opaque reading-card surface, not a
+floating header above a detached bubble; keep its shadows and decorative
+animation disabled. Desktop Chat chrome should leave substantial transcript
+space above the composer. Dashboard gallery counts should use complete rows at
+each width: eight on phones, nine at three columns, twelve at four columns,
+and ten or twelve at the widest widths. Verify actual element bounds in both
+Quality and Performance modes across themes and phone, tablet and desktop
+viewports before changing this balance. The private-only restriction was lifted
+by the 27 September public transition above.
+
+## Read-only Chat reloads at sync checkpoints (private 1.297)
+
+After an incoming record checkpoint, vault onApplied reloads the Chat UI. Calling
+the ordinary load path used to captureCast and persist chats:all unconditionally.
+A received character profile therefore changed a saved story behind the engine's
+exact raw-table snapshot, causing its next checkpoint to reject its own reload
+as Library changed. Three peers can expose this without any user edits.
+
+Device-sync reloads must be read-only: retain saved snapshots, refresh the live
+library used by prompt assembly, and leave drafts alone. Normal opening still
+captures changed profiles, recovers interrupted replies and stamps legacy rows,
+but must skip semantic no-op writes (including JSON key-order differences).
+Revision stamping compares against stored rows, not display-normalized pending
+messages, so recovery becomes a causal descendant. Do not weaken raw or encrypted
+pointer CAS to hide this error; genuine concurrent edits still stop safely.
+
+## Native photo preparation and explicit screen-off session (private 1.296)
+
+The full sync audit is recorded in docs/PRIVATE-SYNC-AUDIT-1.296.md. Android first
+preparation previously read each entire encrypted photo through Filesystem into
+JS, decrypted and split its data URL, then sent all text back through putBatch.
+storage.stageSyncImage now passes only the exact immutable bin/bin2 pointer and
+transient derived keys to native SyncImageStager. Restrict paths to that image key
+under vault/, authenticate the entire file before staging, preserve the exact
+data-URL prefix and 192 KiB ASCII parts, check epochs throughout, and erase key
+buffers. Unsupported legacy/non-ASCII representations fall back without guessing;
+authentication, disk and cancellation errors do not downgrade. The adapter must
+recheck both stored pointer and fingerprint before accepting the descriptor.
+
+Preparation state checkpoints contain only newly staged descriptors and are
+coalesced by the existing two-second cadence plus final/failure flush, not every
+16 small images. Remote checksum failures cannot invalidate healthy local photo
+preparation; only a missing local retained chunk reported by publish can do that.
+Offline peer indexes back off 2/5/10/30 seconds, while reachable peers remain
+checked. Address changes, successful contact, manual retry, lock and group changes
+reset the backoff. Deferred peers never count as acknowledgements.
+
+Follow-up report: one missing retained local chunk still used to invalidate the
+whole library, repeating completed work if repair was interrupted. Updated native
+shells advertise photoCacheInspection:1 and implement bounded read-only
+missingChunks metadata inspection. Repair only descriptors touching those pieces,
+and retain successfully repaired descriptors across interruptions. Older shells
+keep safe full-rebuild fallback. Cached fingerprint checks must say Checking, not
+Preparing; the latter means actual photo work. Background consent also covers
+picture preparation, not merely network transfer.
+
+Screen-off sync is an explicit unlocked-session exception requested by the owner.
+The native dataSync service starts only while visible and after notification
+permission, has a Stop action, renews bounded CPU/Wi-Fi leases only from verified
+unlocked sync calls, and stops on expiry, destruction, task removal or Android's
+dataSync timeout. No boot receiver, sticky restart, persistent unlock or provider
+background privilege. The controller is ephemeral and needs fresh native active
+confirmations; auth.lock and rcv-locking always stop it. The normal background lock
+gate is deferred only while this controller is active and keeps checking expiry.
+Permission-sheet hiding may preserve a pending start, but explicit lock/Stop may
+not. Old permission/JS callbacks must never cancel or revive a newer session.
+
+MainActivity keeps only the service-approved WebView running after normal
+Capacitor pause/stop callbacks, so provider cancellation still runs. Native
+dispatch and active() recheck foreground-or-service after asynchronous callbacks.
+Credential operations recheck foreground inside their critical sections. Status
+heartbeats bypass the serial preparation queue only after the same unlock check.
+Windows already disables timer throttling for enabled sync; minimize remains
+supported while the app is unlocked and the computer awake. Neither platform
+promises sync after force-stop/process termination or during computer sleep.
+
+## Avoid repeated sync work and overlap bounded photo reads (private 1.295)
+
+Large libraries previously rebuilt their immutable index and resent every retained
+chunk identity on every unchanged poll. Reuse parsed raw tables, validated scans,
+publications and settled reconciliations only with exact raw/state strings,
+image descriptors, peer revisions and primary selection. Clear on errors,
+lock/stop, group changes and Chat lane transitions. Renew native publication and
+retained-cache validation at least every 30 seconds; a cache is not proof of a
+durable received photo. Keep live discovery, authenticated index exchanges and
+primary refresh on unchanged polls. Never skip an initial merge approval.
+
+Android/web storage memoizes only eligible library and sync-state plaintext
+behind exact encrypted pointers, bounded to 32 MiB and cleared each auth epoch.
+Reads still check the current pointer; sync commits retain the final atomic
+expected-pointer CAS. Never memoize pictures or arbitrary keys. Exact-key
+checkpoints batch pointer reads instead of enumerating all image keys, retain
+epoch checks through staging/commit, and do not remove old files before commit.
+Coalesce progress metadata with record checkpoints instead of writing both.
+
+Native shells advertise chunkConcurrency:2 with chunkBatch:4. The engine drains
+both bounded reads, preserves part order and checks the whole photo digest.
+Android has two chunk workers and a two-request queue; control operations remain
+serial. Register all HTTP connections before opening, disconnect on pause, and
+check epochs before cache writes and bridge replies. Serialize startup and cache
+replacement; cache interface enumeration for only one second, cleared on pause.
+No wire-format, key, photo-quality or vault-durability changes.
+
+Focused tests: test-sync-idle-performance executes a 741-photo descriptor fixture
+and asserts zero repeat staging/scans on idle polls, plus edits/renewal/lock;
+test-sync-read-cache uses real IndexedDB and WebCrypto for pointer races and
+lock epochs; test-sync-android-pipeline executes actual Java dispatch/pause
+methods; test-sync-batch-engine verifies bounded, ordered and drained requests.
+These demonstrate avoided work and bounded overlap, not physical Wi-Fi speed.
+
+## Changeable primary and one visible library (private 1.294)
+
+The former conflict comparator preferred any revision carrying the original
+primary in its vector clock, then a hash, not the most recent edit date. Thus a
+newer independent edit could be labelled sync conflict. Private 1.294 adds a
+protected primaryPreference register (sequence, author, device, label), exchanged
+only through authenticated native index messages and invitations. Original
+cfg.primary remains the pairing identity. Make this device primary requires an
+established local library; it never re-pairs, clears caches or mirrors away unique
+items. Updated peers reject old index exchanges once the policy is active.
+
+Single-library merge preserves normal causal descendants from every device.
+Only the selected primary causally resolves a genuine library clash against its
+visible frontier version. Other peers keep the frontier until that resolution
+arrives. Alternate characters/personas/lore/prompts become deterministic Bin
+archives, not visible duplicate cards. Conversation conflict policy is unchanged.
+Archive/image dependencies commit before source replacement; interruption must
+not advertise ancestry for unsaved writing. Recheck primary selection before
+checkpoints, including null-to-selected transitions during image downloads.
+
+Legacy conflict cleanup is explicit per-group review, never name-based deletion.
+The chosen content keeps the original identity; removed copies and overwritten
+revisions retain their picture references in deterministic Bin entries. Reviewed
+copy tombstones include the whole observed family clock. Character syncAliases
+preserve existing chat references without rewriting speakers/transcripts/memory.
+Review uses an exact raw-library fingerprint and atomic data/state CAS. A stale
+review fails closed. Generated recovery tombstones prevent stale archive seeds
+from resurrecting a deliberately purged Bin item. No live photo bytes are deleted.
+
+## Observing characters share the ongoing scene (private 1.293)
+
+1.292 retained the transcript but still used the API assistant role for every
+character. In group reply requests only, other characters' historical turns now
+use user-role scene input with their existing speaker label. Only turns matching
+the selected characterId AND variantId use assistant. Label real persona turns
+separately; never mistake another character's dialogue for the user's. Stored
+roles, speaker identities, active-path ancestry and memory-worker source remain
+unchanged. Account for every added label in both token estimates. A card's initial
+situation cannot reset established story events. Being added to the UI cast does
+not mean arriving in the fictional scene: explicitly witnessed observable events
+are known even before that character's first generated reply, while private
+thoughts/off-scene secrets are not automatically shared. No duplicated recent
+history, new paid summarization call or inferred observer-presence state is needed.
+
+## Group continuity and mobile layers (private 1.292)
+
+Switching the selected character never changes transcript ancestry or checkpoints.
+The earlier group implementation nevertheless injected the newcomer's opening
+scenario/examples into established scenes and mixed every participant's system
+commands. Established groups now omit those seeds; reference cast retains factual
+profiles but only the selected speaker supplies explicit system directions.
+Shared memory keeps historical actors, including the original speaker of legacy
+unlabelled narration. A request-only final roleplay direction hands off to the
+selected speaker even after an assistant-ended Continue. Count this cue against
+both the input-token estimate and native 2048-message limit; never save it as a
+message or feed it to the memory worker. Mocked context tests verify payloads,
+not whether a live provider always follows the roleplay instructions.
+
+Mobile Options needs a stacking level on the isolated header itself, not only its
+dropdown: positioned quality bubbles previously painted over that whole context.
+The composer sits above messages but below Options. Keep empty mobile actions and
+placeholders short enough for a single-line field and retain accessible speaker
+labels. Test actual elementFromPoint hits at keyboard-height, not just z-index.
+Existing memory-rebuilt suffixes are removed for display without rewriting chats;
+new/resumed rebuild copies retain the clean original title and separate identity.
+Last-chat dates come from real nonpending message timestamps, not settings changes
+or the date memory was rebuilt. Original copies and checkpoints remain recoverable.
+
+## Bounded encrypted sync batches (private 1.291)
+
+Automatic sync keeps its existing 192 KiB text chunks and SHA-256 descriptors.
+Updated native shells advertise chunkBatch:4; the shared engine batches at most
+four pieces per native call. A peer's authenticated index determines whether
+its native transport supports the batch wire response. Older peers use their
+existing single-chunk requests; an authentication/checksum error must never
+trigger a downgrade. The RCVSYNCB1 response carries existing AES-GCM-encrypted
+blob packets with an HMAC binding direction, request nonce and exact response
+body, avoiding another gzip/encryption wrapper. Verify peer identity, exact
+ordered chunk identities, count, size and every chunk digest before use. Keep
+all lock/background epochs and immutable cache rules; no plaintext photos on
+the network, no parallel unbounded downloads and no change to pairing secrets.
+Android's disposable encrypted chunk cache uses atomic rename without forcing
+a flash flush for every part. Published heads, pairing and vault commits retain
+their durability rules. Missing/damaged chunks must be authenticated and rebuilt,
+never mistaken for committed photo data.
+
+Android automatic-sync image preparation uses the existing encrypted bin2
+binary format only when decoding/re-encoding a data URL is byte-exact. The
+pointer/fingerprint transaction and compare-and-swap remain the sole commit.
+Do not replace this with setBinary's blind commit. The original image bytes and
+prefix round-trip unchanged; noncanonical data URLs retain the old text path.
+This update is private Chat only, with full Windows installer and APK required.
+
+## Chat navigation, not a floating shortcut (private 1.290)
+
+The owner wants the entry named Chat. Windows places it below Prompt Vault in
+the sidebar; Android phones and tablets place it only on the Dashboard, without
+adding a sixth bottom-navigation cell. The vault advertises a permitted slot via
+data-rcv-chat-launch. Chat uses its existing root-attribute observer and a React
+portal to fill that slot, not a new polling loop or whole-document observer.
+Launcher/retry controls disappear behind overlays, sheets, picture viewers and
+non-ready vault states. Keep launch handlers in Chat so this UI-only relocation
+does not change conversations, persistence or provider calls. Shared Chat tests
+must find the portal outside rcv-chat-root. Full Windows installer and APK carry
+the Chat script/style changes; renderer-only patches cannot deliver them.
+
+## Reference-image prompt ideas (private 1.289)
+
+CharacterImageStudio keeps twelve local, provider-neutral writing aids in
+STUDIO_PROMPT_IDEAS. Selecting an idea only previews text. Require an explicitly
+selected reference before applying it; never select pictures or generate on the
+owner's behalf. Add preserves existing text, Replace is a separate explicit
+action, and the 8,000-character limit must disable overflow rather than truncate
+writing. The final editable prompt is the sole prompt sent by Generate; no hidden
+identity instruction is added to arbitrary user prompts. All presets request
+identity preservation without promising exact likeness, restored missing detail,
+or an output resolution. Model, size, quality and paid-request controls remain
+independent. No native bridge or vault format change is needed.
+
+## Private group roleplay, image batches and allowances (1.288)
+
+Originally a private-only update; the 27 September public transition permits
+reviewed source and release artifacts. Group
+conversations keep an explicit active cast and next speaker. Removed characters
+must not re-enter permanent context through the legacy original character or a
+saved cast snapshot. Historical messages retain speaker identities; removing a
+participant never rewrites history. Memory reads that attributed history without
+copying static profiles. Choosing a speaker or an @ suggestion does not contact
+the provider; only an explicit reply action does. Preserve existing conversations,
+branch ancestry, drafts and conditional persistence. Sync validates the new cast
+and historical speaker fields before accepting them.
+
+The owner now authorizes Generate N and save to gallery, replacing the old
+preview-then-Save-only workflow. Set count/caption/visibility before generating.
+Use sequential bounded requests and durably append every successful result.
+Never replay paid calls automatically after failure. A failed save keeps a
+bounded preview for retry; already saved pictures remain ordinary gallery data.
+Fullscreen image previews must sit above the studio and consume Escape/Back
+before closing their parent. Hidden viewer controls must not intercept taps or
+keyboard focus; preserve an accessible way to show controls or close.
+
+API balances are truthful capabilities, not guesses. The owner chose normal-key
+allowance and a billing link instead of collecting a powerful management key.
+OpenRouter /api/v1/key returns spending-cap remaining/usage, not account credits;
+/credits requires management access. OpenAI/xAI normal image keys do not expose
+a supported account balance in this integration. Native fixed billing links
+provide that path. Refresh is explicit, bounded and read-only; keys never enter
+renderer state. Cancel and clear checks on lock/background/key change, and never
+store the results in vault records or sync. Both native shells require rebuilding.
+
+## Explicit private API key sharing (1.287)
+
+Settings > Automatic device sync > Share API keys between devices offers one
+saved OpenRouter, OpenAI or xAI key for five minutes to trusted group members.
+The receiver explicitly imports, and existing credentials are never replaced.
+The disclosure must explain provider account/credit access to every member of
+the paired group. CredentialShare/credential-share reuse the providers' exact
+OS-protected storage formats; no key is ever returned over IPC or to WebView.
+Offers keep only sealed bytes in native memory, with random identifiers and
+expiry. They are cleared on pause/lock/background or closing the sharing panel.
+Authenticated, nonce-bound LAN request/response envelopes carry the deliberate
+transfer only; index, chunks, snapshots and backups remain credential-free.
+Check the expected offer ID, provider and sender identity before local storage.
+Import fails if the receiver is locked, the offer changed/expired, secure storage
+fails or a key exists. Windows uses exclusive link publication; Android provider
+saves and imports share WRITE_LOCK. Keys already imported are independent: stop
+sharing or leaving the group does not revoke them; revoke at the provider if
+needed. Never test with real owner credentials. Native changes require full
+Windows installer and APK, not a renderer-only patch. Public standard unchanged.
+
+## Photo information and JPG copies (private 1.286)
+
+PhotoInfoModal reads img: directly only on explicit inspection, never thumbnail
+or preview cache bytes. photoSourceInfo validates raster MIME/signature and exact
+base64 byte length; decodePhotoOriginal supplies displayed pixel dimensions.
+photoJpegCopy draws at those dimensions over white, checks canvas bounds/output
+and exports through saveFile with collection=pictures. Originals/records are not
+rewritten. Do not imply lossless conversion, retained animation, EXIF or alpha.
+Closing, locking or hiding invalidates pending work before export starts. The
+nested SimpleModal must consume Escape before grid/viewer handlers; pause the
+slideshow when opening information. Test true original/thumbnail differences,
+JPEG bytes and white alpha flattening, export failure, and lifecycle cancellation.
+
+## Gallery profile selection (private 1.285)
+
+ImageGridView's profile control must not live inside the variant assignment row:
+characters without variants and personas still need it. Require exactly one
+selected picture and await persistence before the success toast. The grid viewer
+passes gallery variant tags, so normalise DEFAULT_VID to the main portrait, not a
+nonexistent variant. withGalleryProfile validates the image/target, resets only
+the changed portrait's Chat framing and retains an otherwise orphaned previous
+portrait as a gallery entry. Never rewrite the original image bytes. Tests cover
+real phone/desktop grid selection and Default/variant/persona persistence.
+
+## Private image-provider error reporting (1.284)
+
+Never discard a rejected image request's structured error: HTTP 400 alone cannot
+distinguish an invalid parameter from a provider safety refusal. Both native
+bridges parse at most 64 KiB of error JSON and show bounded message/code/type/param
+fields plus a validated x-request-id. Android must read getErrorStream, not the
+success stream. Non-JSON, oversized and missing bodies retain the HTTP status.
+Redact the active key, full prompt, credential patterns, data URLs, long encoded
+strings and links before display, then cap the message. Authentication/redirect
+bodies are never echoed. Policy codes get neutral safety wording; do not change
+moderation or retry paid requests. Render the result as wrapping plain text,
+never HTML, and do not persist raw errors to chats, vault records or logs.
+
+## Private character image studio (1.283)
+
+The owner requested direct OpenAI and xAI image generation for private Chat on
+Windows and Android. This was not part of the older standard builds; it is part
+of the current Rolecraft app. The renderer
+stays offline: `app/image-generation.js` and Android `ImageGenerationPlugin`
+own explicit Generate calls to fixed HTTPS image endpoints, with no redirects
+or remote result downloads. OpenAI reference edits use multipart `image[]`;
+xAI edits use JSON `image` or `images`, not OpenAI's multipart format. Current
+provider model allowlists and request formats are covered by native tests.
+Resolution presets preserve exact aspect ratios and are independently validated
+by both bridges. OpenAI permits at most 8,294,400 pixels, 3840 per edge and
+multiples of 16: exact 2:3 therefore tops out at 2336x3504, not 2560x3840.
+Only 16:9/9:16 presets reach a 3840 edge. Grok permits 1k/2k, never 4k.
+Show actual returned dimensions and never silently upscale. GPT Image 2.5 alone
+adds xhigh/max quality; GPT Image 2 stops at high and Grok at medium.
+
+Provider keys are separate from OpenRouter and sealed with safeStorage or
+Android Keystore, outside vault data, exports and paired sync. The user's prompt
+and at most four selected references are the only content sent. Large originals
+are resized into upload copies; original vault images never change. Response,
+decoded-image and reference limits apply on both sides of the native bridge.
+One request per device, an absolute five-minute deadline, and no paid retries.
+Cancel/lock/background invalidates late results but cannot guarantee the provider
+stops billing. Android resume alone does not unlock the image bridge.
+
+Generated previews are not library records until explicit Save. Preserve all
+existing pictures and fields: reread the latest character array, validate the
+target/variant, then append the fresh image ID with `syncCommit` compare-and-swap.
+Hold pendingVaultWrites for the operation, check the unlock epoch after awaits,
+and pass the epoch guard into saveImage so delayed writes cannot repopulate
+image caches after lock. Failed saves retain the preview for retry, never
+resurrect a deleted character, and never attach an unpersisted picture.
+Generated gallery pictures use ordinary backup/sync; provider keys never do.
+
+Full Windows installer and signed APK required: a renderer patch alone cannot
+deliver either native bridge. Local mocked providers exercise 360px/desktop UI,
+fresh IDs, concurrent edits, cancellation and failure handling without paid
+requests. Physical-device/API-account checks remain a separate owner check.
+
 ## Remembered multi-device sync
+
+Missing optional thumbnails must not re-enter preparation on every idle pass.
+Report final preparation counts without throttling, and clear phase-local counts
+when moving to checking/saved/synced. The 741-picture regression covers both.
 
 Windows sync cache fingerprints use encrypted-file stat identities, not decrypted
 picture content. Yield during bulk checks and keep lock guards after each yield.
@@ -114,14 +956,6 @@ Editing it by script is normal here. Two things bite repeatedly:
 
 ## Hard rules
 
-Standard 1.260: duplicate/template copies must remap sectionOrder alongside
-fresh section IDs, including variant sections. An unchanged or blank book rename
-must return before metadata moves: assigning and deleting the same key loses
-the cover/settings. Native lore/prompt imports retain empty-writing records,
-including titled placeholders and picture-only entries; third-party unrelated
-objects remain rejected. Regression tests execute the shipped copy, normalizers
-and both rename callbacks without touching a real vault.
-
 1. **The interface never touches the network.** No `fetch`, `XMLHttpRequest`,
    `WebSocket`, `sendBeacon`, or `http://` in `app/app.js` or the web bundle.
    `npm run check` enforces this. Networking lives *only* in `main.js`, and only
@@ -182,6 +1016,417 @@ and both rename callbacks without touching a real vault.
    merely wrong rather than broken — do not rely on it.
 
 ## Data model (all values are strings in encrypted key/value storage)
+
+### Private Chat rolling memory (local 1.256)
+
+Private 1.282 separates provider generation allowance from saved summary size.
+Reserve up to 8192 output tokens, at most 20% of the context and within model
+limits, because providers can count hidden reasoning against max_tokens. Keep
+the selectable 256/384/640 estimated saved-summary limits and short-page scaling;
+reject oversized complete additions rather than truncating history. Report both
+budgets and possible billed reasoning. No automatic paid retry or privacy change.
+Token exhaustion, filtering and excessive saved-summary size have distinct errors.
+
+Rebuild journals use protected storage under ui:chat-memory-rebuild:<source ID>,
+not chats:all, so partial copies never enter conversation sync. Save each successful
+batch through the epoch-checked save queue. A SHA-256 of source transcript/settings
+and resolved profile references allows explicit resume after reopening; old memory
+and sync bookkeeping do not invalidate it. Changed inputs restart, and the user can
+explicitly Start over. Never contact the provider merely on opening Chat/settings.
+Only the completed copy enters chats:all. A completed journal survives a failed
+final save, so retry can save without paid regeneration. Clear it after success;
+if cleanup fails, its copy ID prevents duplicates. Lock/Stop cancel further work,
+but an atomic save already started may finish. Originals remain untouched.
+
+Private 1.280 originally bounded provider output per batch independently of model context: selectable
+256/384/640 tokens, Balanced 384 by default. Scale short pages to 12% of their
+estimated transcript tokens with a 128-token floor, never exceeding the selected
+or model cap. Reserve the full cap while packing; recompute the instruction and
+displayed estimate after scaling. The completion marker shares the output cap.
+Full eight-message batches across 500 messages reserve at most about 24k summary
+tokens with Balanced, not 4k for every batch. Long messages can need more pages.
+1.282 supersedes that shared output cap; it now bounds saved summary estimates,
+not provider reasoning/output charges or a promise of semantic recall.
+Do not shrink or rewrite earlier memory; rebuild-in-copy applies new settings.
+
+Private 1.279 makes worker output chronological history only. Do not request
+unresolved threads/consequences: those positive instructions caused repetitive
+status sections on every appended batch. Explicitly forbid those sections and
+imitating their format from legacy previousMemory. Preserve promises/questions
+actually spoken as historical events, not ongoing checklists. Do not strip saved
+memory with regexes: that could erase real events. Existing memories are retained;
+the confirmed rebuild-in-a-copy path regenerates them from the raw transcript.
+
+Private 1.278 bounds every memory request's new material to eight messages and
+6000 estimated tokens, independently of the model's window. One indivisible long
+message may exceed that soft page bound but must still fit the actual budget;
+never truncate or skip it. The old planner could send 595 messages (~474k tokens)
+into one 2048-token response on a million-token model. Request-coverage tests with
+small contexts and constant summaries did not exercise that overcompression.
+Do not treat deterministic mocked responses as proof of real-model recall.
+
+memoryProfiles supplies allowlisted selected-variant/persona facts only, for
+static-fact deduplication, including cast fallback. Exclude creator memos, images,
+prompt commands and opening examples. Profiles remain read-only reference, not
+events; preserve actual story changes and consequences. The worker reserves up
+to 4096 output tokens and includes all reference/input text in its budget.
+memoryHistory rejects missing ancestry/cycles/duplicate IDs before a rebuild can
+fork away the evidence. Progress gives source spans and estimated input/output
+allowance. Checkpoints store allowlisted provider token usage when available,
+otherwise explicit estimates. Memory settings report cumulative prior-context
+tokens separately from the last summarizer call. These tokens are resent, not
+free provider-side persistent memory. No paid model request is made by tests.
+
+Private 1.277 replaces destructive rolling re-summarization with cumulative
+additions. memoryPlan reads the previous checkpoint and exactly the new span;
+the model summarizes only olderMessages. extendMemory concatenates the previous
+text verbatim with the labelled addition. Never depend on the model to repeat
+earlier facts. Provenance anchors follow forks. Full transcript, five recent
+messages and subsequent growth to 75% remain unchanged. Accumulated memory may
+outgrow a context window; fail visibly, never silently shrink old memory or drop
+recent messages when automatic memory is enabled.
+
+Private 1.320 supersedes the stored cumulative-copy representation, not the
+cumulative context seen by roleplay replies. New memory checkpoints store only
+their incremental addition and link to earlier checkpoints by message ancestry;
+reply assembly and the memory editor resolve the complete history from that
+chain. Summarizer calls receive the new message span and a bounded excerpt of
+prior memory, rather than sending the whole cumulative copy again. Correcting
+an earlier checkpoint updates linked descendants. Legacy cumulative descendants
+are converted only when their old prefix proves the link; ambiguous or
+independently rewritten descendants fail closed rather than losing history.
+The full transcript remains untouched, including when an active chat is open.
+
+Private 1.324 separates the 75% compaction trigger from the per-batch saved
+history allowance. A short catch-up page may ask the model for a smaller
+addition, but it must not reduce the user's selected 256/384/640-token detail
+allowance to 128 and then reject a complete response. A small, bounded overage
+is permitted for model variation; marker, finish-reason and hard-size checks
+still reject incomplete or excessively long output without saving it or
+retrying a paid call. Do not truncate a finished addition to make it fit.
+
+Private 1.325 gives explicit memory-worker requests a longer, bounded lifetime
+than ordinary replies. The old fixed 185-second renderer deadline could cancel
+a valid long-running summary regardless of stream progress; both native shells
+also used a 180-second socket inactivity timeout. Memory-only requests may wait
+longer below Android's ten-minute stream lease, while ordinary replies keep the
+old timeout. Stop, lock and background cancellation still win, and there is no
+automatic paid retry. A group queue paused before its first reply must resume
+the unsent draft (if still present) rather than regenerate from its anchor;
+the resumed current index must be numeric so the next speaker gets their turn.
+
+Private 1.328 uses a strict structured history response for the two OpenRouter
+DeepSeek V4.1 Flash listings during memory compaction. The provider must support
+both non-thinking and structured-output parameters while keeping the same ZDR
+choice; unsupported routing fails rather than silently ignoring the parameter.
+Version 1.328 also required a matching model-reported processed-message count,
+but that proved unreliable and was removed in 1.329. Other memory models retain
+their marker format.
+Rejected outputs show only format/finish metadata and visible character count,
+never story content, and never replace a saved checkpoint or trigger a paid
+automatic retry.
+
+Private 1.329 asks DeepSeek V4.1 Flash for only a structured `history` string.
+Do not use a model-generated processed-message count as proof that the history
+covers the batch: it can be omitted or misreported even after a normal finish.
+Require a confirmed `stop`, valid JSON with a text history, nonempty content,
+and the existing response-size and saved-token bounds before committing. The
+memory planner, not the model, determines the exact ordered source span.
+Tolerate extra JSON fields from an older provider response but ignore them.
+
+Private 1.327 scopes non-thinking mode to DeepSeek V4.1 Flash memory-worker
+requests on both native bridges. OpenRouter lists this model with optional
+reasoning enabled at high by default; its hidden tokens can exhaust the
+worker's output allowance before the short history addition is complete.
+Keep the roleplay request and other memory models unchanged, preserve the
+conversation's ZDR choice, and never auto-retry a paid compaction request.
+The provider's length finish alone does not prove reasoning consumption; an
+incomplete addition still fails closed without replacing saved memory.
+
+Private 1.326 closes an Android Chat-open race with paired sync. A read can
+capture a `bin:` pointer, then sync atomically commit its successor and retire
+the old encrypted file between Filesystem `stat` and `readFile`. A bounded
+storage read may follow the new current pointer, with unlock-epoch checks and a
+current-pointer check before returning Chat text. If the pointer is unchanged
+and its file is absent, fail closed; never turn that error into an empty chat or
+rewrite the pointer. Keep a healthy paired device untouched for recovery if a
+missing-current-file error persists after sync settles.
+
+Private 1.330 extends that read retry to a bounded burst of successive Chat
+pointer replacements; one retry was insufficient when several sync commits
+landed during a large read. The Retry opening Chat control must navigate into
+Chat after a successful read. Local `chats:all` saves now compare the exact
+plaintext read or last durably written, because a delayed save can otherwise
+replace a newer synced transcript even though the UI sync guard was idle when
+the save started. After a failed CAS, keep unsaved edits in memory and block
+further saves or paid replies. Explicit Retry save merges the current disk
+version with those edits, retaining divergent revisions as recoverable Chat
+copies; it must not blindly retry the old whole-table write. Ancestry-only
+sync state changes must not rotate the encrypted Chat pointer. A full-sync
+commit whose UI reload fails retains a reload obligation until it succeeds.
+The 1.330 queued-reply guard caps automatic memory at four paid batches per
+explicit Send, preserving each completed checkpoint and pausing before a
+roleplay request if more is needed. A read-only reply view may reuse another
+speaker's complete proof-validated incremental lane only while every active
+turn is shared; never copy that lane into the selected speaker's saved memory
+or use it after an audience/private turn. Do not put a Promise.race timeout
+around a durable Chat write: a late commit after the UI abandoned it could
+leave the in-memory ancestry behind storage. Bound paid memory and provider
+waiting instead, without automatic paid retries.
+
+Private 1.320 also makes backup restore fail closed on missing live, cover or
+Bin pictures and malformed records. A paired sync group must be left before
+restore; the old sync ancestry and old backup-export timestamp are cleared in
+the atomic replacement. Re-pairing and first-merge approval are explicit.
+Format-2 Chat sync manifests retain verified per-conversation records by
+content hash, downloading only changed conversations when a peer republishes.
+The local `chats:all` encrypted record is still monolithic; changing that
+storage contract requires a separate, tested migration across backup, both
+native storage implementations, Chat and sync.
+
+Rebuild memory in a copy is explicitly confirmed because it can make multiple
+provider requests. It forks the active transcript, clears old summaries only in
+the temporary copy, and sequentially reconstructs memory from all eligible older
+messages. Persist only the finished copy in chats:all; never replace the original
+or expose half a rebuilt copy. 1.282 saves local resumable progress separately.
+No roleplay reply is generated. Pins and per-chat privacy routing remain active.
+An atomic final save already in progress may finish even if Stop is pressed;
+that completed copy remains recoverable after reopening. Opening Settings or a
+conversation must never start a rebuild. The 24000-character response limit is
+for each addition, not the cumulative memory editor.
+
+Private 1.276 makes provider zero-data-retention routing a per-conversation
+`requireZdr` preference. Only literal boolean false opts out; absent, invalid
+and older preferences stay strict in both native bridges. The setting persists
+through new-story setup, model selection, branching and sync. Send/regenerate
+and the separate memory worker must receive the same choice. Never forward an
+arbitrary renderer provider object or automatically retry with weaker privacy.
+Explain provider retention when opting out; account-level policies still apply.
+This supersedes older notes describing ZDR as unconditional. The Windows native
+bridge changed, requiring the full private installer, not a renderer-only patch.
+
+Private 1.275 includes an automatic agency/viewpoint contract in priority-2
+permanent context on every roleplay request, including existing conversations
+and compacted branches. Narration stays with the selected AI character, never
+inventing the user's words, thoughts, emotions, actions or reactions. Persona
+fields and prior assistant overreach are not permission to control the user.
+Keep the priority-1 custom prompt precedence intact and keep this roleplay
+contract out of the separate factual memory-worker request. Prompt regression
+coverage includes every reply style, missing cast, fallback cast and compaction.
+
+Private 1.271 indexes message siblings per immutable messages array and newest
+children once per branch navigation. Do not restore per-visible-message scans
+of the full transcript. Memory checkpoint lists share a single ancestry set;
+conversation previews need only their current leaf, not its entire path. Lore
+inspection normalizes the last eight messages once and shares activation and
+reason collection. Mini portraits coalesce only in-flight storage reads, never
+cache settled blur settings or images across mounts. Opening the conversation
+drawer must not reset the reader's scroll position; prepending earlier messages
+anchors the existing first message. Gallery portrait changes reset old Chat
+framing only for the changed base/variant portrait. The performance regression
+counts real operations instead of depending on machine timing.
+
+Private 1.270 keeps per-character/variant `chatPortraitCrop` as bounded x/y/zoom
+framing only, using the existing portrait image. It adds no image references or
+replacement images. Preserve crops through text restores and saved cast fallback;
+never serialize them into model context. A new portrait resets its old framing.
+Message avatars retain the thumbnail size/blur guards and lazy loading.
+`TokenBreakdown` must tolerate the initial null/debounced budget. Reply budgets
+must be integers before the native bridge, otherwise the Windows validator drops
+a fractional max_tokens. Lore activation and its inspector share trigger-shape
+normalization; selecting another story after deletion must skip sync tombstones.
+
+Private 1.269 establishes an explicit roleplay priority order: always-active
+conversation prompt (1), core character/permanent settings (2), temporary story
+context and transcript (3). Selected styles override card style suggestions but
+yield to the priority-1 prompt, superseding the 1.262 policy below. Keep provider
+constraints and the separate factual memory-worker instructions intact.
+
+Editing a user turn can regenerate from a new immutable sibling. `send` reads
+`chatsRef.current`, not the previous render's `active` snapshot, and persists the
+edit before compaction/provider calls. Old replies and checkpoint ancestry stay
+intact. Failed edits remain recoverable locally and never initiate a request.
+Composer focus restoration must not depend on `busy`: reply completion, errors
+and Stop must leave the reader alone even on Android with a fine-pointer device.
+`test-chat-edit-reply-ui.js` executes these paths with real disposable storage.
+
+Local 1.262 gives every roleplay request an explicit task/role contract, includes
+character demographics and persona taglines, and makes selected reply styles
+take priority over conflicting card/example/optional-prompt style suggestions.
+`roleplayText` expands only {{char}}/{{user}} in authored context and new
+greetings; never expand existing transcript or memory text or mutate records.
+The shared assembler feeds both native OpenRouter bridges unchanged. Keep the
+memory worker separate: it summarizes facts, never continues the roleplay.
+Long replies warn below a 2,000-token effective cap; no automatic spending-cap
+increase. The warning is guidance, not a model-specific minimum. Prompt tests
+cover all 48 style combinations, persona fallback, token caps and native payloads.
+
+Local 1.258 matches lore triggers as literal whole words/phrases with Unicode
+letter, number and combining-mark boundaries. Scan each of the latest eight
+messages separately; never assemble a phrase across messages. Do not scan
+character descriptions, injected lore or rolling memory for activation. The
+private 1.309 behavior requires a trigger even for attached entries; trigger-free
+entries stay inactive. `test-chat-lore-triggers.js`
+covers substring false positives and the retained activation window.
+
+Local 1.257 adds per-conversation `alwaysActivePrompt`, `replyPerspective`,
+`replyBalance` and `replyLength`. These are permanent roleplay context, survive
+compaction and branching, and are not memory-worker instructions. Requests use
+named character/persona fields only; never attach `creatorMemo` or serialize a
+whole library record. Opening scenario/examples are optional temporary context:
+recent messages take priority, and compaction retires those opening blocks.
+`permanentTokens + temporaryTokens` must equal the displayed input estimate.
+Both categories are resent and can incur provider costs; permanent is not free
+model memory. `test-chat-prompts.js` covers the field and budget boundaries.
+
+`chats:all` holds the full immutable-message tree plus `memories` checkpoints
+anchored by `throughId`. Only ancestors before the retained recent exchanges
+may supply a memory. Forking remaps eligible anchors; deleting a subtree drops
+its checkpoints. Do not replace the transcript with a summary or share a future
+checkpoint with sibling branches. Increasing recent-exchange retention can fall
+back to an earlier checkpoint or the original messages.
+
+Compaction runs only inside an explicit Send/Regenerate operation, at 75% of the
+estimated input budget. It uses the same native provider bridge and ZDR routing,
+with independent input/output reservations and bounded sequential catch-up
+batches. Five actual messages plus the newest user turn stay verbatim by
+default; three to five are configurable. Pins are separate authoritative context.
+Summaries require an explicit completion marker, reject truncated/filtered output,
+and commit before use. Stop, lock, errors or failed writes must never advance an
+unverified checkpoint or start a reply after cancellation. The pending user/reply
+turn is saved only after compaction succeeds, keeping unsent drafts on failure.
+
+After a checkpoint all subsequent messages accumulate in context until the next
+75% threshold, not a last-five sliding window. The mobile composer starts at one
+line and resets after Send; sentence capitalisation is requested from the user's
+keyboard. Advisory context calculation is debounced, streamed text paints at
+most every 80 ms, and unchanged prose is memoized. Send and Inspect context still
+assemble the exact live transcript, never the debounced preview.
+
+Private 1.273 moves keystroke state into `ChatComposer`. Its synchronous draft
+ref is authoritative for Send/Inspect; the parent receives a 600 ms advisory
+update. Programmatic clears also increment the draft-save revision so an empty
+advisory value cannot leave an already-saved draft behind. Do not reset local
+composer state from delayed preview props. Phones initially render 12 messages;
+Show earlier/Show latest only change the drawing window, never `activePath`,
+`assemble`, `memoryPlan`, stored messages or checkpoint retention.
+
+An Android explicit stream owns `ChatStreamLease`, a best-effort partial CPU and
+Wi-Fi lock with a ten-minute ceiling. Cancellation, stream completion/failure
+and plugin destruction release it. It neither keeps the screen on nor bypasses
+vault background locking, and is not a promise against Doze/OEM restrictions.
+Both bridges require the SSE terminal marker; EOF alone is not success. Android
+also forwards finish_reason so truncated/filtered memory is rejected. A failed
+unlocked stream saves received text with a single inline error, never silently
+retries a paid request. Tests execute the actual native stream/lease and measure
+parent render count while typing, alongside the full-history memory regressions.
+
+Private 1.274 suspends nonessential library work while Chat is open. The
+`rcv-workspace` event drives `setWorkspacePaused` in the automatic-sync engine;
+it pauses native work, stops timers, checks suspension between storage/hash
+operations and resumes without changing pairing or acknowledged checkpoints.
+The older Chat link originally waited until Chat closed; private 1.313 permits
+it while visible, subject to draft, lock and save guards. Local saves and lock guards must
+remain active. In-flight atomic writes are never rolled back or falsely marked
+as undone. Library image pumps include workspaceOpen in both pause and resume
+dependencies; otherwise a modal change can overwrite the quiet flag or leave
+images permanently paused. The hidden library does not paint or cycle artwork.
+Theme propagation is mutation/resize driven, never a half-second rewrite of all
+inherited styles. Context details are on-demand; Send remains authoritative.
+
+The context preview explains the extra request and cost rather than claiming
+the post-compaction reply is already known. Tests in `test-chat-memory.js` and
+`test-chat-memory-ui.js` exercise the real helpers and renderer with an offline
+native stub. No paid provider call is required for the regression suite.
+
+### Private Chat device sync (local 1.259)
+
+Private 1.280 supersedes the full-sync suspension in 1.274 only for conversations.
+An established, locally approved stories1 group uses storyTick while Chat is open.
+It reads chats and saved sync metadata, not library records or picture bytes;
+publishes the last established library snapshot plus the latest conversation
+extension; and only pulls peer conversation extensions. First-sync approval,
+CAS, lock/background guards and conflict preservation remain required. Cache
+unchanged local/peer snapshots so writing does not repeatedly hash transcripts.
+The same native encrypted chunk transport and remembered group are reused.
+
+Pending AI placeholders are excluded from outgoing conversation views, rewinding
+the projected leaf to the saved user turn. The sender's full record is untouched;
+completed responses supersede that projected revision. Do not persist or stream
+each token. Imports wait while generation/edits/saves are active. Chat-only UI
+reloads replace conversation state without touching drafts, focus, selection or
+library images, and never stamp imported revisions as a local edit. Incoming
+commit and reload share the applying gate; failed reload is retried. Full library
+sync resumes when Chat closes. Standard editions do not enter this private lane.
+
+The owner prioritizes preserving and continuing the same chats over an unbroken
+socket. `chat-sync-core.js` stores per-conversation revision ancestry in `_sync`.
+Identical writing converges, descendants supersede ancestors, and concurrent
+edits preserve a deterministic conflict copy. Deletion is a recoverable revision,
+not erasure. Never strip ancestry or replace immutable transcripts with summaries.
+Chat UI saves stamp local revisions; merged peer revisions are saved unmodified.
+The save queue, lock epoch, busy gate and failed-save gate protect concurrent
+renderer operations. Acknowledgments are added only after local persistence.
+
+`chat-link-server.js` is separate from the passive vault-transfer server. It serves
+one explicitly paired phone, retains bounded pending snapshots until acknowledged,
+and never writes vault records itself. Android's `ChatLinkPlugin` carries native
+HTTP only to literal RFC1918 addresses, never follows redirects, and pauses on
+activity backgrounding. Both directions use gzip plus AES-256-GCM with fresh IVs
+and distinct direction AAD. Nonces bind responses to requests. A 256-bit pairing
+secret is sealed by Windows safeStorage or Android Keystore outside vault exports.
+UDP discovery is authenticated with that secret and only answers private LAN peers.
+Never include API keys or pairing configuration in chat snapshots.
+
+The loop sends changes, skips acknowledged incoming snapshots, retries with capped
+backoff and resumes after lock/sleep. Windows disables timer throttling only while
+the link is running, so a minimized unlocked host remains usable. Native guards
+still refuse locked access. On Android the native transport verifies the current
+unlocked UI state, cancels by epoch and closes requests when paused. An oversized
+snapshot (32 MiB UTF-8), invalid packet, failed disk write or missing peer remains
+local and must never report Saved on both devices. Sync is not a backup.
+
+Snapshots carry only chats and selected character/persona/lore writing needed to
+continue them; creatorMemo and image bytes are excluded. The local library wins
+when that character exists. Bucket-cover backgrounds and portraits use local images
+and respect image blur choices. Drafts are local encrypted UI preferences, not
+peer conversation data. Tests cover core merging, actual encrypted loopback HTTP,
+the real renderer's acknowledgments/failing writes/late-lock responses, responsive
+scene panels, safe formatting and bucket-cover selection.
+
+### Windows Chat migration (1.253 Chat branch)
+
+The 1.253 migration omitted Chromium's per-profile OSCrypt context. Copying
+`enc:` files and `e:` PIN blobs is insufficient even under the same Windows
+account: safeStorage uses the key protected in `Local State.os_crypt`. 1.254
+copies only that OS-protected context into Chat's `standard-encryption` runtime
+profile before Electron is ready. The original Chat runtime and its encryption
+context are preserved. Capture the stable Chat root before selecting the copied
+runtime and retain it for the import pointer and the single-instance lock.
+Never initialize safeStorage and then attempt to change its context in-process.
+
+`scripts/verify-chat-windows-encryption.js` tests this using separate Electron
+processes and actual Windows safeStorage encryption. It must pass in addition
+to the ordinary suite for migration releases. The previous password-only fixture
+used `pln:pwd:` data and could not catch failure to decrypt Windows `enc:` records.
+
+The Chat edition has a different userData folder. A fresh Chat profile must not
+appear to have lost the user's standard library. `chat-migration.js` copies only
+sealed `.dat` records and `security.json` from the standard profile into a new
+`standard-copy-<uuid>` directory inside Chat. This is setup of a new encrypted
+snapshot, not an unlocked-record write or an in-place restore. It verifies each
+copy and checks that source metadata did not change before atomically publishing
+`standard-import.json`. Every later Chat startup resolves that pointer for the
+vault, security and restore/rewrap journals. Do not revert those paths to the
+top-level Chat folder on future releases.
+
+Only the three known first-run bookkeeping files are permitted in a destination
+eligible for automatic migration; any user data or password metadata prevents
+replacement. Pending source restore/rewrap operations must finish in the standard
+app first. Developer `--user-data-dir` launches never auto-read a real standard
+vault. Failed copies are isolated, are never selected, and do not change either
+existing library. Windows retains the original password and sealed records;
+Android's separate package requires backup import or local transfer.
 
 | Key | Contents |
 |---|---|
@@ -452,8 +1697,8 @@ cd android && ./gradlew assembleRelease   # -> app/build/outputs/apk/release/
 
 A release carries **three application artifacts plus checksums**, and every
 published one has: the
-`.rcvup` patch, `Rolecraft-Vault-Setup-<v>.exe`, and
-`RolecraftVault-<v>.apk`, accompanied by `SHA256SUMS.txt`. The Android build is
+`.rcvup` patch, `Rolecraft-Setup-<v>.exe`, and
+`Rolecraft-<v>.apk`, accompanied by `SHA256SUMS.txt`. The Android build is
 not optional and not separate —
 `set-version` writes `versionName` and `versionCode` for exactly this reason, and
 `npm run sync` copies whatever is in `web/`, so `build:web` has to have run
@@ -603,31 +1848,7 @@ empty books and covers survive a round trip.
 
 1.173 asks the Filesystem plugin for storage before the first write and `mkdir`s `vault/`. On Android 8–12 the plugin still prompts; without `READ/WRITE_EXTERNAL_STORAGE` (maxSdk 32) in the app manifest that prompt auto-denies and a copy fails immediately. Android 13+ does not need the prompt for app-private files.
 
-## All-character JSON exports (1.261)
-
-The character-library export used to collect every original and thumbnail and
-then JSON.stringify the whole object. Large libraries could exceed the engine's
-single-string limit before a download started. The confirmation callback did not
-observe the rejected promise, so no error appeared. This path now owns a caught,
-visible progress lifecycle, shares the backup busy guard (without updating backup
-health), deduplicates charImgIds, and serializes one record/picture at a time.
-Desktop builds Blob fragments; Android uses the existing public JSON stream.
-Unreadable originals abort rather than producing an apparently complete export.
-Desktop completion text says the download has started, not that disk completion
-was observed. The Electron regression verifies an actual completed download.
-
 ## Public Android exports (1.243, 1.248)
-
-Standard 1.253 makes full backup exports public-Downloads-only. Never silently
-fall back to an app-private file and then advance backup health. The handler's
-entire preparation and write run inside one error boundary, with a single-run
-guard and persistent status. Empty image references are ignored only while
-collecting IDs; the original records remain unchanged in the backup. The shared
-imageIdsOf helper must be top-level: backupInspection is also top-level and
-previously threw on bin records when that helper lived inside RolecraftVault.
-Native finish checks that MediaStore actually published the completed row.
-Worktree builds may reference existing signing material through
-ROLECRAFT_KEYSTORE_PROPERTIES and ROLECRAFT_SIGNING_KEY_PATH without copying it.
 
 An HTML download link is swallowed by the Capacitor WebView, and Capacitor's
 Filesystem enum does not expose modern public Downloads or Pictures
@@ -809,6 +2030,48 @@ coordinate space and the capture is cropped.
 
 ## Graphics modes and theme motion (1.230)
 
+Private 1.272 adds Quality-only theme-derived materials and short compositor
+entrances to Chat and library surfaces. Keep mode geometry, opaque prose surfaces,
+mini portrait framing and the compact keyboard layout unchanged. WritingIndicator
+is the only new repeating decoration: IntersectionObserver gates it to visible
+content, the host pauses on visibility/lock, and Performance/reduced-motion stop
+it. Do not animate bucket images, add perpetual ambient loops or replace privacy
+filters. Forced colours suppress decorative gradients and shadows. The focused
+`test-chat-quality-motion.js` covers these gates with an offline provider stub.
+
+Private 1.268 uses a single-row mobile Chat header. Keep secondary controls and
+context/sync details in Options, not another toolbar or composer row. Test long
+loaded conversations when reopening the same story and switching equal-length
+histories; content-only effect dependencies miss these navigation events. Keep
+keyboard resize following subordinate to the reader's near-bottom state.
+
+Android `captureInput` must stay false for normal writing. CapacitorWebView's
+true branch returns a raw BaseInputConnection instead of the WebView editor
+connection, bypassing the IME's correction and capitalisation flags. HTML
+autocorrect attributes cannot fix that native bypass. Preserve composition
+events and never send a reply for an IME-confirmation Enter key.
+
+Private 1.260 refreshes the shared library and Chat styling without changing the
+storage or sync protocol. Keep mode geometry identical. Text-bearing Chat
+surfaces (including novel reading and message labels) must stay opaque over a
+bucket cover; never solve this by dimming every user's images. Performance
+disables backdrop filters on the Android navigation bar as well as dialogs, but
+must retain privacy image filters. Chat's mode and reduced-motion gates include
+pseudo-elements. `MessageTools` collapses actions on phones and resets to the
+appropriate state when the viewport crosses 760px. The real-renderer
+`test-visual-refresh.js` checks 32 combinations of viewport/theme/graphics mode,
+short keyboard-height viewports, collapsible actions, and opaque novel surfaces.
+It uses a disposable fixture and does not contact a provider or real vault.
+
+Android Chat uses a distinct package identity, so a first install beside the
+standard edition is not an upgrade or automatic library migration. The empty
+Dashboard explains both safe import paths. QR transfer errors previously appeared
+above the receiving controls in a long Settings dialog and could be missed;
+results now scroll into view and announce errors. Rejected preview promises must
+clear the busy state. `verify-private-chat-shell.js --vault-transfer` exercises
+the complete Android receiver against a disposable real Windows shell, including
+binary pictures, but stubs Android native HTTP/filesystem and is not hardware QA.
+
 Quality and Performance are resource contracts, not only CSS choices. Four
 details are easy to miss because the screen can look correct while the browser
 keeps doing unnecessary work:
@@ -905,6 +2168,11 @@ Android versions keep the reliable fitted-window behavior.
 
 ## Testing notes
 
+The private runner disables native Windows occlusion for disposable Electron
+checks. Background build sessions otherwise report `visibilityState: hidden`
+even on focused test windows, suppressing image intersections and delaying
+renderer calls. Never carry these test-only flags into the shipped app.
+
 `npm test` runs everything below, plus `check-integrity` and `scan-js`, and exits
 non-zero if any of them fail. It finds `scripts/test-*.js` by name, so a new
 check is picked up without being registered anywhere. Run one on its own with
@@ -929,6 +2197,9 @@ check is picked up without being registered anywhere. Run one on its own with
 | `test-perf-mode.js` | what performance mode turns off |
 | `test-ui-modes.js` | live theme recolouring, paused animation frames, panel fit at phone width, Performance doing no off-screen film work, and reduced-motion covering pseudo-elements. Read the canvas `fillStyle`, not random anti-aliased pixels. Needs Electron |
 | `test-custom-theme.js` | Custom colour controls, live derived palette, accessible text, phone-width fit and persistence across a reload. Needs Electron |
+| `test-premium-visual.js` | the 1.304 visual contract: accent primaries and focus rings with readable contrast in every theme, segmented Settings choices, text over artwork, Quality-only motion and reduced motion, viewer stacking over the Android bars, phone toolbars and tablet touch targets. Needs Electron |
+| `test-chat-reading-flow-ui.js` | the 1.316 chat contract at 360px, keyboard height and desktop: compact header/composer, layered turn menus and Options, streaming that never moves a reader who scrolled up, jump-to-latest, typing that re-renders no turns, gesture-loaded history, group speaker collapse, and Quality/Performance geometry parity. Needs Electron |
+| `test-chat-panels-ui.js` | the 1.331 panels: group scene summary in the header (no floating strip or stray counters), no permanent preflight row, story-list avatar cluster, sectioned Settings/Scene panels with keyboard tabs and a sticky close, expandable long help text, the docked Scene panel on wide screens, and the model-limit default for chats without a saved context size. Needs Electron |
 | `test-ui-layout-audit.js` | all primary screens, records and editors fitting phone/tablet/desktop/wide viewports; Dashboard hierarchy and picture count; working library card sizes; and five centred Android navigation cells. Needs Electron |
 | `test-device-unlock-screen.js` | a real locked Android render with biometric enrollment, including the unlock action. It catches component-scoped platform flags that only fail for protected vaults. Needs Electron |
 | `test-window-restore.js` | a window restoring onto a display that is still attached |

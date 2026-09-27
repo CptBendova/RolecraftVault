@@ -8,7 +8,6 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
-const isReleaseTag = tag => /^v[0-9]+\.[0-9]+$/.test(tag);
 
 const root = path.join(__dirname, "..");
 /* --shell / --no-shell override the check below; they are pulled out first so
@@ -22,7 +21,7 @@ if (!version) {
 const appJsPath = path.join(root, "app", "app.js");
 const distDir = path.join(root, "dist");
 fs.mkdirSync(distDir, { recursive: true });
-const keyPath = process.env.ROLECRAFT_SIGNING_KEY_PATH || path.join(root, "keys", "private_key.pem");
+const keyPath = path.join(root, "keys", "private_key.pem");
 if (!fs.existsSync(keyPath)) {
   console.error("keys/private_key.pem not found. Copy it from your update kit — see keys/README.txt.");
   process.exit(1);
@@ -52,13 +51,13 @@ function shellChangedSinceLastRelease() {
   let tag;
   try {
     tag = git(["tag", "--list", "v*", "--sort=-v:refname"])
-      .split("\n").map(s => s.trim()).filter(isReleaseTag)
+      .split("\n").map(s => s.trim()).filter(Boolean)
       .find(t => t !== "v" + version);
   } catch { return null; }
   if (!tag) return null;
   let diff;
   try {
-    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html", "app/vault-sync-core.js", "app/vault-sync.js", "app/vault-sync-ui.js", "app/vault-sync-transport.js"]);
+    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html", "app/vault-sync-core.js", "app/vault-sync-review.js", "app/vault-sync.js", "app/vault-sync-ui.js", "app/vault-sync-transport.js", "app/private-sync.js", "app/chat.js", "app/chat-sync-core.js", "app/chat-link-server.js", "app/chat.css", "app/image-generation.js", "app/credential-share.js", "app/provider-balances.js", "app/provider-balances-ui.js"]);
   } catch { return null; }
   const touched = diff.split("\n").filter(l => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
   const real = touched.filter(l => !/^[+-]const FACTORY_BUILD = /.test(l));

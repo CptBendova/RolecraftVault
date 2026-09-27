@@ -36,7 +36,14 @@ contextBridge.exposeInMainWorld("storage", {
   },
 });
 
-contextBridge.exposeInMainWorld("vaultSync", { call: (method, args) => ipcRenderer.invoke("vault-sync", method, args || {}) });
+contextBridge.exposeInMainWorld("vaultSync", {
+  call: (method, args) => ipcRenderer.invoke("vault-sync", method, args || {}),
+  onWake: cb => {
+    const h = (_event, payload) => { try { cb(payload); } catch (_) {} };
+    ipcRenderer.on("vault-sync-wake", h);
+    return () => ipcRenderer.removeListener("vault-sync-wake", h);
+  },
+});
 contextBridge.exposeInMainWorld("auth", {
   status: () => ipcRenderer.invoke("auth-status"),
   setPassword: (pw) => ipcRenderer.invoke("auth-set-password", pw),
@@ -103,4 +110,47 @@ contextBridge.exposeInMainWorld("win", {
 });
 contextBridge.exposeInMainWorld("vaultInfo", {
   encrypted: () => ipcRenderer.invoke("vault-encrypted"),
+});
+
+/* Private Chat edition. The saved API key remains in the main process; this
+   surface can configure it and request a completion but can never read it. */
+contextBridge.exposeInMainWorld("openRouter", {
+  status: () => ipcRenderer.invoke("openrouter-status"),
+  setKey: key => ipcRenderer.invoke("openrouter-set-key", key),
+  clearKey: () => ipcRenderer.invoke("openrouter-clear-key"),
+  models: () => ipcRenderer.invoke("openrouter-models"),
+  speech: request => ipcRenderer.invoke("openrouter-speech", request),
+  voiceSuggest: request => ipcRenderer.invoke("openrouter-voice-suggest", request),
+  director: request => ipcRenderer.invoke("openrouter-director", request),
+  coordinator: request => ipcRenderer.invoke("openrouter-coordinator", request),
+  coordinatorCancel: () => ipcRenderer.invoke("openrouter-coordinator-cancel"),
+  start: request => ipcRenderer.invoke("openrouter-start", request),
+  cancel: id => ipcRenderer.invoke("openrouter-cancel", id),
+  onEvent: cb => {
+    const h = (_event, payload) => { try { cb(payload); } catch (_) {} };
+    ipcRenderer.on("openrouter-event", h);
+    return () => ipcRenderer.removeListener("openrouter-event", h);
+  },
+});
+contextBridge.exposeInMainWorld("chatLink", {
+  status: () => ipcRenderer.invoke("chatlink-status"),
+  configure: options => ipcRenderer.invoke("chatlink-configure", options),
+  exchange: request => ipcRenderer.invoke("chatlink-exchange", request),
+  pause: () => ipcRenderer.invoke("chatlink-pause"),
+});
+/* Private image-provider credentials never leave the native process. */
+contextBridge.exposeInMainWorld("imageGeneration", {
+  status: () => ipcRenderer.invoke("image-generation-status"),
+  setKey: options => ipcRenderer.invoke("image-generation-set-key", options),
+  clearKey: options => ipcRenderer.invoke("image-generation-clear-key", options),
+  generate: request => ipcRenderer.invoke("image-generation-generate", request),
+  cancel: request => ipcRenderer.invoke("image-generation-cancel", request),
+  setUnlocked: state => ipcRenderer.invoke("image-generation-set-unlocked", state),
+});
+contextBridge.exposeInMainWorld("providerBalances", {
+  status: () => ipcRenderer.invoke("provider-balances-status"),
+  refresh: options => ipcRenderer.invoke("provider-balances-refresh", options),
+  cancel: options => ipcRenderer.invoke("provider-balances-cancel", options),
+  openDashboard: options => ipcRenderer.invoke("provider-balances-open-dashboard", options),
+  setUnlocked: state => ipcRenderer.invoke("provider-balances-set-unlocked", state),
 });

@@ -141,7 +141,7 @@ public class DeviceUnlockPlugin extends Plugin {
             byte[] sealed = Base64.decode(prefs().getString(CIPHER_TEXT, ""), Base64.NO_WRAP);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, iv));
-            prompt(call, cipher, "Unlock Rolecraft Vault", result -> {
+            prompt(call, cipher, "Unlock Rolecraft", result -> {
                 try {
                     String secret = new String(result.doFinal(sealed), StandardCharsets.UTF_8);
                     JSObject out = new JSObject();

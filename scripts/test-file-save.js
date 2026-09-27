@@ -178,6 +178,16 @@ const wait = () => new Promise(r => setTimeout(r, 30));
     check("and it says where it went", notices.length === 1 && /backup\.json.*Downloads/.test(notices[0]), notices[0] || "(silent)");
   }
 
+  /* ---- review files must not be hidden in private storage ---- */
+  {
+    const tried = [];
+    const cap = { nativePromise: async (p, m, o) => { tried.push(p + "." + m); if (p === "FileExport") throw new Error("Downloads unavailable"); return {}; } };
+    const { env, FakeBlob } = makeEnv(cap);
+    const api = build(env);
+    const where = await api.saveFile(new FakeBlob(["private review"]), "story-review.json", { downloadsOnly: true });
+    check("review JSON fails visibly instead of hiding outside Downloads", where === false && tried.every(x => x.startsWith("FileExport.")), tried.join(", "));
+  }
+
   /* ---- the phone, when the public folder is refused ---- */
   {
     const tried = [];

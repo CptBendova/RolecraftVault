@@ -73,6 +73,7 @@ check("its page may not fetch anything", /Content-Security-Policy/.test(iIndex) 
 check("and the program it launches is not named by the page", !/setup-launch[\s\S]{0,200}\(_e,\s*\w/.test(iMain));
 
 group("the Android app");
+check("Android uses the normal editor connection for keyboard corrections", JSON.parse(R("mobile/capacitor.config.json")).android.captureInput === false);
 const activity = R("mobile/android/app/src/main/java/com/cptbendova/rolecraftvault/MainActivity.java");
 check("the owner can take Android screenshots", !/addFlags\([^;]*FLAG_SECURE/.test(activity));
 check("Android 13+ app-switcher previews remain private", /setRecentsScreenshotEnabled\(false\)/.test(activity));

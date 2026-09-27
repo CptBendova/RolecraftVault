@@ -1,4 +1,4 @@
-# Pack Imagine crest into app icon, setup icon, installer bitmaps, Android, splash.
+# Pack crest into app and setup icons, Android icons, and splash.
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
@@ -8,14 +8,8 @@ $root = Split-Path -Parent (Split-Path -Parent $brandDir)
 $brand = $brandDir
 $crest = Join-Path $brand "crest-1024.png"
 $setupSrc = Join-Path $brand "src\setup-source.jpg"
-$welcomeSrc = Join-Path $brand "src\welcome-source.jpg"
-$headerSrc = Join-Path $brand "src\header-source.jpg"
 
 function Load-Img($p) { [System.Drawing.Image]::FromFile($p) }
-function New-Bmp($w,$h) {
-  $b = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
-  $b
-}
 function HQ($g) {
   $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
@@ -41,83 +35,18 @@ function Scale-To([System.Drawing.Image]$src, $w, $h) {
 function Save-Png($bmp, $path) {
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
 }
-function Save-Bmp24($src, $path) {
-  $bmp = New-Object System.Drawing.Bitmap $src.Width, $src.Height, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.DrawImage($src, 0, 0, $src.Width, $src.Height)
-  $g.Dispose()
-  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Bmp)
-  $bmp.Dispose()
-}
-
 $navy = [System.Drawing.Color]::FromArgb(10, 14, 28)
-$brass = [System.Drawing.Color]::FromArgb(217, 178, 92)
-$brassDim = [System.Drawing.Color]::FromArgb(156, 117, 48)
-$cream = [System.Drawing.Color]::FromArgb(232, 228, 216)
 
 # --- app icon 256 png ---
 $crestImg = Load-Img $crest
 $icon256 = Scale-To $crestImg 256 256
 Save-Png $icon256 (Join-Path $root "app\icon.png")
-Save-Png $icon256 (Join-Path $brand "icon-256.png")
 
 # --- setup icon crop ---
 $setupRaw = Load-Img $setupSrc
 $setupSq = Crop-SquareNoMark $setupRaw
 $setup1024 = Scale-To $setupSq 1024 1024
-Save-Png $setup1024 (Join-Path $brand "setup-1024.png")
 $setupRaw.Dispose(); $setupSq.Dispose()
-
-# --- welcome: crop center column of the tall-panel render, 164x314 ---
-$welRaw = Load-Img $welcomeSrc
-$cx0 = [int]($welRaw.Width * 0.28)
-$cw = [int]($welRaw.Width * 0.44)
-$welCol = New-Object System.Drawing.Bitmap $cw, $welRaw.Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$gw = [System.Drawing.Graphics]::FromImage($welCol); HQ $gw
-$gw.DrawImage($welRaw, (New-Object System.Drawing.Rectangle 0,0,$cw,$welRaw.Height), (New-Object System.Drawing.Rectangle $cx0,0,$cw,$welRaw.Height), [System.Drawing.GraphicsUnit]::Pixel)
-$gw.Dispose()
-$welRaw.Dispose()
-$welcome = Scale-To $welCol 164 314
-$welCol.Dispose()
-$gWel = [System.Drawing.Graphics]::FromImage($welcome); HQ $gWel
-# title block in the empty lower half
-$titleFont = New-Object System.Drawing.Font "Georgia", 13, ([System.Drawing.FontStyle]::Bold)
-$tagFont = New-Object System.Drawing.Font "Segoe UI", 6.5, ([System.Drawing.FontStyle]::Regular)
-$sf = New-Object System.Drawing.StringFormat
-$sf.Alignment = [System.Drawing.StringAlignment]::Center
-$brassBrush = New-Object System.Drawing.SolidBrush $brass
-$dimBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(180, 217, 178, 92))
-$gWel.DrawString("Rolecraft", $titleFont, $brassBrush, (New-Object System.Drawing.RectangleF 6, 210, 152, 22), $sf)
-$gWel.DrawString("Vault", $titleFont, $brassBrush, (New-Object System.Drawing.RectangleF 6, 230, 152, 22), $sf)
-$gWel.DrawString("PRIVATE  -  OFFLINE", $tagFont, $dimBrush, (New-Object System.Drawing.RectangleF 6, 258, 152, 16), $sf)
-$gWel.Dispose()
-Save-Png $welcome (Join-Path $brand "welcome-preview.png")
-Save-Bmp24 $welcome (Join-Path $root "build\welcome.bmp")
-
-# --- header 150x57: navy, crest left, wordmark right ---
-$header = New-Bmp 150 57
-$gH = [System.Drawing.Graphics]::FromImage($header); HQ $gH
-$gH.Clear($navy)
-$gH.DrawImage($crestImg, 6, 6, 45, 45)
-$hTitle = New-Object System.Drawing.Font "Georgia", 9.5, ([System.Drawing.FontStyle]::Bold)
-$hSub = New-Object System.Drawing.Font "Georgia", 8, ([System.Drawing.FontStyle]::Regular)
-$gH.DrawString("Rolecraft", $hTitle, $brassBrush, 56, 10)
-$gH.DrawString("Vault", $hSub, $dimBrush, 56, 28)
-$gH.Dispose()
-Save-Png $header (Join-Path $brand "header-preview.png")
-Save-Bmp24 $header (Join-Path $root "build\header.bmp")
-
-# --- wordmark logo (horizontal) ---
-$word = New-Object System.Drawing.Bitmap 1024, 320, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$gWo = [System.Drawing.Graphics]::FromImage($word); HQ $gWo
-$gWo.Clear($navy)
-$gWo.DrawImage($crestImg, 40, 24, 272, 272)
-$wTitle = New-Object System.Drawing.Font "Georgia", 48, ([System.Drawing.FontStyle]::Bold)
-$wSub = New-Object System.Drawing.Font "Segoe UI", 16, ([System.Drawing.FontStyle]::Regular)
-$gWo.DrawString("Rolecraft Vault", $wTitle, $brassBrush, 340, 90)
-$gWo.DrawString("Private  -  Offline", $wSub, $dimBrush, 344, 168)
-$gWo.Dispose()
-Save-Png $word (Join-Path $brand "wordmark.png")
 
 # --- splash navy + crest ---
 $splash = Scale-To $crestImg 1024 1024
@@ -173,7 +102,5 @@ foreach ($s in $icoSizes) {
 }
 
 $icon256.Dispose(); $crestImg.Dispose(); $setup1024.Dispose()
-$welcome.Dispose(); $header.Dispose(); $word.Dispose(); $splash.Dispose()
-$titleFont.Dispose(); $tagFont.Dispose(); $hTitle.Dispose(); $hSub.Dispose()
-$wTitle.Dispose(); $wSub.Dispose(); $brassBrush.Dispose(); $dimBrush.Dispose()
+$splash.Dispose()
 Write-Host "packed brand rasters"

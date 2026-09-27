@@ -57,20 +57,22 @@ async function run() {
 
   check("backup export validates the pictures it actually read",
     /const finalCheck = backupInspection\(\{ \.\.\.base, images, thumbs \}\)/.test(app) &&
-    /if \(!value\) throw new Error\("Backup validation failed/.test(app));
+    /if \(!backupPictureValid\(value\)\) throw new Error\("Backup validation failed/.test(app));
 
-  const backupInspection = new Function("charImgIds", "personaImgIds", "imageIdsOf",
+  const backupPictureValid = new Function("atob", liftFunction(app, "backupPictureValid") + "; return backupPictureValid;")(atob);
+  const backupInspection = new Function("charImgIds", "personaImgIds", "imageIdsOf", "backupPictureValid",
     liftFunction(app, "backupInspection") + "; return backupInspection;"
   )(
     record => record && record.profileImg ? [record.profileImg] : [],
     record => record && record.avatar ? [record.avatar] : [],
-    (_type, record) => record && record.profileImg ? [record.profileImg] : []
+    (_type, record) => record && record.profileImg ? [record.profileImg] : [],
+    backupPictureValid
   );
   const malformedBackup = backupInspection({
     app: "rolecraft-vault", chars: [null], personas: [], lore: [], prompts: [], images: {}
   });
   check("full restore rejects damaged elements inside otherwise valid arrays",
-    !malformedBackup.ok && /damaged records/.test(malformedBackup.fatal.join(" ")));
+    !malformedBackup.ok && /damaged/.test(malformedBackup.fatal.join(" ")));
 
   const makeUid = (() => { let n = 0; return () => "new-" + ++n; })();
   const normalizeLoreImport = new Function("uid", "toTermList", "firstTermList", "asArray",

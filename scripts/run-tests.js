@@ -21,9 +21,24 @@ const SHIPPED_JS = [
   "app/app.js",
   "app/main.js",
   "app/preload.js",
+  "app/openrouter.js",
+  "app/image-generation.js",
+  "app/provider-balances.js", "app/provider-balances-ui.js", "web/js/provider-balances-ui.js",
+  "app/credential-share.js",
+  "app/chat-migration.js",
+  "app/chat.js",
+  "app/chat-sync-core.js",
+  "app/chat-group-coordinator.js",
+  "app/chat-knowledge-lanes.js", "app/chat-draft-handoff.js", "app/chat-draft-handoff-controller.js", "app/chat-story-ledger.js",
+  "web/js/chat-sync-core.js",
+  "web/js/chat-group-coordinator.js",
+  "web/js/chat-knowledge-lanes.js", "web/js/chat-draft-handoff.js", "web/js/chat-draft-handoff-controller.js", "web/js/chat-story-ledger.js",
+  "app/chat-link-server.js",
   "web/js/rolecraft-app.web.js",
   "web/js/rolecraft-web-platform.js",
+  "web/js/rolecraft-chat.js",
   "installer/main.js",
+  "installer/identity.js",
   "installer/preload.js",
   "mobile/src/rc-transfer.js",
 ];
@@ -39,6 +54,10 @@ function electronExe() {
 }
 
 const jobs = [];
+/* In a background Windows build session, native occlusion can mark even a
+   focused test window hidden, stopping IntersectionObserver and frame work.
+   These flags belong to disposable tests only, never the shipped app. */
+const TEST_BROWSER_ARGS = ["--disable-gpu", "--no-sandbox", "--disable-features=CalculateNativeWinOcclusion", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding"];
 
 jobs.push({
   name: "check-integrity",
@@ -73,7 +92,7 @@ for (const f of fs.readdirSync(p("scripts")).filter(f => /^test-.*\.js$/.test(f)
        Chromium sandbox even though the page itself is fine. These are test
        processes over local files only; isolate their profile and keep those
        host limitations from turning every UI assertion into a false failure. */
-    args: el ? ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-test-" + process.pid + "-" + f), p("scripts", f)] : [p("scripts", f)],
+    args: el ? [...TEST_BROWSER_ARGS, "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-test-" + process.pid + "-" + f), p("scripts", f)] : [p("scripts", f)],
     electron: el,
     skip: el && !exe ? "Electron is not installed (npm approve-scripts electron)" : null,
   });
@@ -84,7 +103,7 @@ for (const mode of [null, "1"]) {
     name: "test-update-assets" + (mode ? " (NO_BASE=1)" : ""),
     what: mode ? "a shell older than 1.192, where a bare path must fail" : "the crest under an active patch",
     cmd: exe,
-    args: ["--disable-gpu", "--no-sandbox", "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-assets-" + process.pid + "-" + (mode || "base")), p("scripts", "test-update-assets.js")],
+    args: [...TEST_BROWSER_ARGS, "--user-data-dir=" + path.join(os.tmpdir(), "rcv-electron-assets-" + process.pid + "-" + (mode || "base")), p("scripts", "test-update-assets.js")],
     electron: true,
     env: mode ? { NO_BASE: mode } : {},
     skip: exe ? null : "Electron is not installed (npm approve-scripts electron)",

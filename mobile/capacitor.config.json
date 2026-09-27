@@ -1,11 +1,11 @@
 {
-  "appId": "com.cptbendova.rolecraftvault",
-  "appName": "Rolecraft Vault",
+  "appId": "com.cptbendova.rolecraftvault.chat",
+  "appName": "Rolecraft",
   "webDir": "www",
   "android": {
     "allowMixedContent": true,
     "backgroundColor": "#0a0e1c",
-    "captureInput": true
+    "captureInput": false
   },
   "server": {
     "androidScheme": "http",

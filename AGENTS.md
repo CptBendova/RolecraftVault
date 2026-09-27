@@ -1,5 +1,23 @@
 # Rolecraft Vault - Codex working agreement
 
+## Public Rolecraft transition (owner instruction, 27 September 2026)
+
+The owner explicitly authorized publishing the former private Chat edition to
+the existing public `CptBendova/RolecraftVault` repository and replacing its
+standard `master` source. This supersedes the 5 September local-only boundary
+recorded in older project notes. Preserve the existing public history; do not
+force-rewrite it. The former private Chat build is now the single user-facing
+Rolecraft app. Its version stays monotonic for installed-copy compatibility.
+Never publish local vault data, chat exports, attached user documents, API keys,
+signing keys, keystores, passwords, caches, or unreviewed screenshots. Release
+source and built installers/APKs only after checking the exact files and assets.
+The Windows profile remains `%APPDATA%\Rolecraft Vault Chat` and the Android
+application ID remains `com.cptbendova.rolecraftvault.chat`; the visible name
+must not be used to rename or reset either data identity. The older standard
+Android app has separate storage and requires an explicit backup or transfer
+before removal.
+The publication checklist below applies to current public Rolecraft releases.
+
 This is the operational guide for Codex and other coding agents working in this
 repository. Read it before changing code. `CLAUDE.md` remains the detailed
 historical record and explains why many of these rules exist; consult the
@@ -8,8 +26,8 @@ transfers, Android, the installer, or release engineering.
 
 ## Mission
 
-Rolecraft Vault is a private, offline-first roleplay library for characters,
-personas, lorebooks, and prompts. It ships as:
+Rolecraft is a private, offline-first roleplay library and chat app for
+characters, personas, lorebooks, and prompts. It ships as:
 
 - a Windows Electron application;
 - an embeddable browser edition; and
@@ -70,18 +88,138 @@ launch after each behavior change.
 
 The interface must never initiate network traffic. Do not add `fetch`,
 `XMLHttpRequest`, `WebSocket`, `sendBeacon`, remote scripts, or remote assets to
-`app/app.js` or the generated web bundle. Networking belongs only in
-`app/main.js`, `app/vault-sync-transport.js`, and the native Android shell, for
-user-initiated LAN transfer and explicitly paired automatic LAN sync.
+`app/app.js`, `app/chat.js`, or the generated web bundle. Networking belongs in
+the privileged shell. The current Rolecraft app uses `app/openrouter.js` and the
+Android `OpenRouterPlugin` only for explicit Send actions to the fixed OpenRouter
+HTTPS endpoint. Never put an OpenRouter key or network primitive in renderer
+code. The older standard edition did not include the provider bridge.
 
-Automatic sync is separate from passive transfer. Its native shell serves
-immutable encrypted chunks and never writes vault records for a peer. Initial
-merges need a local preview/approval. The local apply uses compare-and-swap,
-preserves concurrent writing as conflict copies, and keeps deletions recoverable.
-Pairing secrets stay in OS-protected storage, never vault exports. Pause on lock
-or Android backgrounding; remember the group and rediscover changed local IPs.
+Owner-requested private image generation (1.283) also permits explicit Generate
+actions through app/image-generation.js and Android ImageGenerationPlugin to
+fixed api.openai.com and api.x.ai HTTPS image endpoints only. Selected reference
+bytes and the typed prompt may be uploaded after disclosure. Provider keys stay
+OS-protected outside vault records, exports and sync. Never follow image URLs or
+redirects; require bounded base64 PNG/JPEG/WebP responses. Lock/background cancels
+local generation. The owner's 1.288 request permits an explicit Generate N and
+save action: disclose the paid count, process a bounded sequential queue and
+append each result through existing image storage and conditional character
+persistence. Stop after a failed generation or save; retain earlier successes
+and allow retrying an unsaved preview without another paid call. Never replace
+originals or automatically retry provider requests.
+
+Private provider allowance checks (1.288) permit an explicit Refresh through
+app/provider-balances.js and Android ProviderBalancesPlugin to the fixed
+OpenRouter /api/v1/key endpoint. Use only the protected normal inference key;
+never collect management/admin keys. A key allowance is not an account balance.
+Keep results ephemeral, clear/cancel on lock/background, and use fixed native
+billing links for actual balances and providers without an ordinary-key API.
+
+Owner-requested private credential sharing (1.287) is a separate native-only,
+explicit transfer over the remembered LAN group. A selected provider may be
+offered for five minutes to trusted group members; the receiver must explicitly
+import into OS-protected storage, never overwrite a saved key, and never expose
+the key to the renderer. Clear offers on lock/background/pause and never persist
+them. This exception does not permit API keys in ordinary sync chunks, vault
+records, snapshots, backups, pairing QRs, logs or release artifacts.
+
+Private Chat also has an explicitly paired, persistent LAN-only chat link in
+`chat-link-server.js` and Android `ChatLinkPlugin`. It is separate from the
+passive vault-transfer protocol. Never copy API keys or pairing secrets in chat
+snapshots, acknowledge a peer before local persistence, or discard a concurrent
+revision. Preserve `_sync` ancestry and recoverable deletion records. Pause on
+lock and leave Android background locking intact. Only paired local devices may
+use the bridge; public source availability does not make the sync service public.
+Local `chats:all` saves must compare-and-swap against the exact last durable
+text. After a conflict, retain unsaved edits and merge on explicit Retry save;
+never blindly overwrite the peer version. ScenePanel's own Retry scene save
+must use that same merge-aware recovery, then verify the requested scene fields
+still belong to the target chat before closing; do not call blocked `persist`
+again or claim a separate conflict copy updated the original. Keep a failed full-sync UI reload
+pending until it succeeds, and do not rewrite Chat for ancestry-only merges.
+Automatic memory during Send is bounded to four paid batches; each completed
+checkpoint is durable, and an unfinished catch-up pauses before any roleplay
+request. A proof-validated shared lane may be reused read-only for reply
+context only when every active turn is shared. Never timeout and abandon a
+durable Chat write whose eventual commit could race the in-memory ancestry.
 
 Run `npm run check` after renderer edits; its no-network sweep is mandatory.
+
+Explicitly paired automatic LAN sync uses `app/vault-sync-transport.js` and the
+Android `VaultSyncPlugin`, separate from passive transfer. Native peers serve
+immutable encrypted chunks, never directly write live vault records. Initial
+merges require local approval; compare-and-swap protects active editing and
+conflicts keep copies. Stop on lock/backgrounding and remember pairing in OS
+secure storage. Story data uses a separate adapter and optional index; publish
+only reviewed source and release artifacts, never users' encrypted sync records.
+Chat saves may wake the local sync loop only after encrypted storage succeeds.
+Native peers may send a signed, content-free UDP wake after a durable stories1
+head update; the receiver must still fetch and validate the authenticated index.
+Keep periodic polling for missed wakes, reject replays and locked/background
+traffic, and never treat a wake as a delivery acknowledgement. Chat-only head
+updates must preserve the existing library and picture references; if the base
+head is unavailable or differs, fall back to the full retained publication.
+In private manual-refresh mode, keep an unlocked paired device passively serving
+its latest encrypted head and stage durable local Chat saves without polling or
+merging peers. Renew the native serving lease while open, stop on lock/background,
+and fetch remote changes only on explicit Refresh now. A sync reload must not be
+acknowledged if its Chat read was skipped, failed, or raced with a local save.
+
+Owner-requested private 1.296 screen-off sync is the narrow background exception.
+An explicit visible confirmation starts an Android dataSync foreground service
+and keeps this vault session unlocked in memory. Require native active-service
+confirmation, visible Stop notification, bounded heartbeat/power/session leases,
+and Android timeout handling. Explicit lock, Stop, app closure or expiry revokes
+native access immediately; never auto-unlock or restart after process death.
+Normal background locking remains when this session is not active. Provider
+requests and credential offers/imports still cancel/refuse in the background.
+Private 1.300 Story Director may call OpenRouter's fixed Jev Decisions endpoint
+only for an explicit per-conversation opt-in after a completed reply and only
+when that conversation has disabled Require zero data retention. Bound the
+scene excerpt, use the protected inference key, keep scores local, cancel on
+lock/background, and never mutate transcripts or auto-reroll paid replies.
+Jev nudges belong below permanent roleplay directions and must not enter memory.
+Private 1.308 AI group coordination is a separate per-conversation opt-in. Its
+native OpenRouter chat-completion request uses the saved inference key and the
+conversation's existing zero-retention choice after the final completed group
+reply. Bound the branch scene and memory excerpt; never send private sceneEvents
+or manual per-speaker knowledge. Validate output and current leaf/scene before
+applying AI-only recap, presence, inferred knowledge or next speaker. Preserve
+manual notes and branch checkpoints, offer CAS-safe undo, cancel on lock or
+background, and never auto-send another paid roleplay reply.
+Private 1.309 group-cost controls must not silently change the chosen roleplay
+model or privacy policy. Extra coordinator checks are deduplicated and may use a
+separately chosen model; changing scene facts remains CAS-guarded. Provider costs
+are recorded only when actually reported, with missing values shown as unknown.
+Prompt-cache routing keeps a stable opaque conversation ID but never relaxes ZDR.
+Attached lore entries with no trigger remain inactive; only whole-word matches
+in recent turns activate them. Existing group lore scope remains compatible,
+while newly created groups use selected-speaker lore by default.
+Private 1.310 may use a separately selected memory model without changing the
+roleplay model or conversation privacy choice. Catalog-based reply and queue
+costs are estimates, not charges; unavailable prices stay unknown. Conversation
+search is offline across saved branches and must not alter transcripts or memory.
+AI-scene corrections and selective application affect only AI-inferred fields
+and retain current-scene CAS and manual-note protection. Prompt cache reports
+use only provider-reported read/write usage; absent fields are unavailable,
+not zero. Keep changing scene facts after the stable priority-1/2 prefix without
+weakening that prompt hierarchy.
+Private 1.318 character voice playback uses the existing OS-protected OpenRouter
+key only on an explicit Play voice action. Gemini 3.8 Flash TTS rejects MP3:
+request `response_format: "pcm"`, accept only bounded PCM or valid WAV, and
+wrap raw 24 kHz mono signed 16-bit little-endian PCM in WAV for playback. Do not
+retry a paid voice request automatically or save the audio in the vault.
+Native photo staging may transiently receive derived vault keys through the local
+bridge to read only the exact picture pointer under vault/. Erase key buffers,
+authenticate before staging, preserve exact hashes, verify the current pointer
+afterwards, and never persist plaintext photos or keys in sync caches.
+
+Private 1.294 can select a new primary without replacing the original group
+identity. Its authenticated primaryPreference register gates the single-library
+policy; old peers must stop index exchanges after activation. Normal causal edits
+remain two-way. Concurrent library alternatives go to recoverable Bin records,
+whose pictures and records must commit before replacing a visible source card.
+Legacy conflict cleanup is explicit review with a full-record/state CAS. Preserve
+reviewed character syncAliases so existing chat identities remain resolvable.
 
 ### Treat images as user data
 
@@ -181,6 +319,14 @@ changing this protocol.
 - A backup is verified only after every referenced live, cover, and bin picture
   has actually been read. Array-shaped record lists still need every element
   validated before an atomic restore is allowed to replace the vault.
+- Refuse full-backup restore while native device sync is paired. After a
+  standalone restore, clear old sync ancestry and the backup-export timestamp
+  in the same atomic replacement; re-pairing and merge approval are explicit.
+- Private Chat memory checkpoints store incremental additions, while replies
+  resolve their complete ancestry. Correcting earlier memory must not leave a
+  later copied summary stale or erase an ambiguous legacy descendant. A peer's
+  unchanged conversation may be reused only after its full snapshot was
+  validated; an interrupted manifest download cannot enter that cache.
 - `GUIDE` is shared by all editions. Mark Windows-only features clearly, and do
   not use em dashes anywhere inside the guide text.
 - Runtime asset paths in `app.js` use `ASSET_BASE`, never bare relative paths.
@@ -207,8 +353,21 @@ changing this protocol.
 - Exercise the locked Android screen with `deviceUnlockSet: true`. `LockScreen`
   cannot read platform constants local to `RolecraftVault`; a clean unprotected
   profile never renders that branch and will miss a release-blocking crash.
+- Visual changes (1.304) stay paint-only between Quality and Performance. Primary
+  actions and focus rings follow the theme accent; text over artwork in Light and
+  Custom uses `--art-accent`; touch sizing keys off `.phone` so Android tablets
+  wider than 760px keep 48px targets; picture viewers must cover the Android
+  bars. Run `scripts/test-premium-visual.js` after changing themes or CSS.
 
 ## Editing and test strategy
+
+Owner preference (20 September 2026): keep verification proportionate and fast.
+For private updates, run the relevant regression checks and mandatory offline
+check, then verify affected build payloads and a brief packaged-app launch.
+Do not routinely repeat the entire app/UI suite for every update. Use broader
+coverage only when the affected areas justify it or the owner requests it.
+Keep encryption, data-preservation, compatibility and lock checks for changes
+that touch those boundaries; do not weaken assertions just to shorten a run.
 
 Use the smallest safe patch. Do not overwrite unrelated work, normalize an
 entire file, or run destructive Git commands to make the tree clean.
@@ -303,8 +462,8 @@ Then:
 7. create and **publish** a GitHub Release for that tag, marked Latest;
 8. attach all three application artifacts plus their checksum file:
    - `Rolecraft-update-<version>.rcvup`
-   - `Rolecraft-Vault-Setup-<version>.exe`
-   - `Rolecraft-Vault-<version>.apk`
+   - `Rolecraft-Setup-<version>.exe`
+   - `Rolecraft-<version>.apk`
    - `SHA256SUMS.txt`
 9. verify the public page lists those assets and its digests match the local
    builds; and
@@ -324,7 +483,8 @@ A code task is done only when:
 - the root cause is fixed in the real implementation;
 - relevant editions are updated;
 - a regression test covers the failure where practical;
-- focused checks and `npm test` pass;
+- focused checks pass; broader suites run when justified by the changed areas
+  (the public release checklist still applies to public publication);
 - affected UI is smoke-tested with a disposable profile;
 - generated bundles are refreshed when their source changed;
 - line endings and offline/security invariants remain intact; and

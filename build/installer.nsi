@@ -1,9 +1,9 @@
 ; Rolecraft Vault — single-file wrapper around the HD Electron setup UI.
 ; This script has no wizard pages. It extracts the setup app to a temp folder
 ; and runs it elevated. The window the person sees is installer/index.html.
-!define APP_NAME "Rolecraft Vault"
+!define APP_NAME "Rolecraft"
 !define COMPANY "Rolecraft"
-!define VERSION "1.261"
+!define VERSION "1.336"
 
 SilentInstall silent
 AutoCloseWindow true
@@ -15,7 +15,7 @@ SetCompressor /SOLID lzma
 SetDatablockOptimize on
 
 Name "${APP_NAME} Setup"
-OutFile "..\dist\Rolecraft-Vault-Setup-${VERSION}.exe"
+OutFile "..\dist\Rolecraft-Setup-${VERSION}.exe"
 Icon "setup-icon.ico"
 UninstallIcon "..\app\icon.ico"
 
@@ -26,11 +26,11 @@ VIAddVersionKey "CompanyName" "${COMPANY}"
 VIAddVersionKey "LegalCopyright" "${COMPANY}"
 VIAddVersionKey "FileVersion" "${VERSION}.0.0"
 VIAddVersionKey "ProductVersion" "${VERSION}.0.0"
-VIAddVersionKey "OriginalFilename" "Rolecraft-Vault-Setup-${VERSION}.exe"
+VIAddVersionKey "OriginalFilename" "Rolecraft-Setup-${VERSION}.exe"
 
 Section
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
-  File /r "..\dist\Rolecraft-Setup-runtime\*.*"
-  ExecWait '"$PLUGINSDIR\Rolecraft Vault Setup.exe"'
+  File /r "..\dist\Rolecraft-Chat-Setup-runtime\*.*"
+  ExecWait '"$PLUGINSDIR\Rolecraft Setup.exe"'
 SectionEnd

@@ -1,9 +1,9 @@
 {
-  "name": "rolecraft-vault-setup",
-  "productName": "Rolecraft Vault Setup",
-  "version": "1.261",
+  "name": "rolecraft-vault-chat-setup",
+  "productName": "Rolecraft Setup",
+  "version": "1.336",
   "private": true,
   "license": "SEE LICENSE IN ../LICENSE",
-  "description": "HD installer for Rolecraft Vault",
+  "description": "Private installer for Rolecraft",
   "main": "main.js"
 }

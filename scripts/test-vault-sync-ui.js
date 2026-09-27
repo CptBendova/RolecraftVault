@@ -22,10 +22,10 @@ app.whenReady().then(async()=>{
   await win.webContents.executeJavaScript(`(()=>{
     const container=document.querySelector('.vault-sync-panel').parentElement;container.replaceChildren();
     window.__approved=false;const engine={supported:true,approve:()=>window.__approved=true,invite:async()=>{},configure:async()=>{},retry:()=>{}};
-    ReactDOM.createRoot(container).render(React.createElement(window.RolecraftSyncPanel,{engine,status:{settings:{enabled:true,device:'phone',primary:'tablet'},message:'Pairing remembered',phase:'preview',preview:{id:'preview',added:8,changed:3,removed:0,conflicts:2},code:'RCVSYNC1.'+'a'.repeat(400),peers:[{id:'tablet',label:'Primary tablet',online:true}]}}));
+    ReactDOM.createRoot(container).render(React.createElement(window.RolecraftSyncPanel,{engine,status:{settings:{enabled:true,device:'phone',primary:'tablet'},message:'Pairing remembered',phase:'preview',preview:{id:'preview',added:8,changed:3,removed:0,conflicts:2},code:'RCVSYNC1.'+'a'.repeat(400),peers:[{id:'tablet',label:'Primary tablet',online:true,error:'Update this paired device to the latest private Chat app to sync conversations.'}]}}));
   })()`);await sleep(150);win.setSize(360,800);await sleep(150);
-  const fit=await win.webContents.executeJavaScript(`(()=>{const p=document.querySelector('.vault-sync-panel');return {overflow:p.scrollWidth>p.clientWidth,code:!!p.querySelector('textarea[aria-label="Pairing code"]'),preview:p.textContent.includes('2 preserved conflict copies')};})()`);
-  assert(!fit.overflow&&fit.code&&fit.preview,JSON.stringify(fit));
+  const fit=await win.webContents.executeJavaScript(`(()=>{const p=document.querySelector('.vault-sync-panel');return {overflow:p.scrollWidth>p.clientWidth,code:!!p.querySelector('textarea[aria-label="Pairing code"]'),preview:p.textContent.includes('2 preserved conflict copies'),peerWarning:p.textContent.includes('Primary tablet: Update this paired device')};})()`);
+  assert(!fit.overflow&&fit.code&&fit.preview&&fit.peerWarning,JSON.stringify(fit));
   await win.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Approve merge and start automatic sync').click()`);
   assert(await win.webContents.executeJavaScript('window.__approved'));
   console.log("PASS phone invitation and explicit merge approval are visible and usable");app.exit(0);

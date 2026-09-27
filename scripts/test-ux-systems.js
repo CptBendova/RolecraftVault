@@ -71,7 +71,13 @@ check("Windows Hello fails closed through the OS verifier", main.includes("UserC
 const updateFileArg = vm.runInNewContext("(" + functionSource(main, "updateFileArg") + ")", { path });
 check("only .rcvup arguments are selected", updateFileArg(["app.exe", "C:\\tmp\\good.rcvup"]) === "C:\\tmp\\good.rcvup" && updateFileArg(["app.exe", "bad.json"]) === null);
 check("a second launch forwards the update to the running app", main.includes('app.on("second-instance", (_event, commandLine)') && main.includes("openUpdateFile(updateFile, win)"));
-check("the installer registers open and cleans it up on uninstall", installer.includes('RolecraftVault.Update\\\\shell\\\\open\\\\command') && installer.includes("Remove-Item -LiteralPath 'HKLM:\\\\Software\\\\Classes\\\\.rcvup'"));
+const privateChatInstaller = installer.includes('const { PRODUCT_NAME, LEGACY_ID, APP_EXE');
+check(privateChatInstaller
+  ? "the private Rolecraft installer does not claim the standard update association"
+  : "the installer registers open and cleans it up on uninstall",
+  privateChatInstaller
+    ? !installer.includes("writeUpdateAssociation(dest);") && !installer.includes("Remove-Item -LiteralPath 'HKLM:\\\\Software\\\\Classes\\\\.rcvup'")
+    : installer.includes('RolecraftVault.Update\\\\shell\\\\open\\\\command') && installer.includes("Remove-Item -LiteralPath 'HKLM:\\\\Software\\\\Classes\\\\.rcvup'"));
 check("the renderer receives file results even during startup", preload.includes("lastUpdateFileResult") && preload.includes("updateFileListeners"));
 
 if (failed) {

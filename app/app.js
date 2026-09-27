@@ -7,7 +7,7 @@ const {
 } = React;
 
 /* ============================================================
-   Rolecraft Vault — a private library for roleplay characters,
+   Rolecraft — a private library and chat for roleplay characters,
    personas, lorebooks and prompts. Data persists via storage.
    Design: deep-ink archive, serif display, brass accents.
    ============================================================ */
@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.261";
+const APP_VERSION = "1.336";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,35 +26,260 @@ const APP_VERSION = "1.261";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.261",
-  notes: ["Exporting all characters now shows persistent progress and readable errors instead of closing silently. Pictures are packaged individually rather than turning the entire library into one enormous JSON string. Missing pictures stop the export safely, and repeated clicks cannot start competing exports. Character exports do not mark a full backup as completed."]
+  heading: "1.336 (private Rolecraft)",
+  notes: ["Fixed Chat rejecting OpenRouter latest-model aliases such as ~deepseek/deepseek-pro-latest with 'The chat request is invalid'. Roleplay replies, memory model choices, AI group coordination and paired sync now accept this official model ID on Windows and Android. The existing conversation and model choice are preserved; regenerate a previously failed reply after installing over your current app. No API request was sent for replies blocked by the old local validation."]
 }, {
-  heading: "1.260",
-  notes: ["Saving a lorebook or prompt collection name without changing it now leaves its cover and settings intact. Empty rename submissions also do nothing.", "Duplicating characters/personas and using saved templates now preserve custom section order while assigning fresh section IDs. Character variants receive fresh nested section IDs and keep their own ordering too. The original records and pictures stay untouched.", "Native lorebook and prompt exports now re-import titled placeholders and picture-only entries even when their writing is empty. Their attached pictures and blur settings are retained instead of the entries being silently skipped. These fixes apply to Windows and Android."]
+  heading: "1.335 (private Rolecraft)",
+  notes: ["Chat's Sync conflict review can now move every live conflict copy to Recently deleted in one confirmed action, including copies on other review pages. The original stories stay untouched, and the copies can be restored. The action waits for pending saves and refuses to remove a copy that changed during review. Install this private update over your existing Windows and Android apps; do not clear app data."]
 }, {
-  heading: "1.259",
-  notes: ["Android now allows screenshots. Android 13 and newer still hide app-switcher previews; screenshots you save are outside the encrypted vault. Install the updated APK over the existing app without uninstalling. Windows behaviour is unchanged."]
+  heading: "1.334 (private Rolecraft)",
+  notes: ["Fixed Chat's sync conflict review on busy devices. Moving a selected alternate to Recently deleted now waits for a queued draft save, checks that the same version is still selected, and preserves the original story. The review opens eight large copies at a time so Android does not compare and render every transcript at once.", "Three devices can now safely add different turns to the same saved story without creating separate conflict chats when their shared starting messages are proven identical. Timestamp-only differences no longer create a copy. Genuine competing edits remain recoverable, while any new conflict copies stay linked to the original instead of accumulating nested conflict names. Existing copies are not silently deleted. Install over the existing private app on each device; do not clear app data. This update is not published publicly."]
 }, {
-  heading: "1.258",
-  notes: ["Automatic sync no longer repeatedly prepares missing optional thumbnail previews. Original pictures remain required and verified.", "Picture preparation always reaches its final count, and completed sync clears old progress counts instead of appearing stuck near the end. Windows and Android share the same fix."]
+  heading: "1.333 (private Rolecraft)",
+  notes: ["Device sync reconnects reliably. Every lock, Android app switch or restart used to move this device to a new network port and forget where its paired devices were, so they could only find each other again through automatic discovery, which many routers, Android phones and Windows firewalls block. Devices now keep one port and remember each other's last verified address, and the old invitation address can no longer replace a newer one. On Windows the connection listens on every local network adapter, so Hyper-V, WSL, VMware, VirtualBox and VPN adapters no longer hide the real Wi-Fi.", "Sync problems are named plainly: a device that is offline, locked or in the background, not running Rolecraft, re-paired with a different group, or whose clock is more than two minutes off. When one device can reach another but not the reverse, the device that needs its Windows firewall or network setting changed is told so. Absent devices are detected in about three seconds instead of stalling each pass.", "Fixed three sync faults found in the audit: Refresh only when I choose stopped this device serving its saved chats to others, a draft handoff could leave manual refresh waiting, and pictures from the fast chat path could be discarded from the local sync cache.", "Settings has a row of sections (Appearance, Security, Sync, Backup, Help) that stays at the top while you scroll, and device sync is its own Sync section instead of sitting inside Backup. The sync spinner opens it directly.", "The Sync section was rebuilt: a status card with Sync now and when this device last synced, a list of paired devices with their connection state and retry time, Add a device with a QR that counts down and is withdrawn when it expires, Options, a Can't see a device? checklist with a network check, and Advanced for the primary device, conflict review and leaving the group, which now asks you to confirm."]
 }, {
-  heading: "1.257 — current",
-  notes: ["First sync now saves completed records in small checkpoints, after each record's originals are verified. Text-only records can appear before the rest of the pictures, and interrupted picture preparation is remembered.", "A small local or remote writing edit no longer discards completed first-sync work. Initial approval is remembered while the remaining records resume; concurrent edits and picture collisions remain protected.", "A compact sync spinner replaces the large library banner. Open its details button for full progress in Settings. The connection lease stays renewed during long preparation while the app remains open and unlocked.", "Install the full Windows installer or update the signed APK in place. Existing library data and remembered pairing are preserved."]
+  heading: "1.332 (private Rolecraft)",
+  notes: ["Chat now has a Sync conflict review in the story list. It finds both current and older conflict-copy formats even if their titles were renamed, compares the original and alternate story's active turns and recent messages, and opens either version for inspection. You can move an individual copy to Recently deleted after confirmation; its transcript remains recoverable, the original is untouched, and a copy changed during review must be checked again before removal. This private update preserves existing app data and is not published publicly."]
 }, {
-  heading: "1.256 — current",
-  notes: ["Windows no longer decrypts entire pictures to check the local sync cache, and sync-bookkeeping saves no longer rebuild the full vault folder. Large picture checks run in small yielding batches, with less frequent progress repaints.","A non-blocking Device sync banner shows preparation and receiving progress while you continue using the library. Actual incoming record replacements retain their guarded saving screen and atomic commit.","The primary is only the starting library. Once a device has completed its first sync, it can help another device join even if the original tablet or computer is offline. Existing devices continue as equal peers; group identity and stored data are preserved.","Windows users need the full 1.256 installer for the startup fix. Android receives progress and equal-peer improvements in the signed APK. Install over the existing app without uninstalling. Android background suspension and locking still pause sync."]
+  heading: "1.331 (private Rolecraft)",
+  notes: ["Chat settings and the Scene panel are now organised into sections instead of one very long page. Conversation settings open on Story, with Writing, Memory, Usage, Connection and Export one tap away; Connection settings from the story list open straight on Connection. The Scene panel splits into Scene, AI & rules and Memory, and each character's presence and knowledge notes now fit in one compact card. Long explanations show a short preview with More, and the close button stays visible while you scroll.", "Group chats are tidier. The scene and cast summary moved into the header: tap the title on a phone, or the scene chip on Windows, to see who is present and who replies next. It no longer floats over the story or shows a stray 000. The permanent What they will see row above the reply box is gone; that preview is in the speaker picker. Group stories in the list show a small portrait cluster instead of a clipped column.", "Fixed the docked Scene panel on wide Windows screens, which could open on the wrong side and run off the screen; it now sits beside the story while you keep writing. Older chats without a saved context size show Use model limit instead of an empty custom box. Retry scene save now uses the protected Chat recovery path after a failed write, while keeping an alternate-device conflict for review. Existing chats, branches, memories and provider settings are preserved; install over the existing private app."]
 }, {
-  heading: "1.255 — current",
-  notes: ["Pair devices using a full-size QR on Windows, phones and tablets, with an offline camera reader and Scan QR image fallback. A computer can show its own join QR for a device already in your group to scan, with confirmation on the computer before it joins.","Refresh pairing QR adds another device at any time without leaving the group, even while pictures are preparing. Only the invitation expires after ten minutes; remembered group membership does not. Timestamp-only character and persona saves no longer create new conflict copies; genuinely different writing and pictures remain preserved.","Install the full Windows installer for the new native pairing support, or update the signed Android APK in place. Existing libraries and group membership are preserved. The in-app guide now explains QR pairing, refreshing expired invitations and safe conflict copies."]
+  heading: "1.330 (private Rolecraft)",
+  notes: ["Fixed Chat opening during a burst of Android sync replacements and made Retry opening Chat return to the conversation. Chat saves now use compare-and-swap so a late local save cannot overwrite a newer synced transcript; Retry save preserves divergent stories as recoverable copies. Sync avoids rewriting Chat for ancestry-only changes, retries a failed screen reload after durable full sync, and publishes late local Chat saves in manual mode. The Windows Chat save path stays atomic without cloning the entire vault. Group replies no longer silently run dozens of paid memory batches: shared characters can reuse verified shared memory for the current reply, automatic preparation stops after four saved batches per Send, and a stalled provider reply gets a clear timeout. Android also rejects a reply that could not enter its native worker queue. Install over the existing private app on each paired device; do not clear app data. This update is not published publicly."]
 }, {
-  heading: "1.254 — current",
-  notes: ["Automatic device sync can start from your most up-to-date phone, tablet or Windows computer. Pair each device once in Settings; the group is remembered securely and devices rediscover each other on the local network without new codes.", "The first comparison asks you to approve its merge. Unique records are retained, conflicting writing is preserved as separate copies, and later edits can travel in either direction. Synced record removals stay recoverable in the bin; sync never deletes picture files. Privacy blur marks travel with the library while device settings stay local.", "Transfers use encrypted, verified chunks and reuse completed downloads after interruptions. Incoming records are saved together only after their pictures arrive and only if local editing has not changed the library. Sync pauses while locked or Android is in the background, and resumes when open and unlocked. This is not a backup: keep periodic exports.", "Windows requires the full 1.254 installer for the new native sync transport. Install the Android APK over the existing standard app without uninstalling. Pair on the same private network and allow the Windows app through the private-network firewall if prompted. The guide includes the setup and recovery steps."]
+  heading: "1.329 (private Rolecraft)",
+  notes: ["Fixed DeepSeek V4.1 Flash memory compaction rejecting a completed structured history because the model omitted or miscounted a self-reported processed-message field. Memory requests now ask only for the chronological history, and a valid completed history can save without relying on that unreliable count. Incomplete, malformed, empty or oversized summaries still remain unsaved; the full transcript, earlier memory and paused group draft are preserved. Install over the existing private Windows or Android app; it is not published publicly."]
 }, {
-  heading: "1.253",
-  notes: ["Backup export now has a persistent progress panel, picture counts and a final filename and location. Errors remain visible instead of disappearing after Preparing backup. Repeated taps cannot start competing backups.", "Fixed backup failures caused by empty picture references and a bin-image helper that was out of scope. Damaged records and unreadable pictures stop safely with a visible error; existing library data is never rewritten by export.", "Android full backups must finish in public Downloads. A failed Downloads write no longer silently falls back to hidden app storage or marks the backup reminder as successful. Install this APK over the standard app without uninstalling to retain its library."]
+  heading: "1.328 (private Rolecraft)",
+  notes: ["DeepSeek V4.1 Flash memory summaries now request a structured history response instead of depending on an exact end-of-text marker. The app verifies the provider finished normally and the response covers the full batch before saving any memory. OpenRouter routing must support the requested non-thinking and structured-output settings while preserving your conversation's privacy choice; if no compatible provider is available, the request fails clearly rather than silently dropping a setting. Other memory models and character replies retain their existing formats.", "A failed summary now reports whether the provider ended without a confirmed finish, omitted the required format, or returned invalid structured history, without revealing your story text. The existing transcript, prior memory and unsent group draft stay untouched, and paid requests are never retried automatically. Install this private update over your existing app; it is not published publicly."]
 }, {
-  heading: "1.252",
-  notes: ["Character and persona search now use the same normalization and include saved tags and search terms. Numbered names sort naturally, so Chapter 2 comes before Chapter 10, while case differences no longer split otherwise similar names.", "Persona cards and gallery tiles now respond to Space as well as Enter. Keyboard actions on controls inside a card no longer trigger the surrounding card too. The storage-error screen has a safe Retry opening vault action and clearer advice not to reset your data.", "The interface, guide and release tooling received a cross-platform regression audit covering phone and tablet layouts, themes, Quality and Performance modes, imports, exports, protected storage, image ownership and transfer safety. Shared search and keyboard logic is consolidated instead of duplicated. The release signer now ignores tags outside the app's normal version format.", "Windows 1.251 users can use the signed interface update or the full installer; Android users can install the 1.252 APK over the existing app. Application IDs, vault folders and signing identities are unchanged. Do not uninstall first."]
+  heading: "1.327 (private Rolecraft)",
+  notes: ["Memory summaries using DeepSeek V4.1 Flash now turn off that model's default high thinking for the summary request only, leaving its output allowance for the concise history. Character replies, the selected roleplay model and the conversation's privacy setting are unchanged. If a provider still reaches its output limit, the error now applies to either Send or a memory rebuild instead of incorrectly saying to resume a rebuild. Incomplete summaries remain unsaved, and paused group replies are never automatically retried. Install this private update over the existing app; it is not published publicly."]
+}, {
+  heading: "1.326 (private Rolecraft)",
+  notes: ["Fixed an Android Chat-open error when paired sync replaced the saved conversation file while Chat was reading it. The read now follows the committed replacement, and it refuses to treat a genuinely missing current file as an empty chat. Conversations, app data identity and pairing remain unchanged; install this private update over the existing app. It is not published publicly."]
+}, {
+  heading: "1.325 (private Rolecraft)",
+  notes: ["Fixed memory compaction timing out after about three minutes even while a provider was still working. Memory-only requests now have a bounded nine-minute overall deadline and a longer native socket inactivity limit; ordinary chat replies keep their existing timeout. Stop, lock and background cancellation still apply, and failed requests are never automatically retried.", "Fixed a paused two-character reply queue resuming with an invalid reply index or skipping the unsent user draft after compaction failed. Resume now uses the saved numeric queue position and includes the still-present draft for the first reply. The transcript and completed memory checkpoints remain intact. Install this private Windows or Android update over the existing app; it is not published publicly."]
+}, {
+  heading: "1.324 (private Rolecraft)",
+  notes: ["Fixed automatic chat memory failing at the 75% context trigger when a short final batch produced a complete summary above an unintended 128-token cap. Short batches still ask for concise history, but can use the selected History detail allowance plus a small bounded overage. Incomplete or excessive responses still stop safely; no chat messages or prior memory are truncated or replaced.", "The memory screen now distinguishes the 75% trigger from its separate per-batch target and explains the bounded saved-history allowance. Install this private Windows or Android update over the existing app to keep its data; it is not published publicly."]
+}, {
+  heading: "1.323 (private Rolecraft)",
+  notes: ["Group chats can keep an opt-in private aside for the selected character, with a separate rolling memory that is excluded from other speakers' AI context. Existing shared history and notes remain shared. A reviewed story ledger now links facts to their source message and branch, so stale facts are excluded from prompts.", "Search can narrow a story by speaker and branch. Group spending warnings pause optional AI checks and ask before a paid reply passes the chosen threshold. Scene coordination uses a structured response where the selected model supports it, without changing your roleplay model or privacy settings.", "Paired devices can explicitly offer and accept an unsent draft on the same Wi-Fi. The source draft stays intact until you decide what to do with it, and receiving never sends a paid reply. Install this private Windows or Android update over the existing app to retain its data; this edition remains unpublished publicly."]
+}, {
+  heading: "1.322 (private Rolecraft)",
+  notes: ["Group chats have a quicker portrait speaker picker, a compact scene/roster strip, a pre-reply context preview and an in-chat Review or Undo notice for AI scene updates. An optional two-character reply now chooses a directly addressed Present character first, then a current AI suggestion or the next cast member; the second still reads the first saved reply. These controls do not add extra model calls by themselves.", "A message can become a recipient-specific scene fact marked witnessed, heard, told or private/off-scene. Its save is confirmed before the editor closes and can be retried without duplication. The shared transcript and story memory remain available to every speaker, so this does not conceal facts already written there. Scene-change checks avoid false triggers from everyday wording such as 'left hand'.", "After a paired-device chat refresh, a small handoff notice distinguishes new turns, branches and recoverable conflict copies without switching paths, deleting writing or sending a reply. Existing conversations, memory, storage identity and pairing remain in place. Install this private Windows installer or Android APK over the current Rolecraft app; this edition is not published publicly."]
+}, {
+  heading: "1.321 (private Rolecraft)",
+  notes: ["Chat scene edits now remain available when Back, Escape or the header closes a panel during a failed save. AI scene corrections wait for encrypted storage before closing their editor, and optional Story Director checks wait until the completed reply is saved. Manual model IDs are checked on Apply, and search previews point to the right text even with Unicode case changes.", "Paired-device sync now recovers after an Android Wi-Fi address change and reports failures to keep serving in manual-refresh mode. An exceptionally large conversation stays safely local with a visible incomplete-sync warning while other chats and library changes continue to publish. The older one-phone Chat link now prefers the PC's physical network over virtual adapters.", "Backup preview and export reject obviously damaged picture payloads instead of accepting any base64 text labelled as an image. Restores still leave the current vault untouched when validation fails. Install over your existing private Rolecraft app to keep its current data and identity; nothing is published to the public repository."]
+}, {
+  heading: "1.320 (private Rolecraft)",
+  notes: ["Backup restore now checks every referenced live, cover and Recently deleted picture before replacing a vault. Damaged records or missing artwork stop the restore without changing your library. Restores no longer count as a fresh backup export, and a paired device must leave its sync group before replacing its vault; pair again explicitly afterward and review the incoming library.", "Paired Chat sync now reuses conversations already checked against their content hashes, so changing one story no longer downloads every other story again. Local Chat saves still use the existing encrypted vault format.", "Automatic memory checkpoints now store each new story summary once and reconstruct the full history for replies. Correcting an earlier checkpoint updates later linked memory instead of leaving stale copied text; older checkpoints are converted only when their ancestry can be proven. Existing transcripts and active chats are retained."]
+}, {
+  heading: "1.319 (private Rolecraft)",
+  notes: ["Fixed chats appearing older on a paired device after sync. A manual-refresh device now shares each saved Chat update over the paired Wi-Fi link while it stays open and unlocked, so Refresh now on another device can fetch it without turning automatic incoming sync back on. After receiving chats, the screen only reports success once it has reloaded the latest saved copy; interrupted or busy reloads retry without replacing local edits. Update every paired Windows and Android Rolecraft app to this version."]
+}, {
+  heading: "1.318 (private Rolecraft)",
+  notes: ["Fixed Gemini 3.8 Flash TTS playback on Windows and Android. OpenRouter requires PCM for this model, so Rolecraft now requests PCM and plays its returned audio as WAV instead of requesting unsupported MP3. Voice requests still use the saved protected OpenRouter key and happen only when you choose Play voice; failed requests are never retried automatically."]
+}, {
+  heading: "1.317 (private Rolecraft)",
+  notes: ["Paired devices can now use Refresh only when I choose in Settings. Refresh now is also available from Chat options, so a quiet device can pick up saved changes on demand. The setting is local to each device; automatic sync remains the default.", "Characters now have a saved Gemini 3.8 Flash TTS voice and direction, including variants. Play voice from a completed Chat reply. Voice audio uses the existing protected OpenRouter key on Windows and Android, and an optional Suggest button can propose a voice from the character details. Both are explicit paid requests; the key and audio are not added to the vault or device sync."]
+}, {
+  heading: "1.316 (private Rolecraft)",
+  notes: ["Chat reads like a finished roleplay app on Windows and Android. Each message is one card with the speaker's portrait and name, the time it was written, a quiet token line and version arrows when a reply has alternatives. Message tools now live behind one three-dot button whose menu opens above neighbouring messages and the reply box instead of reserving space in every card.", "Phones give the story more room: the header and reply box are slimmer, including with the keyboard open, and a group's Reply as control shrinks to a portrait beside the reply box while typing. Options is an icon button with a clear, layered list that now includes the cast, next speaker and model prices. On Windows the reply box keeps Context & memory and the price estimate on the same row as Send.", "Scrolling is calmer. A story still opens at the latest message, but scrolling up during a streaming reply now always keeps your place, and a Latest or New reply button takes you back. Earlier messages appear as you scroll toward them. Typing no longer redraws the conversation, and messages far off screen skip drawing work; every message remains saved and included in AI context, memory, search and sync.", "Quality adds short menu and button motion; Performance keeps the same layout without it, and reduced-motion settings turn it off. Chats, branches, memories, settings, sync and provider access are unchanged."]
+}, {
+  heading: "1.315 (private Rolecraft)",
+  notes: ["AI group scene analysis now requests low reasoning and reserves more completion room for its short JSON update. This addresses providers spending the previous limit on hidden thinking and returning an unfinished response. A failed analysis remains explicitly retryable without pretending the scene was analyzed; the app never retries a paid request automatically. Your roleplay model, privacy choice, saved chats and scene notes stay unchanged. Install this private update over your existing app; it is not published publicly."]
+}, {
+  heading: "1.314 (private Rolecraft)",
+  notes: ["Large Chat libraries now sync as individually chunked conversations instead of failing when one combined writing index reaches 64 MB. Existing chats and library records remain unchanged; update every paired Rolecraft device so each can read the new sync format.", "Chat load failures now open an explanation and local Retry control instead of leaving only a clipped 'Chat unavailable' navigation label. AI scene analysis has more room for its structured answer and reports a token-limit stop clearly without silently retrying or applying incomplete scene changes. Install this private update over the existing Windows or Android app; it is not published publicly."]
+}, {
+  heading: "1.313 (private Rolecraft)",
+  notes: ["Group chats can optionally let two Present characters answer one new message in sequence. The second reads the first saved reply and can respond to it. Automatic scene tracking now explains which presence and knowledge it infers, while manual scene fields remain optional overrides. Correcting AI-inferred scene notes now saves properly. The two-reply option is off by default and can make two paid roleplay requests.", "The older one-phone Chat link now catches up while Chat is open, avoids resending an unchanged full history every poll, and allows a larger bounded history. For very large chats, tablets or multiple PCs, use Settings > Automatic device sync and approve its initial comparison; that newer link transfers in chunks. Existing conversations, app data and pairings remain in place. Install this private Windows installer or Android APK over the existing Rolecraft app; it is not published publicly."]
+}, {
+  heading: "1.312 (private Rolecraft)",
+  notes: ["Interrupted group reply rounds can now be reviewed and explicitly resumed from the last saved reply, with a fresh remaining-cost estimate. Incomplete or changed branches will not silently send another paid request. Scene-note saves now wait for the encrypted write to succeed; a failed save keeps the draft visible and retryable. Install this private update over your existing app; it is not published publicly."]
+}, {
+  heading: "1.311 (private Rolecraft)",
+  notes: ["Fix Chat disappearing from Android and Windows navigation when its screen failed to render. The launcher now opens again without changing app storage identities or existing conversations.", "Group scene notes now stay responsive while typing and show when edits are unsaved; save them explicitly or let a brief idle pause save them. Triggered group lore has a bounded, ranked context allowance with visible explanations when a match is skipped. Cast cards show manual and AI-inferred presence and knowledge separately, and story branches preview their own scene checkpoints. Install this private update over your existing Rolecraft app; it is not published publicly."]
+}, {
+  heading: "1.310 (private Rolecraft)",
+  notes: ["Choose a separate model for automatic memory summaries and rebuilds, or leave it on the roleplay model. The existing per-conversation privacy choice still applies. An approximate price preview appears before a reply and before a confirmed group round when the loaded model catalog provides token prices; actual provider charges, reasoning, memory updates and optional checks may differ.", "Search the full saved text of a conversation across its branches and jump to a matching message, even when older turns are hidden for phone performance. Scene suggestions now show the source reply and each proposed fact's before and after values; apply only the facts you accept, correct a suggestion first, or edit current AI-inferred notes without changing manual notes.", "Conversation settings show provider-reported prompt-cache reads and writes and a recent read-rate trend where available. Changing scene notes stay after the stable roleplay directions in the prompt to improve eligible cache reuse without weakening the always-active prompt, character priority, selected model or privacy setting. Existing stories, memory, library, sync pairing and app identities are preserved. Install this private Windows installer or Android APK in place; it is not published publicly."]
+}, {
+  heading: "1.309 (private Rolecraft)",
+  notes: ["Group chats can use a separate model for AI scene tracking, with balanced, scene-change-only or every-reply checking. Repeated analysis of an unchanged scene is skipped unless you explicitly force another paid check. Group reply rounds avoid unnecessary extra checks, and scene tracking keeps its updates concise instead of repeating unchanged facts.", "Attached lore now enters a chat request only when a whole-word trigger matches a recent turn; entries without triggers stay inactive. New group chats default to the next speaker's lorebooks, while existing group scope choices are preserved. The selected character's full profile, shared story history and speaker-only knowledge protections remain intact.", "Conversation settings show provider-reported spending separately for roleplay, memory updates, Story Director and scene tracking, marking unavailable prices rather than treating them as free. Roleplay requests keep a stable conversation routing hint to improve eligible prompt-cache reuse without changing the chosen model or zero-retention setting. Existing chats, library data, sync pairing and app identity are preserved; install this private Windows installer or Android APK in place. This build is not public."]
+}, {
+  heading: "1.308 (private Rolecraft)",
+  notes: ["Group Chat has an optional AI coordinator. After a completed reply it can draft or automatically update a compact scene recap, each character's inferred presence and witnessed knowledge, and a clearly addressed next speaker. The extra OpenRouter request uses your chosen model and conversation privacy setting; it is off by default and never starts extra roleplay replies.", "AI notes stay separate from your manual scene and private knowledge notes. Suggestions can be reviewed before applying, an automatic update can be undone until the scene changes, and branch navigation keeps AI context on the correct story path. No private or off-scene notes are sent to this check. Existing chats, library data, app identity and sync pairing are preserved; install the private Windows installer or Android APK in place. This build is not public."]
+}, {
+  heading: "1.307 (private Rolecraft)",
+  notes: ["Group stories now keep scene, cast and private-event notes tied to the right branch, so revisiting an earlier path cannot inherit facts written later. Removing a character keeps their scene notes ready if they rejoin.", "The Scene panel can draft a shared recap from recent turns for your review, hold recipient-scoped private or off-scene facts outside the shared transcript and memory, and limit lorebook context to the next speaker when you choose. Group replies also gain a reorderable, explicitly confirmed two- or three-speaker queue with a stop-after-current option; manual replies remain the default.", "Group conversations are easier to scan through cast portraits and distinct speaker markers. These changes preserve existing chats and vault data; install the private Windows installer or Android APK over the current Rolecraft app. This build is not public."]
+}, {
+  heading: "1.306 (private Rolecraft)",
+  notes: ["Chats now wake paired devices as soon as a message is safely saved, instead of waiting for the next timed check. Signed local-network notices carry no chat content; the receiving app still verifies the encrypted conversation index before applying anything. A timed retry remains when a notice is missed.", "Chat-only updates reuse the existing library and picture publication rather than rechecking every photo after each turn, with a full safe publish if that base is unavailable. Opening Chat options no longer holds up incoming messages. These changes preserve the existing group, chats and Android/Windows app data; install the private Windows installer or Android APK over the current Rolecraft app. This build is not public."]
+}, {
+  heading: "1.305 (private Rolecraft)",
+  notes: ["Group roleplay now has a visual cast picker. Add a character without changing who replies next, then choose the next speaker from portrait cards. The reply box and message actions show the selected speaker clearly; removing someone keeps their earlier turns and branches.", "New stories can start with a group cast and a chosen first speaker. Groups start with a blank shared scene instead of inserting one character's solo greeting. The Scene panel can hold a shared snapshot, each character's current presence and a speaker-only knowledge note. Existing transcripts and cumulative memory remain shared.", "Only the selected speaker's full writing directions are sent for a group reply; other active characters contribute concise identity reference. Context inspection shows approximate speaker, other-cast, lore and memory costs. An optional, explicitly confirmed two-reply round asks two characters in order and stops after an error, Stop, lock or failed save. It can add two paid provider calls plus memory calls; manual one-at-a-time replies remain the default. Existing chats and vault data are preserved. Install the private Windows installer or Android APK in place; this build is not public."]
+}, {
+  heading: "1.304",
+  notes: ["A premium visual pass across Windows and Android. Titles now use an elegant serif display face with Inter for everything you work with, and every theme uses its own accent for the main action on a screen, the chosen option and the keyboard focus ring. In Dark and Light the main buttons are now brass instead of blue, matching Chat, CharSnap and Custom themes.", "Settings choices such as Theme, Graphics, Reading text size and Card size are calm segmented controls: the chosen option is a raised surface marked in the accent colour instead of a second solid button. Dropdowns have a drawn arrow, and native pop-ups follow Light or dark themes, including Custom palettes.", "Phones get tidier screens. Library toolbars give search its own row and pair the remaining choices; Dashboard quick starts form one grouped list; the bottom bar marks the current destination with a soft pill; top-bar and close buttons are full 48-pixel touch targets, as are tag and contributor toggles. Android tablets get full-size targets in the side rail.", "Chat reading is roomier on phones, with a wider text column and a slightly lighter dialogue weight (speech keeps its accent colour). While the keyboard is open, the header and spacing tighten so more of the story stays visible above the composer.", "Quality mode adds short, purposeful motion: screens and record pages fade in, the first cards and pictures of a library arrive in a brief cascade, and pictures fade in as they load. Nothing loops. Performance mode and the system reduced-motion setting remove all of it, and Performance still draws the same layout without shadows or blur. Your library, chats, sync pairing and settings are unchanged; install the full Windows installer or Android APK."]
+}, {
+  heading: "1.303",
+  notes: ["The private Chat installation is now simply Rolecraft on Windows and Android. It is one app with Dashboard first, Chat as a fifth main navigation destination, and Prompt Vault one tap away from the Dashboard. The Windows installer keeps the existing private Chat profile and upgrade identity; the Android APK keeps its package ID and signing identity, so installing over the existing private app preserves its library and chats. Do not uninstall the old standard Android app before backing up or transferring anything still stored there.", "Updated the in-app guide and setup names. AI chat, image generation and local sync remain explicit actions, and the previous private provider and storage safeguards are unchanged. This private build is not published to the public standard repository."]
+}, {
+  heading: "1.302 (private Chat)",
+  notes: ["Automatic story memory now updates sooner when about 5,000 estimated tokens of older, unsummarized messages have accumulated, while the 75% context safeguard remains. You can choose a less frequent 8,000-token trigger or the previous 75%-only behavior per conversation. Opening a chat or changing the option never compacts it; only Send can start a summary. Full transcripts, branches, existing checkpoints and the latest five messages remain intact, and a failed summary cannot replace good memory.", "Reply token badges now separate provider-reported input and output. Open a badge to see cache reads, reasoning tokens included in output, and provider cost when those details are available. Missing usage is not shown as zero. Private Windows and Android Chat only; public Standard is unchanged."]
+}, {
+  heading: "1.301 (private Chat)",
+  notes: ["Conversation settings now offer Export review JSON alongside the original chat JSON export. The new file contains every saved message and alternate branch, memory checkpoints and provider usage, plus the current assembled prompt, active lore and permanent/temporary token estimates to help diagnose context size. It is a read-only snapshot and makes no provider request.", "On Android, review exports must reach Downloads or report a failure rather than hiding in app storage. The file is unencrypted and can contain sensitive roleplay and character or lore writing. It excludes API keys, picture bytes, unsent drafts and unrelated vault records; nothing is sent to anyone automatically. Install the private Windows installer or Android APK over the existing Chat app. Public Standard is unchanged."]
+}, {
+  heading: "1.300 (private Chat)",
+  notes: ["Optional Story Director for private Chat on Windows and Android. After a completed reply, Jev on OpenRouter can score tone, story continuity and whether the reply speaks for your persona. Choose Off, Score completed replies or Score + gently guide later replies in conversation settings. Coaching uses only recent local scores to add a temporary direction to a later reply; it does not edit saved messages or automatically regenerate paid replies.", "Story Director is off by default and pauses whenever Require zero data retention is selected, because Jev's Decisions API has no documented per-request zero-retention control here. It uses your protected OpenRouter key, sends a bounded excerpt of the scene and directions, and may incur an extra charge per completed reply. Scores remain on this device and do not enter chat memory or device sync. Install the private Windows installer or Android APK over existing Chat apps. Public Standard is unchanged."]
+}, {
+  heading: "1.299 (private Chat)",
+  notes: ["Chat now catches up after the first library comparison is approved, even while a large picture library is still syncing. It does not bypass approval or import pictures while you are in Chat.", "If two paired devices add new turns to the same story before they reconnect, both turns remain in that conversation as selectable story paths instead of making a duplicate chat. Changed or deleted older messages and conflicting memory edits still keep recoverable conflict copies. Update each private Chat device in place with the Windows installer or Android APK; public Standard is unchanged."]
+}, {
+  heading: "1.298 (private Chat)",
+  notes: ["Visual polish across private Chat on Windows and Android: Performance mode now groups each message into a clear, opaque reading card without decorative motion. The Windows chat header and composer use less height so more of the conversation stays visible.", "The Dashboard now keeps complete rows of gallery pictures across phone, tablet and desktop widths, showing 8 on phones and up to 12 where space allows. Existing pictures, chats, themes and sync data are unchanged. Install the full private Windows installer or APK over your existing Chat app; public Standard is unchanged."]
+}, {
+  heading: "1.297 (private Chat)",
+  notes: ["Fixed a sync restart loop when several devices are open: receiving a character update no longer rewrites its saved chat profile during the same sync pass. Chat refreshes from saved data without interrupting the next checkpoint or restarting picture checks. Genuine edits still retain their overwrite protection, and completed picture progress is kept.", "Opening unchanged chats no longer rewrites their encrypted storage. Existing messages, memories and saved character snapshots are preserved; real profile changes and interrupted-reply recovery still save with proper revision history. Install the full private Windows installer or APK over your existing Chat apps on every paired device. No unpairing, library reset or uninstall is needed. Public Standard is unchanged."]
+}, {
+  heading: "1.296 (private Chat)",
+  notes: ["Android prepares encrypted picture files directly in native code instead of copying every full photo through the web interface and back. Original picture bytes, chunk hashes and legacy formats are preserved. Preparation progress saves by elapsed time instead of repeatedly rewriting a growing index for every small group of pictures. A damaged incoming chunk no longer forces all healthy local photos to prepare again. Missing local cache pieces are inspected and only affected pictures are repaired, retaining completed preparation after interruptions. Ordinary saved-picture checks are labelled Checking, not Preparing.", "Unavailable devices back off between retries while reachable devices keep exchanging updates. Manual Retry or a changed device address checks again immediately. Normal edits remain two-way, and competing versions keep their existing recovery protections.", "Settings > Automatic device sync now offers an explicit Sync with screen off session on Android. Confirming keeps the vault unlocked in memory with a visible Stop notification so both picture preparation and transfer can continue while minimized or screen-off. Manual lock, Stop, app closure, session expiry and Android limits end it; no silent restart or background unlock. Provider requests and key sharing still stop in the background. Windows can remain minimized while open, unlocked and awake. Install the full private Windows installer and APK over existing Chat apps; public Standard is unchanged."]
+}, {
+  heading: "1.295 (private Chat)",
+  notes: ["Faster large-library sync on Android and Windows: unchanged polls reuse validated library snapshots and published indexes instead of repeatedly hashing, preparing and resending the same picture lists. New edits, peer revisions and primary changes still trigger comparison, with periodic native cache checks retained.", "Android can receive two bounded encrypted photo batches at once. Small sync checkpoints reuse exact unchanged encrypted-storage reads and avoid scanning every picture pointer; completed records and photo progress still save as they arrive. Encryption, original image quality, edit protection and lock cancellation remain in place. Update paired devices with the full private Windows installer or Android APK, installing over your existing Chat app. Public standard edition unchanged."]
+}, {
+  heading: "1.294 (private Chat)",
+  notes: ["Choose a new primary in Settings > Automatic device sync without leaving your group or pairing again. Normal edits still travel both ways, including phone changes back to a primary tablet. The selected primary settles simultaneous competing character, persona, lore and prompt edits; alternatives stay recoverable in the Bin instead of appearing as duplicate library cards. Update every paired private Chat app before enabling this policy. Older apps pause group sync after it is enabled.", "Review existing conflict copies and explicitly choose the version to keep under the original identity. Removed copies and overwritten writing retain their pictures in the Bin. Existing chats stay linked to the retained character without changing their messages or memory. Nothing is automatically deleted from your current library. The primary is not a permanently required server, and choosing it does not erase unique records on another device. Install the full private Windows installer or APK over your existing Chat app; public standard edition unchanged."]
+}, {
+  heading: "1.293 (private Chat)",
+  notes: ["Improved group scene continuity when another character speaks for the first time. Previous characters' turns are sent as clearly attributed scene input, while only the selected character's own turns use the AI reply role. Your persona's turns stay distinctly labelled. The full eligible shared memory and recent transcript remain included; saved messages and compaction source are unchanged.", "Roleplay directions now explicitly carry witnessed events, such as a battle watched by the next speaker, across character changes. Selecting a character is not treated as their arrival or a first meeting, and current story events take precedence over a card's initial situation. This improves request framing without making another paid request or duplicating recent messages. Full private Windows installer or Android APK required; public standard edition unchanged."]
+}, {
+  heading: "1.292 (private Chat)",
+  notes: ["Group roleplay keeps the same story when you select another character. Existing memory and recent messages stay shared; established group scenes no longer receive a newcomer's unrelated opening scenario or example greeting. Only the selected character's system directions are active, with an explicit next-speaker handoff for replies and continuations. Existing conversations, branches and memory checkpoints are preserved.", "Mobile Options stays above message bubbles and the composer in both quality and performance modes. Shorter Reply controls and input hints leave more space to type, including when the keyboard is open. Chat names no longer show repeated memory-rebuilt labels; the conversation list shows the last actual message date. Rebuild still saves a separate copy. Install the full private Windows installer or Android APK over your existing Chat app; public standard edition unchanged."]
+}, {
+  heading: "1.291 (private Chat)",
+  notes: ["Faster remembered-network photo sync: updated Windows and Android apps exchange small bounded groups of encrypted chunks instead of making a separate bridge and network request for each one. The fast response carries already-encrypted photo chunks without repeatedly compressing and encrypting another wrapper. Integrity checks, resumable progress, conflict protection and lock guards remain active. Older paired apps still use the compatible transfer path.", "Android saves newly received photos as compact encrypted binary data instead of encrypting their larger base64 text representation. Original picture bytes and quality are unchanged. Update both ends with the full Windows installer or Android APK for the faster transfer path; keep Android open and unlocked while syncing."]
+}, {
+  heading: "1.290 (private Chat)",
+  notes: ["Removed the floating Open private chat button. Windows now has one Chat navigation entry below Prompt Vault in the sidebar. Android phones and tablets have one Chat button on the Dashboard, keeping the five-button bottom bar unchanged. The shortcut stays out of editors, settings and picture viewers. Existing conversations, memories and provider settings are unchanged. Install the full private Windows installer or Android APK; public standard edition unchanged."]
+}, {
+  heading: "1.289 (private Chat)",
+  notes: ["Reference prompt ideas in the image generator offer twelve editable starting points: more detail with the same face, faithful recreation, gentle cleanup, cinematic or portrait lighting, outfits, backgrounds, poses, expressions, profile portraits, full-body portraits and painterly illustrations. Select a reference, preview an idea, then add it to your writing or explicitly replace your prompt. Nothing generates until you choose Generate and save. Existing artwork and output-size choices stay unchanged. Private Windows and Android update only; public standard edition unchanged."]
+}, {
+  heading: "1.288 (private Chat)",
+  notes: ["Add characters to an existing roleplay with @name, choose who replies next, and remove participants without deleting their messages. Active character profiles are included as permanent context; removed profiles are no longer sent. Replies keep their speaker identity, including through branching, export and paired sync.", "Generate a batch of character pictures and save each successful result to the gallery automatically. Choose the count, caption and visibility before Generate and save. Requests run one at a time, stop on failure or cancellation and are never automatically retried. Earlier successful pictures stay saved. Generated previews and gallery pictures can open full screen with controls hidden for unobstructed viewing.", "Chat settings can check the saved OpenRouter key's remaining spending allowance and usage. This is not the account credit balance. Fixed billing shortcuts open OpenRouter, OpenAI and xAI account pages without requesting management or administrator keys. Checks happen only when requested and are cleared on lock. Install the full private Windows installer or Android APK; public standard edition unchanged."]
+}, {
+  heading: "1.287 (private Chat)",
+  notes: ["Share saved OpenRouter, OpenAI and xAI/Grok API keys between your paired private Chat devices from Settings > Automatic device sync. Select a provider, open a five-minute sharing window, then explicitly import on another device. Keys travel through the encrypted local-network connection and are saved in the receiving device's protected credential storage, never in vault backups, chat records or ordinary sync. Existing keys are not overwritten. Keep both apps open and unlocked. Full Windows installer and Android APK required; public standard edition unchanged."]
+}, {
+  heading: "1.286 (private Chat)",
+  notes: ["Photo info is now available for a single selected gallery-grid picture and in the full-screen picture viewer. It reads the original to show its format, pixel dimensions and exact file size. Save JPG copy converts supported raster pictures locally at their original resolution, with a quality choice and a separate exported file. Transparent areas become white and animations become still images; original vault pictures are never replaced. The in-app guide explains the new controls. Private Chat update only; the public standard edition is unchanged."]
+}, {
+  heading: "1.285 (private Chat)",
+  notes: ["Choose a profile picture directly from a character or persona's gallery grid: tick one picture, then use Set as profile picture. Characters with variants can explicitly choose Default or a variant. The control is no longer hidden when there are no variants. Default-only pictures now work from the full-screen viewer too. Replaced portraits stay in the gallery, originals are unchanged, and changing a portrait resets only its own Chat framing. The in-app picture guide explains the controls. Private Chat update only; the public standard edition is unchanged."]
+}, {
+  heading: "1.284 (private Chat)",
+  notes: ["Image generation errors now show a sanitised provider explanation, error code, rejected parameter and request ID when available, instead of hiding every HTTP 400 behind a generic message. Safety-policy rejections are identified without changing provider safeguards. Keys, full prompts, image payloads and links are redacted; oversized or non-JSON errors retain a safe fallback. No automatic paid retry is made. Install the updated private Chat APK or full Windows installer; the public standard edition is unchanged."]
+}, {
+  heading: "1.283 (private Chat)",
+  notes: ["Create character artwork with OpenAI GPT Image or xAI Grok Imagine in the private Windows and Android Chat apps. Open a character and choose Generate image, set up that provider's API key, enter a prompt and optionally select up to four of the character's pictures as references. Only your prompt and selected upload copies are sent; the original pictures and chat history stay unchanged.", "Choose aspect ratio, resolution and quality separately. OpenAI supports Standard, 2K-class and maximum native presets with exact dimensions shown: 2:3 reaches 2336 x 3504 under its pixel cap; 16:9 and 9:16 offer 4K-edge output. Grok supports 1K and 2K. Higher resolutions can cost more and take longer. Previews show the actual received dimensions; no image is secretly upscaled.", "Preview each result before saving it to the character gallery with a caption and variant assignment. Saves append to the latest character without replacing existing artwork or concurrent writing. Keys stay protected on each device, outside vault backups and sync. Provider API access and billing are separate from consumer app subscriptions; generation can incur charges and follows the selected provider's policies. Cancellation, lock guards, bounded uploads and no automatic paid retries apply. Install the full private Chat installer or APK; the public standard edition remains unchanged."]
+}, {
+  heading: "1.282 (private Chat)",
+  notes: ["Fixed short memory budgets cutting off generation: saved history remains limited to the selected estimated summary size, while the provider receives separate room for reasoning and completion. Progress and confirmation distinguish saved summary size from potentially billable generation tokens. Token exhaustion, filtering and over-budget summaries now have clearer errors; incomplete or oversized summaries are never silently accepted or truncated.", "Memory rebuilds save each successful batch in protected local progress without changing or syncing a partial copy of your original chat. After interruption, choose Rebuild copy now on the same device to resume, even after reopening. Changed source messages, profiles or settings restart safely; Start over from first message explicitly rebuilds afresh. A failed final save can be retried without regenerating all batches. Original transcripts and old memory remain untouched. These builds stay private."]
+}, {
+  heading: "1.281 (private Chat)",
+  notes: ["Fixed the Rebuild memory confirmation still claiming a 4,096-token allowance. It now shows your selected history detail cap (256, 384 or 640 output tokens) and explains that short batches or model/context limits may use less. The actual rebuild request already used those smaller limits in 1.280; this corrects the misleading confirmation. Existing conversations and memories are unchanged. These builds remain private."]
+}, {
+  heading: "1.280 (private Chat)",
+  notes: ["Paired private Chat devices now exchange conversations while Chat stays open. Type and send on your phone, then read the sent turn and completed AI reply in the same conversation on your tablet or Windows PC. This uses the remembered Automatic device sync group; complete its initial library sync first. Both apps must remain open and unlocked on the same network. Replies are shared after generation finishes, not token by token.", "Chat uses a lightweight conversation-only sync path while full-library scans and picture preparation stay paused. Incoming changes preserve your draft and selected conversation, wait during edits or generation, and keep conflict copies for concurrent edits. Unchanged conversations reuse cached validation and publication. Keys and unsent drafts are not shared.", "History detail per batch is now selectable: Compact (256 tokens), Balanced (384, default), or Detailed (640). Short batches use a smaller allowance. Full transcripts, cumulative earlier memory and the retained recent messages are preserved. Rebuild memory in a copy to apply the smaller budgets to old summaries. These builds remain private."]
+}, {
+  heading: "1.279 (private Chat)",
+  notes: ["Memory compaction now requests chronological story history only: actual events, important dialogue, decisions and changes. Removed instructions that encouraged repeated Unresolved sections, and explicitly excluded open-thread checklists, predictions and future plot suggestions, even when older memory used that format.", "Existing saved memory and full transcripts are left untouched. To replace old repetitive summaries, use Conversation settings > Rebuild memory in a copy after updating. The rebuild reads the original messages using the history-only prompt, preserves your original chat and can make multiple paid provider requests. These Windows and Android Chat builds remain private."]
+}, {
+  heading: "1.278 (private Chat)",
+  notes: ["Memory compaction and rebuilding now use small chronological batches of at most eight messages and about 6,000 new transcript tokens, even with very large model context windows. Previously a large window could put hundreds of messages into one short summary. Each completed batch is appended without rewriting earlier memory, and a broken message chain now stops rebuilding rather than treating a recent fragment as the whole story.", "Summaries have room for more event detail, with up to 4,096 output tokens when the model and context allow. Character and persona facts are provided as reference-only context so memory focuses on events, decisions, relationships, discoveries and changes instead of repeating static profile information. Creator memos, pictures and profile prompt commands are excluded from this reference.", "Summarization progress shows the exact message span, estimated input tokens and output allowance. Memory settings show the accumulated prior-context token estimate and the last summarizer call's provider-reported usage, or clearly labelled estimates when usage was not reported. Accumulated memory is included as prior story context in roleplay requests. Existing chats can be rebuilt into a separate copy without changing their original transcript. This release remains private."]
+}, {
+  heading: "1.277 (private Chat)",
+  notes: ["Automatic compaction now preserves previous memory exactly and appends a concise summary of every newly compacted message. Earlier summaries and manual corrections are no longer rewritten by the next compaction. Recent messages remain verbatim and all subsequent messages accumulate until the next 75% threshold.", "Conversation settings now offer Rebuild memory in a copy. It rereads the current branch's saved transcript from the beginning, without trusting old summaries, and opens a repaired copy only after all batches finish and save. The original chat, alternate replies and memories are left untouched. Rebuilding uses the selected model and privacy setting and can incur multiple provider requests; it never generates a roleplay reply.", "Cumulative memory is not silently shortened to fit a smaller context. Increase the context budget or edit memory if it grows too large. Full transcripts remain saved. These Windows and Android Chat builds remain private and local only."]
+}, {
+  heading: "1.276 Chat",
+  notes: ["Provider privacy is now a per-conversation choice in model selection, new-story setup and conversation settings. Require zero data retention stays on by default for new and existing chats. Choose Allow providers that may retain data if your model has no zero-retention provider.", "The saved choice applies to replies, regeneration and memory compaction on Windows and Android. Opting out may let the provider store character/persona context, prompts and chat history sent in requests. OpenRouter account-level privacy restrictions still apply; the app never relaxes your choice automatically after a failure.", "Install the full private Windows Chat 1.276 installer or update the private APK in place. These builds stay local only; do not uninstall your existing Chat app first."]
+}, {
+  heading: "1.275 Chat",
+  notes: ["Every roleplay reply now receives an automatic character-viewpoint rule: the AI must not invent your persona's dialogue, thoughts, feelings, decisions, movements or reactions, including through narration. It may acknowledge what you already wrote, but must leave your next response to you.", "The rule applies to existing and new chats, all reply styles, and replies after memory compaction. It stays in permanent context without entering the separate factual memory-summary request. Your custom priority-1 prompt and provider rules retain their existing precedence.", "These Windows and Android Chat builds remain private and local only. Install over the existing Chat edition without uninstalling first."]
+}, {
+  heading: "1.274 Chat",
+  notes: ["Opening private Chat now pauses automatic vault sync and the legacy chat link, including background vault scans and picture preparation. Pairing is remembered and sync resumes when you return to the vault. Your drafts and replies still save locally, and password/PIN locking stays active.", "Removed the half-second theme polling loop. Theme and lock changes are observed directly, the hidden library stops painting and cycling dashboard pictures, and queued library pictures resume after leaving Chat.", "Context estimates no longer rescan long stories while you draft. Open Context & memory, Inspect context or conversation settings when you want updated details; Send still assembles the exact complete context and follows the unchanged compaction rules. Modern WebViews size the reply field natively instead of forcing JavaScript layout reads for every character, with a frame-coalesced fallback for older engines.", "These Windows and Android Chat builds remain private and local only. Install over the existing Chat app without uninstalling. Return to the vault to let other devices receive your latest changes before switching devices."]
+}, {
+  heading: "1.273 Chat",
+  notes: ["Typing now updates a small independent reply box instead of rebuilding the conversation on every keystroke. Phones initially display the latest 12 messages, with Show earlier and Show latest messages only controls. This changes only what is drawn: full history, AI context, the 75% automatic-memory threshold and the five recent messages retained after compaction are unchanged.", "Android holds a bounded CPU and Wi-Fi lease during an explicit reply to help with brief screen-off interruptions. It releases on completion, Stop, failure or a ten-minute maximum. Android battery restrictions and network changes can still interrupt a reply, and protected vaults still auto-lock and cancel generation normally.", "A prematurely closed stream is no longer reported as a completed reply. Android forwards the provider finish reason to memory validation, and connection errors give an actionable explanation without duplicating the message banner. Received text is kept when a stream fails while Chat is unlocked; retries remain your choice. These Windows and Android Chat builds remain private and local only."]
+}, {
+  heading: "1.272 Chat",
+  notes: ["Refreshed Quality-mode visuals across private Chat and the library: layered reading panels, theme-coloured edge highlights, framed mini portraits, richer selected-story and character cards, and clearer composer, field and dialog focus feedback. Text stays on opaque surfaces over your bucket artwork, and mobile keeps its compact header and reply box.", "Quality adds gentle workspace, dialog, reply and selection entrances, responsive button feedback, and three animated writing dots. The dots animate only when visible, decorative motion pauses while the app is hidden, and no background-photo zoom or perpetual ambient effects are added.", "Performance retains its lightweight rendering, and reduced-motion and high-contrast preferences remain respected. Chat navigation still opens at the latest message. These Windows and Android Chat builds remain private; install over the existing Chat edition without uninstalling."]
+}, {
+  heading: "1.271 Chat",
+  notes: ["Improved long-story performance: branch navigation, message sibling controls, memory checkpoint lists and conversation previews do less repeated transcript work. Lore inspection reuses the recent-message scan, and simultaneous mini portraits share pending storage reads without retaining stale image or blur settings.", "Opening the conversation drawer no longer jumps away from older messages. Show earlier messages now preserves your reading position while revealing more history.", "The new-roleplay chooser now finds characters and personas by their descriptions as well as names and tags. Choosing a different portrait from the gallery resets the previous picture's Chat crop for that character or variant without altering any original images.", "Ten reproduced bugs and performance issues fixed. These Windows and Android Chat builds remain private and local only. Install over the existing Chat edition without uninstalling."]
+}, {
+  heading: "1.270 Chat",
+  notes: ["Added miniature portraits beside chat messages and in the mobile header. The conversation list uses the same framing. In Edit Character, choose a Portrait and adjust Chat portrait crop with zoom and horizontal/vertical position controls. Each variant can have its own crop; only framing coordinates are saved, and the original image remains unchanged.", "Fixed a crash when conversation settings opened before the delayed token estimate was ready, and a context-preparation crash caused by text-form lore triggers. Those triggers now use the same whole-word matching as trigger lists.", "Decimal context and reply-token budgets are rounded down to integers so Windows keeps the configured reply cap in its outgoing request. Deleting a conversation now skips already-deleted stories when choosing what to open next. Reply labels also retain the saved character name when the live character card is unavailable.", "These Windows and Android Chat builds stay private and local only. Install over the existing Chat edition without uninstalling first."]
+}, {
+  heading: "1.269 Chat",
+  notes: ["Finishing or stopping a reply no longer refocuses the reply box, so reading is not interrupted by a summoned keyboard.", "Editing your sent message now offers Save and regenerate reply. The edited turn is saved before contacting the model, and the original message and its replies remain available as another branch. A failed save never sends the unsaved edit to the model.", "Roleplay context now states an explicit priority order: your always-active super prompt first, core character details and permanent settings second, temporary context and messages third. Reply-style choices remain active but yield to a conflicting super prompt. Provider rules still apply. These Windows and Android Chat builds remain private and local only."]
+}, {
+  heading: "1.268 Chat",
+  notes: ["Opening, reopening or switching a conversation now jumps to its latest message. The latest reply stays visible when the keyboard resizes the screen, while scrolling back through history is respected during streaming.", "Phones use a slim single-row header and compact reply box. Options contains model selection, scene and memory tools, branches, context inspection, conversation settings and Return to vault. Sync and token details no longer take up a row below the mobile reply field.", "Android now uses the normal WebView text-input connection instead of raw key capture, restoring keyboard correction and sentence-capitalisation support. Keyboard preferences still control which corrections are applied. Opening Chat no longer automatically focuses the reply field on touch devices. These private Windows and Android builds remain local only; install over your existing Chat edition."]
+}, {
+  heading: "1.267 Chat",
+  notes: ["Android now allows screenshots. Android 13 and newer still hide app-switcher previews; screenshots you save are outside the encrypted vault.", "Chat narration follows the selected theme's text colour, and quoted speech uses its accent colour. Dialogue remains distinct inside italic and bold text, in bubble and novel reading modes, on Windows and Android. These private builds remain local only."]
+}, {
+  heading: "1.266 Chat",
+  notes: ["Sync no longer repeatedly prepares missing optional thumbnails. Preparation reaches its final picture count, and completion clears stale progress.", "The phone reply box starts as one compact line with Send alongside it, grows only while writing, and resets after sending. Sentence capitalisation and spelling assistance are requested from your keyboard. Streamed replies and context previews do less repeated work.", "Chat includes all unsummarised history until 75% of the input budget. Compaction keeps five messages plus your newest turn, then includes every subsequent message until the next threshold. Context details show exact message counts; your full transcript remains saved locally. This Chat edition remains private."]
+}, {
+  heading: "1.265 Chat — current (local private build)",
+  notes: ["First sync now saves completed records in small checkpoints, after each record's originals are verified. Text-only records can appear before the rest of the pictures, and interrupted picture preparation is remembered.", "A small local or remote writing edit no longer discards completed first-sync work. Initial approval is remembered while the remaining records resume; concurrent edits and picture collisions remain protected.", "A compact sync spinner replaces the large library banner. Open its details button for full progress in Settings. The connection lease stays renewed during long preparation while the app remains open and unlocked.", "Install the full private Windows Chat installer or update the private APK in place. Conversations remain private and pairing with Standard remains supported."]
+}, {
+  heading: "1.264 Chat — current (local private build)",
+  notes: ["Windows no longer decrypts entire pictures to check the local sync cache, and sync-bookkeeping saves no longer rebuild the full vault folder. Large picture checks run in small yielding batches, with less frequent progress repaints.","A non-blocking Device sync banner shows preparation and receiving progress while you continue using the library. Actual incoming record replacements retain their guarded saving screen and atomic commit.","The primary is only the starting library. Once a device has completed its first sync, it can help another device join even if the original tablet or computer is offline. Existing devices continue as equal peers; group identity and stored data are preserved.","Install the full private Windows Chat installer or update the private APK over your existing Chat app without uninstalling. Shared-library pairing with Standard is retained; conversations remain Chat-only. These builds remain local, not public GitHub releases."]
+}, {
+  heading: "1.263 Chat — current (local private build)",
+  notes: ["Pair devices using a full-size QR on Windows, phones and tablets, with an offline camera reader and Scan QR image fallback. A computer can show its own join QR for a device already in your group to scan, with confirmation on the computer before it joins.","Refresh pairing QR adds another device at any time without leaving the group, even while pictures are preparing. Only the invitation expires after ten minutes; remembered group membership does not. Timestamp-only character and persona saves no longer create new conflict copies; genuinely different writing and pictures remain preserved.","Private Chat can now join the same library group as Standard Vault. Conversations, paths and memories travel in a separate optional index read only by Chat apps; Standard never imports them. Existing private group identity is retained during upgrade. Update all devices. Existing conflict copies are not removed. These private Windows and Android builds remain local only."]
+}, {
+  heading: "1.262 Chat — current (local private build)",
+  notes: ["Roleplay requests now clearly distinguish the AI-controlled character from your selected persona. The prompt asks for the next in-scene turn, protects your control of your persona, treats example dialogue as reference rather than past events, and keeps active lore relevant without demanding it be repeated.", "Character age, gender and pronouns and your persona's tagline now accompany their writing. Imported {{char}} and {{user}} placeholders resolve in card context, scene directions, lore and new greetings without changing your library, existing transcript or memories. Creator memos remain excluded.", "Explicit viewpoint, dialogue balance and reply-length selections now take priority over conflicting style suggestions. Long dialogue-heavy replies are asked to develop spoken dialogue rather than add unwanted narration. A warning explains when a low reply-token ceiling may constrain long replies; your spending cap is never raised automatically. These changes apply to private Windows and Android Chat only. Install over the existing Chat edition without uninstalling; the public standard edition is unchanged."]
+}, {
+  heading: "1.261 Chat (local private build)",
+  notes: ["Private automatic device sync now supports a remembered group of Windows computers, Android phones and tablets. Start from the most up-to-date device, pair the others once, and approve the first comparison. Libraries and conversations, including branches, memories and story settings, then catch up in either direction on the same local network.", "Conflicting writing becomes a separate copy, picture files are verified before records are applied, and local edits prevent a stale sync replacement. Sync pauses while locked, during story generation or editing, and when Android backgrounds the app. It resumes when open and unlocked. The new group replaces the old one-phone chat link; API keys, passwords and reply drafts remain on their own devices.", "The private edition also receives the persistent Android backup progress and public Downloads fixes. Backup errors stay visible, and unreadable story data stops export instead of silently omitting conversations. The private sync group is separate from the standard edition. Install the full private Windows installer or private APK over the existing Chat edition without uninstalling. These builds and their source remain local, not public GitHub releases."]
+}, {
+  heading: "1.260 Chat (local private build)",
+  notes: ["A coordinated visual refresh across the private Windows and Android apps: clearer library navigation, refined cards and Settings choices, calmer dialogs, portrait story cards, a stronger character header and a focused writing composer. Chat keeps your character's bucket cover as its backdrop, with opaque reading surfaces so bright artwork never sits directly behind prose. On phones, each message's Actions menu keeps editing and branching available without filling the transcript with buttons.", "Quality adds restrained depth and interaction motion. Performance uses the same typography, spacing and controls without animated effects or backdrop blur, including the Android navigation bar. Privacy blurs on your images remain intact. Reduced motion also covers pseudo-elements. Phone, tablet, desktop and short keyboard-sized viewports are checked across Dark, Light, CharSnap and Custom themes.", "First-time Android Chat now explains why its library is separate and how to import an existing vault. QR transfer results are brought into view, and rejected transfer previews no longer leave the action stuck. This is a local-only private Chat update. Install the full Windows Chat installer or signed Android Chat APK over the existing Chat app without uninstalling. No vault format, chat sync protocol or application identity has changed, and the public standard edition is untouched."]
+}, {
+  heading: "1.259 Chat",
+  notes: ["Private Chat now offers remembered, encrypted Wi-Fi pairing between one Android phone and Windows. Full conversations, alternate paths, memories, pinned facts and story settings catch up automatically. Concurrent edits keep a conflict copy, and deleting a conversation moves its writing to Recently deleted. Saved on both devices appears only after the other device acknowledges a completed local save. The link retries after interruptions and can rediscover Windows when its local address changes. Locking, Android background suspension and computer sleep pause the link safely.", "Chat now has portrait-based story cards, favourites, a character and persona header, formatted actions, emphasis and dialogue, and a novel reading layout. The optional background uses the cover assigned to the character's bucket, never the character portrait; no bucket cover means the normal theme background. Token details are expandable, and you can write your next draft while a reply is being generated.", "The scene panel shows character details, a saved location, pinned facts and readable memory checkpoints. A named-path browser makes alternate story branches easier to follow. Inspect context explains each lore activation with its whole-word trigger and the message that matched. Subtle animations respect Performance mode and reduced-motion preferences. These Windows and Android builds stay private; install the full Chat installer or APK over your existing Chat edition without uninstalling."]
+}, {
+  heading: "1.258 Chat",
+  notes: ["Private Chat lorebook triggers now match whole words and phrases, ignoring letter case. An elf trigger no longer matches herself, yourself or shelf. Matching checks your messages and the character's replies within the latest eight messages, never joining words across separate messages. Attached entries without triggers remain always active. This Windows and Android Chat fix remains local only."]
+}, {
+  heading: "1.257 Chat",
+  notes: ["Private Chat now separates estimated permanent and temporary/changing input tokens. Core character and persona context, active directions, pinned facts and your optional always-active prompt remain on every reply. Opening scenario and example dialogue are temporary: they yield to recent messages when space is tight and retire after compaction. Creator memo fields stay private and are not attached to roleplay or memory requests.", "New-story setup and conversation settings now offer first-person or third-person narration, dialogue-heavy, balanced or narration-heavy writing, and short, medium or long replies. Character default preserves existing behaviour. Choices persist with each conversation and remain active after compaction; your maximum reply-token cap still applies.", "An optional always-active roleplay prompt can be edited or filled with a starter covering character consistency, user agency, continuity, pacing and purposeful prose. It is appended to each roleplay system prompt, never silently trimmed, and kept separate from memory-worker instructions. These controls guide the selected model but do not override provider rules. This Windows and Android Chat build remains local only."]
+}, {
+  heading: "1.256 Chat",
+  notes: ["Private Chat can now automatically compact older roleplay turns into a rolling story memory when Send reaches 75% of the input budget. Five recent completed exchanges and your new message remain verbatim by default. The full transcript stays encrypted locally; memory checkpoints follow their own branch and never replace the original messages.", "Conversation settings let you choose three to five recent exchanges, turn automatic updates off, edit the memory and pin essential facts. Compaction uses the selected model and can add provider cost and delay. Incomplete responses, cancellation and failed saves stop safely without replacing the previous memory or sending the roleplay reply.", "Choose and load models directly in the new-story walkthrough, or use the model picker beside the chat title. Use model closes the picker, preserves your draft and returns focus to the editable reply box. This Windows and Android Chat update is local only and is not published to GitHub."]
+}, {
+  heading: "1.255 Chat",
+  notes: ["Private Chat now starts with a three-step character-card walkthrough: choose a character version, choose your persona, then review the model and scene. Portraits load only near the visible area, large casts are paged, and the workspace follows your selected theme and Performance setting.", "Context can now be configured up to two million tokens where the selected model supports it. The input budget reserves reply space and a safety margin, respects loaded model limits, and explains when older turns are omitted from a request without deleting their saved history. Larger contexts can cost more and take longer.", "The audit fixed lock-screen privacy, lost early stream tokens, Android cancellation and export failures, destructive message edits, missing example dialogue, blank variant overrides, malformed-history loops and unsafe concurrent saves. Both PIN/password migration and existing data-folder identities remain unchanged. This Chat build is local only; the public standard release follows its own version sequence."]
+}, {
+  heading: "1.254 Chat",
+  notes: ["Fixed Windows Chat rejecting an existing PIN or accepting the master password and then reporting that storage could not be reached. Windows protects vault files with a key tied to the app's encryption profile; the first migration copied the files but omitted that context. Chat now prepares a private copy of the Windows encryption context before opening the migrated vault. The standard app and its original files remain untouched.", "Existing 1.253 migrations are repaired on next launch without copying the library again. The original PIN, master password and encrypted records were verified together using two separate Electron profiles and real Windows encryption. Fresh Chat libraries still migrate once, and established independent Chat libraries are not replaced."]
+}, {
+  heading: "1.253 Chat",
+  notes: ["Windows Chat now brings across the standard Windows library on first launch when Chat has no user records or password of its own. It copies and verifies the encrypted records, pictures and password metadata, then opens the copied vault with your existing password. The standard library is left untouched and later Chat upgrades retain the copied library.", "Rolecraft Vault Chat now refuses standard .rcvup interface patches. Use the full Chat Windows installer or Android APK. Official downloads opens the releases list with both editions; standard 1.251 remains the normal Latest download."]
+}, {
+  heading: "1.252 Chat",
+  notes: ["Rolecraft Vault Chat is a separate, side-by-side edition for Windows and Android. It has its own app identity, install folder and encrypted vault, so installing it does not replace or read the standard Rolecraft Vault.", "A full-screen roleplay workspace can combine a selected character version, persona, attached lorebooks, triggered lore entries, author note and conversation history with any OpenRouter model. Replies stream as they are written. Conversations support editing, deletion, regeneration, alternate replies, branching, context inspection, context limits, creativity and output controls, model loading, usage display and JSON export.", "The OpenRouter API key is protected by Windows account encryption or the Android Keystore and can never be read back by the interface. Every completion explicitly requests zero-data-retention routing. Nothing is sent until Send is pressed, and Inspect context shows the exact text and roles first. Pictures, unrelated vault records, passwords and encryption keys are never included.", "Chat conversations are stored inside the encrypted vault and are included in full backups, restores and local device transfers. The standard no-chat 1.251 release remains available separately and stays the normal Latest download."]
 }, {
   heading: "1.251",
   notes: ["Lorebooks now have proper Grid and List entry views, remembered separately from prompt collections. Books can be filed as World lore or Personal lore, filtered from the Lorebooks screen, and changed later without moving or rewriting any entries.", "Open a lorebook to see every character and persona attached to it, with direct links back to those records. A character or persona can still use as many lorebooks as needed. Character editors now have one-tap Planned, WIP and Done workflow tags; the Characters screen can filter by status or sort the whole library from Planned through Done.", "Lorebook JSON import now reads current standalone lorebook v3 files, data-wrapped exports and lorebooks embedded inside character-card JSON, as well as the existing Rolecraft, Chub and CharSnap shapes. Triggers written as comma, semicolon or line-separated text are kept instead of being silently dropped, and several common content field names are accepted.", "Secure Markdown web links in displayed writing are clickable and open in the device's normal browser, without navigating the vault away. The in-app guide and public README cover the new organisation, views, links and import compatibility. Windows users can use the update file or full installer; Android receives the same interface and importer in the 1.251 APK."]
@@ -968,6 +1193,7 @@ function phoneSave(filename, blob, options) {
   const C = typeof window !== "undefined" && window.Capacitor;
   if (!C || typeof C.nativePromise !== "function") return null;
   const opts = options || {};
+  if (opts.downloadsOnly) return streamBlobDownload(C, filename, blob, opts);
   return streamBlobDownload(C, filename, blob, opts).catch(() => streamBlobSomewhere(C, filename, blob));
 }
 /* A backup can be many gigabytes. Turning its Blob into one data URL makes a
@@ -1088,9 +1314,42 @@ function recordDiag(label) {
   DIAG_EVENTS.push({ at: new Date().toISOString(), label: String(label || "event").slice(0, 80) });
   if (DIAG_EVENTS.length > 20) DIAG_EVENTS.shift();
 }
-function backupInspection(data) {
+/* A base64-looking string is not necessarily a picture. Keep this bounded:
+   backups can contain thousands of large originals, so decode only the header
+   needed to reject damaged common formats rather than copying every image. */
+function backupPictureValid(value) {
+  if (typeof value !== "string") return false;
+  const prefix = /^data:image\/([a-z0-9.+-]+)(?:;[^,\r\n]*)?;base64,/i.exec(value);
+  if (!prefix) return false;
+  const encoded = value.slice(prefix[0].length);
+  if (encoded.length < 4 || encoded.length % 4 || !/^[a-z0-9+/]+={0,2}$/i.test(encoded)) return false;
+  const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0;
+  const byteLength = encoded.length / 4 * 3 - padding;
+  if (byteLength < 1) return false;
+  let head;
+  try { head = atob(encoded.slice(0, Math.min(encoded.length, 128))); }
+  catch (_) { return false; }
+  const byte = index => head.charCodeAt(index);
+  const kind = prefix[1].toLowerCase();
+  if (kind === "png" || kind === "apng") {
+    return byteLength >= 33 && head.slice(0, 8) === "\x89PNG\r\n\x1a\n" && head.slice(12, 16) === "IHDR" &&
+      !!(byte(16) || byte(17) || byte(18) || byte(19)) && !!(byte(20) || byte(21) || byte(22) || byte(23));
+  }
+  if (kind === "jpeg" || kind === "jpg" || kind === "pjpeg") return byteLength >= 16 && byte(0) === 255 && byte(1) === 216 && byte(2) === 255;
+  if (kind === "webp") return byteLength >= 16 && head.slice(0, 4) === "RIFF" && head.slice(8, 12) === "WEBP";
+  if (kind === "gif") return byteLength >= 16 && (head.slice(0, 6) === "GIF87a" || head.slice(0, 6) === "GIF89a") &&
+    !!(byte(6) || byte(7)) && !!(byte(8) || byte(9));
+  if (kind === "bmp" || kind === "x-ms-bmp") return byteLength >= 26 && head.slice(0, 2) === "BM";
+  if (/^(?:avif|heic|heif|avif-sequence|heic-sequence|heif-sequence)$/.test(kind)) return byteLength >= 16 && head.slice(4, 8) === "ftyp";
+  /* Retain compatibility with older/less common image/* exports. Their
+     payload must still be nonempty, well-formed base64; the browser may be
+     the only decoder available for those particular formats. */
+  return true;
+}
+function backupInspection(data, expectUnreadPictures = false) {
   const fatal = [], warnings = [];
   const recordObject = value => !!value && typeof value === "object" && !Array.isArray(value);
+  const validId = id => typeof id === "string" && id.trim().length > 0 && id.length <= 512 && !/[\u0000-\u001f]/.test(id) && !["__proto__", "constructor", "prototype"].includes(id);
   if (!data || data.app !== "rolecraft-vault") fatal.push("Not a Rolecraft Vault backup");
   const lists = ["chars", "personas", "lore", "prompts"];
   if (data && data.type && lists.some(k => !Array.isArray(data[k]))) {
@@ -1098,35 +1357,79 @@ function backupInspection(data) {
   }
   lists.forEach(k => {
     if (data && !Array.isArray(data[k])) fatal.push(k + (data[k] == null ? " is missing" : " is damaged"));
-    else if (data && data[k].some(value => !recordObject(value))) fatal.push(k + " contains damaged records");
+    else if (data) {
+      const ids = new Set();
+      if (data[k].some(value => {
+        if (!recordObject(value) || !validId(value.id) || ids.has(value.id)) return true;
+        ids.add(value.id);
+        return false;
+      })) fatal.push(k + " contains damaged or duplicate records");
+    }
   });
+  if (data && data.chats != null && (!Array.isArray(data.chats) || data.chats.some(value => !recordObject(value)))) fatal.push("chats contains damaged conversations");
+  if (data && Array.isArray(data.chats) && typeof window !== "undefined" && window.RolecraftChatSync) {
+    try { window.RolecraftChatSync.validate(data.chats); }
+    catch (_) { fatal.push("chats contains invalid messages, participants or saved story metadata"); }
+  }
   if (data && data.images != null && !recordObject(data.images)) fatal.push("images is damaged");
   if (data && data.thumbs != null && !recordObject(data.thumbs)) fatal.push("thumbs is damaged");
+  if (data && data.blurred != null && (!Array.isArray(data.blurred) || data.blurred.some(id => !validId(id)))) fatal.push("blurred picture choices are damaged");
+  for (const key of ["buckets", "personaBuckets", "loreBooks", "promptBooks"]) {
+    if (data && data[key] != null && !recordObject(data[key])) fatal.push(key + " is damaged");
+  }
+  if (data && data.trash != null) {
+    if (!Array.isArray(data.trash)) fatal.push("Recently deleted records are damaged");
+    else {
+      const ids = new Set();
+      if (data.trash.some(item => {
+        if (!recordObject(item) || !validId(item.tid) || typeof item.type !== "string" || !recordObject(item.record) || ids.has(item.tid)) return true;
+        ids.add(item.tid);
+        return false;
+      })) fatal.push("Recently deleted contains damaged or duplicate records");
+    }
+  }
   const safeList = k => Array.isArray(data && data[k]) ? data[k] : [];
   const counts = Object.fromEntries(lists.map(k => [k, safeList(k).length]));
-  const images = data && data.images && typeof data.images === "object" ? data.images : {};
+  counts.chats = safeList("chats").length;
+  const backupImages = data && recordObject(data.images) ? data.images : {};
   const wanted = new Set();
+  const addPicture = id => {
+    if (!validId(id)) throw new Error("invalid picture reference");
+    wanted.add(id);
+  };
+  const addPictures = ids => ids.forEach(addPicture);
   if (data) {
-    safeList("chars").filter(recordObject).forEach(c => charImgIds(c).forEach(id => wanted.add(id)));
-    safeList("personas").filter(recordObject).forEach(p => personaImgIds(p).forEach(id => wanted.add(id)));
-    safeList("lore").filter(recordObject).forEach(e => imageIdsOf("lore", e).forEach(id => wanted.add(id)));
-    safeList("prompts").filter(recordObject).forEach(e => imageIdsOf("prompt", e).forEach(id => wanted.add(id)));
-    [data.buckets, data.personaBuckets, data.loreBooks, data.promptBooks].forEach(meta => {
-      if (!recordObject(meta)) return;
-      Object.values(meta).forEach(item => item && item.cover && wanted.add(item.cover));
-    });
-    if (Array.isArray(data.trash)) data.trash.forEach(item => {
-      if (recordObject(item) && recordObject(item.record)) imageIdsOf(item.type, item.record).forEach(id => wanted.add(id));
-    });
+    try {
+      safeList("chars").filter(recordObject).forEach(c => addPictures(charImgIds(c)));
+      safeList("personas").filter(recordObject).forEach(p => addPictures(personaImgIds(p)));
+      safeList("lore").filter(recordObject).forEach(e => addPictures(imageIdsOf("lore", e)));
+      safeList("prompts").filter(recordObject).forEach(e => addPictures(imageIdsOf("prompt", e)));
+      [data.buckets, data.personaBuckets, data.loreBooks, data.promptBooks].forEach(meta => {
+        if (!recordObject(meta)) return;
+        Object.values(meta).forEach(item => {
+          if (item == null) return;
+          if (!recordObject(item)) throw new Error("invalid grouping");
+          if (item.cover) addPicture(item.cover);
+        });
+      });
+      if (Array.isArray(data.trash)) data.trash.forEach(item => {
+        if (recordObject(item) && recordObject(item.record)) addPictures(imageIdsOf(item.type, item.record));
+      });
+    } catch (_) {
+      fatal.push("Backup picture references or groupings are damaged");
+    }
   }
-  const missing = [...wanted].filter(id => !images[id]);
-  if (missing.length) warnings.push(missing.length + " referenced picture" + (missing.length === 1 ? " is" : "s are") + " missing");
+  const missing = [...wanted].filter(id => {
+    const value = Object.prototype.hasOwnProperty.call(backupImages, id) ? backupImages[id] : null;
+    return !(expectUnreadPictures && value === true) && !backupPictureValid(value);
+  });
+  if (missing.length) fatal.push(missing.length + " referenced picture" + (missing.length === 1 ? " is" : "s are") + " missing or unreadable");
   return {
     ok: !fatal.length,
     fatal,
     warnings,
     counts,
-    imageCount: Object.values(images).filter(Boolean).length,
+    imageCount: Object.values(backupImages).filter(Boolean).length,
     exportedAt: data && data.exportedAt || null,
     appVersion: data && data.manifest && data.manifest.appVersion || "Earlier release"
   };
@@ -1138,6 +1441,13 @@ async function readBackupPreview(file) {
   } catch (e) {
     return { file, data: null, info: { ok: false, fatal: ["The file is not valid JSON"], warnings: [], counts: { chars: 0, personas: 0, lore: 0, prompts: 0 }, imageCount: 0 } };
   }
+}
+async function backupRestoreSyncState() {
+  if (typeof window === "undefined") return { enabled: false };
+  if (window.vaultSync && typeof window.vaultSync.call === "function") return window.vaultSync.call("status", {});
+  const C = window.Capacitor;
+  if (C && typeof C.nativePromise === "function") return C.nativePromise("VaultSync", "dispatch", { method: "status", args: {} });
+  return { enabled: false };
 }
 function mulberry32(a) {
   return function () {
@@ -1815,7 +2125,7 @@ function normalizePromptImport(obj, fallbackCollection, keepBooks = true) {
     });
   }
   return {
-    entries: obj && obj.app === "rolecraft-vault" ? out : out.filter(r => r.content),
+    entries: out.filter(r => r.content),
     images,
     thumbs,
     blurred,
@@ -1871,7 +2181,7 @@ function normalizeLoreImport(obj, fallbackWorld, keepBooks = true) {
       });
     }
     return {
-      entries: obj && obj.app === "rolecraft-vault" ? out : out.filter(r => r.content),
+      entries: out.filter(r => r.content),
       images,
       thumbs,
       blurred,
@@ -2240,14 +2550,15 @@ const timeAgo = ts => {
   if (days < 30) return days + "d ago";
   return new Date(ts).toLocaleDateString();
 };
-/* Give the gallery enough room to feel like a gallery. Every device gets at
-   least eight pictures when eight exist, rounded up to a complete measured row
-   where possible. Phones use four compact two-picture rows; wider devices grow
-   toward two rows and stop at twelve so the Dashboard remains bounded. */
+/* Keep complete gallery rows and at least eight pictures when available.
+   Two columns use four compact rows, three or four columns use three, and
+   wider layouts use two. Four-column tablets must not show fewer pictures
+   than narrower three-column tablets. Keep the Dashboard capped at twelve. */
 function dashboardPictureLimit(columns, total) {
   const cols = Math.max(1, Number(columns) || 1);
   const available = Math.max(0, Number(total) || 0);
-  const completeRows = Math.ceil(8 / cols) * cols;
+  const rows = cols <= 2 ? Math.ceil(8 / cols) : cols <= 4 ? 3 : 2;
+  const completeRows = rows * cols;
   return Math.min(available, Math.min(12, Math.max(8, completeRows)));
 }
 
@@ -2397,7 +2708,8 @@ function customThemeVars(value, contrast) {
     "--scroll": mixThemeHex(panel, text, .18),
     "--shadow": "0 10px 30px " + alphaThemeHex(darkCanvas ? "#000000" : text, darkCanvas ? .5 : .16),
     "--btn-grad": "linear-gradient(135deg, " + accent + ", " + accentDeep + ")",
-    "--btn-text": buttonText
+    "--btn-text": buttonText,
+    "--scheme": darkCanvas ? "dark" : "light"
   };
 }
 
@@ -2911,6 +3223,11 @@ const CSS = `
   .rcv .lb-chrome > * { pointer-events: auto; }
   .rcv .lb-chrome.top { top: 0; background: linear-gradient(180deg, rgba(4,6,13,.72), transparent); }
   .rcv .lb-chrome.bot { bottom: 0; background: linear-gradient(0deg, rgba(4,6,13,.78), transparent); }
+  .rcv .lb-root [hidden] { display: none !important; }
+  .rcv .lb-reveal { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); z-index: 4; }
+  .rcv .lb-reveal:not(:focus-visible) { width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; pointer-events: none; }
+  .rcv .lb-top-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .rcv .lb-stage img { max-height: 100dvh; }
   @keyframes rcvspin { to { transform: rotate(360deg); } }
   /* the indeterminate transfer bar: a step that cannot know how far along it is */
   @keyframes rcv-sweep { from { transform: translateX(-120%); } to { transform: translateX(400%); } }
@@ -3055,6 +3372,8 @@ const CSS = `
        mobile override prevents them from occupying grid cells underneath the
        five-destination Android bar. */
     .rcv.phone .sidebar .brand, .rcv.phone .sidebar .side-tools { display: none !important; }
+    .rcv.phone #rcv-mobile-chat { min-width: 0; align-self: stretch; }
+    .rcv.phone #rcv-mobile-chat .rcchat-launch { margin: 0; min-width: 0; min-height: 54px; display: flex; }
     .rcv.phone .sidebar .primary-nav { width: auto; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 10px; line-height: 1.05; }
     .rcv.phone .sidebar .primary-nav svg { display: block; flex: 0 0 auto; margin-left: auto; margin-right: auto; }
     .rcv.phone .sidebar .primary-nav .navlabel { display: block; width: 100%; max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
@@ -3118,6 +3437,378 @@ const CSS = `
   @media (max-width: 330px) {
     .rcv.phone .settings-theme-choices,
     .rcv.phone .settings-contrast-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  /* Shared visual language. Keep geometry identical in both graphics modes;
+     depth and short interaction motion are optional, readable surfaces are not. */
+  .rcv .card { border-radius: 18px; background: var(--panel); }
+  .rcv .modal { border-radius: 22px; border-color: var(--line2); }
+  .rcv .modal-title-row { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .rcv .modal-intro { max-width: 65ch; }
+  .rcv .btn { min-height: 40px; border-radius: 11px; font-weight: 650; }
+  .rcv .btn-ghost { background: var(--panel); }
+  .rcv .btn-ghost:hover { background: var(--nav-hov); }
+  .rcv .navitem { border-radius: 12px; font-weight: 600; }
+  .rcv .navitem.active { background: var(--brass-soft); }
+  .rcv .eyebrow { line-height: 1.6; }
+  .rcv .settings-choice-row { padding: 5px; border-radius: 14px; background: var(--ink); border: 1px solid var(--line); }
+  .rcv .settings-choice { border-radius: 9px; }
+  .rcv .filerow { border-radius: 13px; background: var(--ink2); }
+  .rcv .dashboard-spotlight { border-color: var(--brass-line); border-radius: 22px; }
+  .rcv .dashboard-counts > * { border-radius: 14px !important; }
+  .rcv .tile, .rcv .wtile, .rcv .stile { border-radius: 16px; }
+  .rcv input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), .rcv textarea, .rcv select { border-color: var(--line2); border-radius: 11px; }
+  .rcv:not(.perf) .card { box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 18%, transparent); }
+  .rcv:not(.perf) .modal { box-shadow: var(--shadow); }
+  .rcv:not(.perf) .dashboard-spotlight { box-shadow: var(--shadow); }
+  .rcv:not(.perf) .btn { transition: background-color .16s, border-color .16s, transform .16s; }
+  /* Quality-only material and interaction pass. No geometry or image filters
+     change between modes; every colour is derived from the selected theme. */
+  .rcv:not(.perf) .card { box-shadow: 0 6px 22px color-mix(in srgb, var(--ink) 22%, transparent), inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent); }
+  .rcv:not(.perf) .dashboard-spotlight { box-shadow: var(--shadow), inset 0 1px 0 var(--brass-line); }
+  .rcv:not(.perf) .modal { box-shadow: var(--shadow), inset 0 1px 0 var(--brass-line); border-color: var(--brass-line); }
+  .rcv:not(.perf) .modal-title-row { border-bottom-color: var(--brass-line); }
+  .rcv:not(.perf) .settings-choice-row { box-shadow: inset 0 1px 3px color-mix(in srgb, var(--ink) 30%, transparent); }
+  .rcv:not(.perf) .navitem.active { box-shadow: inset 2px 0 0 var(--brass); }
+  .rcv:not(.perf).phone .sidebar .primary-nav.active { box-shadow: inset 0 2px 0 var(--brass); }
+  .rcv:not(.perf) :is(.char-card,.persona-card,.tile,.wtile,.stile,.filerow) { transition: border-color .18s, box-shadow .18s; }
+  .rcv:not(.perf) :is(input,textarea,select):focus-visible { box-shadow: 0 0 0 3px var(--brass-soft); }
+  @media (hover: hover) and (pointer: fine) {
+    .rcv:not(.perf) :is(.char-card,.persona-card,.tile,.wtile,.stile):hover { box-shadow: 0 7px 20px color-mix(in srgb, var(--ink) 24%, transparent); border-color: var(--brass-line); }
+  }
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    .rcv:not(.perf) .btn:active:not(:disabled) { transform: translateY(1px); }
+    .rcv:not(.perf) .start-card { transition: transform .18s, border-color .18s; }
+    .rcv:not(.perf) .start-card:hover { transform: translateY(-2px); }
+  }
+  /* The mobile bar used to retain its expensive blur in Performance. Do not
+     remove image filters: a user's privacy blur must survive either mode. */
+  .rcv.perf *, .rcv.perf *::before, .rcv.perf *::after { backdrop-filter: none !important; }
+  .rcv.perf .card { box-shadow: none; }
+  .rcv.perf.phone .sidebar { background: var(--panel); }
+  .rcv.perf .btn:hover { filter: none; }
+  @media (max-width: 760px) {
+    .rcv .btn { min-height: 48px; }
+    .rcv .card { border-radius: 15px; }
+    .rcv .modal { border-radius: 18px; }
+    .rcv .settings-choice-row { padding: 4px; }
+    .rcv .tile, .rcv .wtile { border-radius: 12px; }
+  }
+  @media (forced-colors: active) {
+    .rcv .card, .rcv .modal, .rcv .btn-ghost, .rcv.perf.phone .sidebar { background: Canvas; }
+    .rcv .navitem.active { outline: 2px solid Highlight; outline-offset: -2px; }
+  }
+  /* 1.304 premium workspace pass. One visual system for every theme and both
+     editions: a serif display face for titles, Inter for work, theme-accent
+     primary actions, calm segmented choices, a single focus language and
+     subtle opacity-led entrances in Quality only. Geometry stays identical in
+     Quality and Performance; Performance paints the same layout flat and still. */
+  .rcv {
+    --font-display: 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', P052, 'Noto Serif', Georgia, serif;
+    --ease-out: cubic-bezier(.2,.7,.2,1);
+    --ease-emph: cubic-bezier(.16,1,.3,1);
+    --focus-ring: var(--brass);
+    --hairline: color-mix(in srgb, var(--brass) 26%, var(--line));
+    --btn-grad: linear-gradient(180deg, #e4c47a, #c99f4a); --btn-text: #17120a;
+    --scheme: dark; color-scheme: var(--scheme);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    font-variant-numeric: lining-nums;
+  }
+  .rcv.light { --btn-grad: linear-gradient(180deg, #86631f, #715316); --btn-text: #ffffff; --scheme: light; }
+  /* The record stage is dark in every theme, so its primary action is too. */
+  .rcv .hero { --btn-grad: linear-gradient(180deg, #e4c47a, #c99f4a); --btn-text: #17120a; --focus-ring: #d9b25c; }
+
+  /* Type. Titles use the display serif; interface text stays Inter. */
+  .rcv h1.serif, .rcv h2.serif, .rcv .modal-title-row h2, .rcv .spotlight-copy > .serif:first-child,
+  .rcv .brand .serif, .rcv .phone-topbar .serif {
+    font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em; line-height: 1.1;
+  }
+  .rcv h1.serif { text-wrap: balance; }
+  .rcv .brand .serif { font-size: 20px !important; letter-spacing: 0; }
+  .rcv .phone-topbar .serif { font-size: 19px !important; letter-spacing: 0; }
+  .rcv .eyebrow { letter-spacing: .2em; }
+  .rcv .dashboard-counts .serif { font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+  /* One focus language: an accent ring that clears every theme at 3:1. */
+  .rcv button:focus-visible, .rcv [role="button"]:focus-visible, .rcv summary:focus-visible, .rcv a:focus-visible,
+  .rcv input:focus-visible, .rcv textarea:focus-visible, .rcv select:focus-visible {
+    outline: 2px solid var(--focus-ring); outline-offset: 2px;
+  }
+  .rcv input[type="checkbox"], .rcv input[type="radio"], .rcv input[type="range"] { accent-color: var(--brass); }
+
+  /* Actions. Primary follows the theme accent everywhere; secondary actions are
+     quiet surfaces with full-strength labels so hierarchy comes from fill. */
+  .rcv .btn { letter-spacing: .005em; }
+  .rcv .btn-primary { border: 1px solid transparent; }
+  .rcv .btn-ghost { color: var(--text); }
+  .rcv .btn-ghost:hover { border-color: var(--brass-line); }
+  .rcv .btn:disabled { cursor: not-allowed; }
+  .rcv .btn-move { border-color: transparent; background: transparent; color: var(--mut); }
+  .rcv .btn-move:hover:not(:disabled) { color: var(--text); background: var(--nav-hov); border-color: transparent; }
+  .rcv .dashboard-collapse { border-color: transparent !important; background: transparent !important; padding-left: 0 !important; }
+  .rcv .dashboard-collapse svg { color: var(--brass); }
+  .rcv .disclosure-toggle { border-radius: 8px; }
+  .rcv .disclosure-toggle:hover { color: var(--text) !important; }
+
+  /* Segmented choices read as one control: the chosen option is a raised
+     surface marked by the accent rather than a second solid primary button. */
+  .rcv .settings-choice-row { background: var(--ink2); }
+  .rcv .muted { color: var(--mut); line-height: 1.55; }
+  .rcv .settings-choice.btn-primary { background: var(--panel); color: var(--text); border: 1px solid var(--brass-line);
+    box-shadow: inset 0 -2px 0 var(--brass); }
+  .rcv .settings-choice.btn-primary svg { color: var(--brass); }
+  .rcv .settings-choice:not(.btn-primary) { background: transparent; border-color: transparent; color: var(--mut); }
+  .rcv .settings-choice:not(.btn-primary):hover { color: var(--text); background: var(--nav-hov); }
+
+  /* Fields. Native pop-ups follow the theme; selects get a drawn chevron. */
+  .rcv input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):hover,
+  .rcv textarea:hover, .rcv select:hover { border-color: color-mix(in srgb, var(--text) 30%, transparent); }
+  .rcv input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):focus,
+  .rcv textarea:focus, .rcv select:focus { border-color: var(--brass-line); }
+  .rcv select:not([multiple]):not([size]) {
+    -webkit-appearance: none; appearance: none; padding-right: 36px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--mut) 50%), linear-gradient(135deg, var(--mut) 50%, transparent 50%);
+    background-position: calc(100% - 19px) 52%, calc(100% - 14px) 52%;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  .rcv select option { background: var(--panel); color: var(--text); }
+
+  /* Surfaces. A faint top light and accent hairlines give depth in Quality;
+     Performance keeps the same colours without shadows. */
+  .rcv button.card { transition: border-color .18s; }
+  .rcv button.card:hover { border-color: var(--brass-line); }
+  .rcv .quick-card > div:first-child { background: var(--brass-soft) !important; color: var(--brass) !important;
+    box-shadow: inset 0 0 0 1px var(--brass-line); }
+  .rcv .dashboard-spotlight .spotlight-copy > .serif:first-child { margin-bottom: 6px !important; }
+  .rcv .modal-title-row h2 { font-size: 28px; }
+  .rcv .closex { transition: background-color .16s, border-color .16s; }
+  .rcv .closex:hover { border-color: var(--brass-line) !important; }
+  .rcv .toast { border-color: var(--hairline); }
+  .rcv:not(.perf) .card { background-image: linear-gradient(180deg, color-mix(in srgb, var(--text) 2.5%, transparent), transparent 42%); }
+  .rcv:not(.perf) .modal { background-image: linear-gradient(180deg, color-mix(in srgb, var(--brass) 5%, transparent), transparent 120px); }
+  .rcv:not(.perf) .hero { box-shadow: inset 0 -1px 0 var(--hairline); }
+  .rcv:not(.perf) .toast { box-shadow: var(--shadow), inset 0 1px 0 var(--brass-line); }
+
+
+  /* Touch layouts, including Android tablets wider than the phone breakpoint,
+     keep every control at a full touch target. */
+  .rcv.phone :is(.btn, button.chip, .btn-move, .blurbtn, .gridsel, .ss-btn, .navitem) { min-height: 48px; min-width: 48px; }
+  .rcv.phone :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]), select) { min-height: 48px; }
+  .rcv.phone .closex { width: 48px !important; height: 48px !important; }
+  .rcv.phone .disclosure-toggle { min-height: 44px; }
+  .rcv.phone .modal summary { min-height: 44px; display: flex; align-items: center; }
+  .rcv.phone .palette-row { min-height: 48px; }
+
+  /* Text over artwork sits on a dark scrim in every theme, so it uses a light
+     form of the accent. Light and dark Custom accents otherwise fell to about
+     3.4:1 on card captions, album badges and bucket covers. */
+  .rcv { --art-accent: color-mix(in srgb, var(--brass) 60%, #fff6e0); }
+  .rcv:is(.light, .custom) :is(.char-card .meta, .wtile .wacts, .grid-image-badge, button.stile:not([aria-label^="Create"])) {
+    --brass: var(--art-accent); --brass-line: color-mix(in srgb, var(--art-accent) 55%, transparent);
+    --brass-soft: color-mix(in srgb, var(--art-accent) 16%, transparent);
+  }
+  .rcv button.stile:not([aria-label^="Create"])::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 72%; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(6,9,20,.8)); }
+
+
+  /* A full-screen picture viewer or slideshow opened from a library or record
+     must cover the Android top and bottom bars. Its fixed layer was trapped in
+     the column's stacking context (z-index 1), under the bars at 4 and 12. */
+  .rcv > .scrollbody:has(.lb-root, .ss-root) { z-index: 96; }
+
+  /* Navigation. Desktop keeps a quiet rail with an accent wash; touch rails
+     get full targets; the Android bar marks the destination with a pill. */
+  .rcv .navitem svg { transition: color .16s; }
+  .rcv .navitem.active svg { color: var(--brass); }
+  .rcv .navitem.active { background: linear-gradient(90deg, var(--brass-soft), color-mix(in srgb, var(--brass-soft) 30%, transparent)); }
+  .rcv:not(.perf) .sidebar { box-shadow: inset -1px 0 0 color-mix(in srgb, var(--brass) 8%, transparent); }
+  @media (max-width: 1020px) and (min-width: 761px) {
+    .rcv.phone .sidebar { width: 80px !important; }
+    .rcv.phone .sidebar .navitem { min-height: 48px; min-width: 48px; }
+  }
+  @media (max-width: 760px) {
+    .rcv.phone .sidebar .primary-nav, .rcv.phone .sidebar .primary-nav.active, .rcv:not(.perf).phone .sidebar .primary-nav.active {
+      background: transparent; box-shadow: none; color: var(--mut);
+    }
+    .rcv.phone .sidebar .primary-nav svg { box-sizing: content-box; padding: 4px 16px; border-radius: 999px; }
+    .rcv.phone .sidebar .primary-nav.active svg { background: var(--brass-soft); color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass-line); }
+    .rcv.phone .sidebar .primary-nav .navlabel { font-weight: 600; letter-spacing: .01em; }
+    .rcv.phone .sidebar .primary-nav.active .navlabel { color: var(--text); }
+    .rcv.phone .phone-topbar .btn-ghost { background: transparent; border-color: transparent; color: var(--mut); padding-left: 12px; padding-right: 12px; }
+    .rcv.phone .phone-topbar .btn-ghost:hover { color: var(--text); background: var(--nav-hov); }
+    .rcv:not(.perf).phone .phone-topbar { box-shadow: 0 1px 0 var(--hairline); }
+    .rcv.phone .modal-back { padding: 12px; }
+    .rcv.phone .modal { max-width: calc(100vw - 24px); padding: 18px 18px 22px; }
+    .rcv.phone .modal-title-row h2 { font-size: 25px; }
+    .rcv.phone :is(.settings-graphics-choices, .settings-screen-choices) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Library toolbars: search owns a full row, then choices pair up. */
+    .rcv.phone .library-head { margin-bottom: 16px !important; }
+    .rcv.phone .library-head > div:first-child { width: 100%; }
+    .rcv.phone .library-head > div:last-child { width: 100%; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
+    .rcv.phone .library-head > div:last-child > input:first-child { grid-column: 1 / -1; width: 100% !important; }
+    .rcv.phone .library-head > div:last-child > select { width: 100% !important; }
+    .rcv.phone .library-head > div:last-child > .btn,
+    .rcv.phone .library-head > div:last-child > * > .btn { width: 100%; justify-content: center; }
+    .rcv.phone .library-head > div:last-child > * { min-width: 0; }
+    .rcv.phone .library-head > div:last-child:has(> input:first-child) > :last-child:nth-child(even),
+    .rcv.phone .library-head > div:last-child:not(:has(> input:first-child)) > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+    /* Dashboard: counts and quick starts become compact grouped lists. */
+    .rcv.phone .dashboard-counts > button { padding: 9px 10px !important; }
+    .rcv.phone .dashboard-counts .serif { font-size: 20px !important; }
+    .rcv.phone:not(.tablet) .quick-grid { gap: 0 !important; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--panel); }
+    .rcv.phone:not(.tablet) .quick-grid > .card { border: 0; border-radius: 0; box-shadow: none; background: transparent; min-height: 60px; padding: 11px 14px !important; }
+    .rcv.phone:not(.tablet) .quick-grid > .card + .card { border-top: 1px solid var(--line); }
+    .rcv.phone .dash-head { margin-top: 22px !important; }
+    /* Editor actions pair up, with Save as the full-width closing action. */
+    .rcv.phone .character-editor-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; width: 100%; }
+    .rcv.phone .character-editor-actions > .btn { width: 100%; }
+    .rcv.phone .character-editor-actions > .btn-primary:last-child { grid-column: 1 / -1; }
+  }
+
+  /* Purposeful motion, Quality only. Opacity carries entrances so measured
+     layout never moves; panels and dialogs keep their short lift. Nothing
+     loops, and Performance and reduced motion remove all of it. */
+  @keyframes rcv-view-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes rcv-card-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: no-preference) {
+    .rcv:not(.perf) > .scrollbody > .dashwrap,
+    .rcv:not(.perf) > .scrollbody > div:not([class]) { animation: rcv-view-in .34s var(--ease-out); }
+    .rcv:not(.perf) > .scrollbody.sheet { animation: rcv-view-in .26s var(--ease-out); }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(-n+12) { animation: rcv-card-in .42s var(--ease-out) backwards; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(2) { animation-delay: 25ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(3) { animation-delay: 50ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(4) { animation-delay: 75ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(5) { animation-delay: 100ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(6) { animation-delay: 125ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(7) { animation-delay: 150ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(8) { animation-delay: 170ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(9) { animation-delay: 190ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(10) { animation-delay: 205ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(11) { animation-delay: 220ms; }
+    .rcv:not(.perf) :is(.grid-cards, [data-dashboard-gallery="true"], .quick-grid) > :nth-child(12) { animation-delay: 235ms; }
+    .rcv:not(.perf) :is(.tile, .wtile, .stile, .char-card, .spotlight-image) img { animation: rcv-card-in .45s var(--ease-out); }
+    .rcv:not(.perf) .modal { animation-timing-function: var(--ease-emph); }
+    .rcv:not(.perf) .navitem { transition: background-color .18s, color .18s, box-shadow .18s; }
+    .rcv:not(.perf).phone .sidebar .primary-nav svg { transition: background-color .22s var(--ease-out), color .22s, box-shadow .22s; }
+    .rcv:not(.perf) :is(.settings-choice, .btn-ghost, .btn-move, .closex, .chip) { transition: background-color .16s, border-color .16s, color .16s, box-shadow .16s; }
+  }
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    .rcv:not(.perf) button.card:not(:disabled):hover { box-shadow: 0 10px 26px -12px color-mix(in srgb, var(--ink) 70%, transparent), inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent); }
+    .rcv:not(.perf):not(.charsnap) .btn-primary:not(:disabled):hover { filter: brightness(1.06); }
+  }
+  .rcv:not(.perf):not(.charsnap) .btn-primary:not(.settings-choice) { box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 6px 16px -10px var(--brass); }
+  .rcv.perf .btn-primary:not(.settings-choice) { box-shadow: none; }
+  @media (forced-colors: active) {
+    .rcv .settings-choice.btn-primary { outline: 2px solid Highlight; }
+    .rcv.phone .sidebar .primary-nav.active svg { outline: 2px solid Highlight; }
+  }
+  /* 1.333 Settings navigation and device sync. The header and section chips
+     stay pinned while the long page scrolls; every section stays mounted. */
+  .rcv .modal.settings-modal { max-width: 680px; padding-top: 0; }
+  .rcv .settings-top { position: sticky; top: 0; z-index: 4; margin: 0 -26px 14px; padding: 22px 26px 10px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  .rcv .settings-top .settings-title-row { margin-bottom: 10px !important; }
+  .rcv .settings-nav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -4px; padding: 2px 4px; }
+  .rcv .settings-nav::-webkit-scrollbar { display: none; }
+  .rcv .settings-nav-item { flex: 0 0 auto; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2);
+    background: transparent; color: var(--mut); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .rcv .settings-nav-item:hover { color: var(--text); border-color: var(--brass-line); }
+  .rcv .settings-nav-item.active { color: var(--text); border-color: var(--brass); background: var(--brass-soft); box-shadow: inset 0 -2px 0 var(--brass); }
+  .rcv .settings-nav-item:focus-visible { outline: 2px solid var(--focus-ring, var(--brass)); outline-offset: 2px; }
+  .rcv .settings-section-title { font-family: var(--font-display, inherit); font-size: 19px; font-weight: 600 !important; letter-spacing: .01em; color: var(--text); }
+  .rcv.phone .settings-nav-item { min-height: 44px; }
+  @media (max-width: 760px) {
+    .rcv .settings-top { margin: 0 -21px 12px; padding: 18px 21px 10px; }
+  }
+  .rcv.phone .settings-top { margin: 0 -18px 12px; padding: 16px 18px 10px; }
+
+  .rcv .vault-sync-panel { --sync-good: #4cc38a; --sync-warn: var(--brass); --sync-bad: var(--danger); --sync-off: var(--dim);
+    display: flex; flex-direction: column; gap: 14px; min-width: 0; margin: 4px 0 8px; }
+  .rcv.light .vault-sync-panel { --sync-good: #1f8a55; }
+  .rcv .vault-sync-panel p { margin: 0; }
+  .rcv .vault-sync-panel .sync-lede { color: var(--mut); font-size: 13.5px; line-height: 1.55; }
+  .rcv .vault-sync-panel .sync-note { color: var(--mut); font-size: 12.5px; line-height: 1.55; overflow-wrap: break-word; }
+  .rcv .vault-sync-panel .sync-alert { color: var(--danger); font-size: 13px; line-height: 1.5; overflow-wrap: break-word; }
+  .rcv .vault-sync-panel .sync-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .rcv .vault-sync-panel .sync-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .rcv .vault-sync-panel .sync-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text); min-width: 0; }
+  .rcv .vault-sync-panel .sync-field .input { width: 100%; min-width: 0; box-sizing: border-box; }
+  .rcv .vault-sync-panel textarea.input { resize: vertical; }
+  .rcv .vault-sync-panel .sync-step, .rcv .vault-sync-panel .sync-status, .rcv .vault-sync-panel .sync-devices,
+  .rcv .vault-sync-panel .sync-options, .rcv .vault-sync-panel .sync-invite, .rcv .vault-sync-panel .sync-help {
+    border: 1px solid var(--line2); border-radius: 12px; padding: 14px; background: var(--ink2); min-width: 0; }
+  .rcv .vault-sync-panel .sync-step { display: flex; flex-direction: column; gap: 12px; }
+  .rcv .vault-sync-panel .sync-step-head { display: flex; align-items: center; gap: 10px; }
+  .rcv .vault-sync-panel .sync-step-no { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+    border: 1px solid var(--brass-line); color: var(--brass); font-size: 13px; font-weight: 700; }
+  .rcv .vault-sync-panel .sync-subtle-block { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .rcv .vault-sync-panel .sync-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .rcv .vault-sync-panel .sync-status-main { display: flex; gap: 12px; align-items: flex-start; min-width: 0; flex: 1 1 240px; }
+  .rcv .vault-sync-panel .sync-status-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .rcv .vault-sync-panel .sync-status-text strong { font-size: 15px; }
+  .rcv .vault-sync-panel .sync-status-text span { color: var(--mut); font-size: 13px; line-height: 1.5; overflow-wrap: break-word; }
+  .rcv .vault-sync-panel .sync-status-text small { color: var(--dim); font-size: 12px; }
+  .rcv .vault-sync-panel .sync-tone-good { border-color: color-mix(in srgb, var(--sync-good) 45%, var(--line2)); }
+  .rcv .vault-sync-panel .sync-tone-warn { border-color: var(--brass-line); background: var(--brass-soft); }
+  .rcv .vault-sync-panel .sync-tone-bad { border-color: var(--danger-line); background: var(--danger-soft); }
+  .rcv .sync-dot { display: inline-block; width: 10px; height: 10px; flex: 0 0 10px; margin-top: 5px; border-radius: 50%; background: var(--sync-off, var(--dim)); }
+  .rcv .sync-dot-good { background: var(--sync-good, #4cc38a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sync-good, #4cc38a) 22%, transparent); }
+  .rcv .sync-dot-busy { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent); }
+  .rcv .sync-dot-wait { background: var(--brass); }
+  .rcv .sync-dot-warn { background: var(--brass); box-shadow: 0 0 0 3px var(--brass-soft); }
+  .rcv .sync-dot-bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+  .rcv .vault-sync-panel .sync-subhead { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--mut); font-weight: 700; margin-bottom: 10px; }
+  .rcv .vault-sync-panel .sync-devices ul, .rcv .vault-sync-panel .sync-check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .rcv .vault-sync-panel .sync-device, .rcv .vault-sync-panel .sync-check-list li { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+  .rcv .vault-sync-panel .sync-device > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rcv .vault-sync-panel .sync-device strong { font-size: 13.5px; overflow-wrap: anywhere; }
+  .rcv .vault-sync-panel .sync-device span:not(.sync-dot), .rcv .vault-sync-panel .sync-check-list span:not(.sync-dot) { color: var(--mut); font-size: 12.5px; line-height: 1.5; overflow-wrap: break-word; }
+  .rcv .vault-sync-panel .sync-invite { display: flex; flex-direction: column; gap: 12px; }
+  .rcv .vault-sync-panel .sync-qr { width: 100%; max-width: 320px; margin: 0 auto; padding: 10px; border-radius: 12px; background: #fff; }
+  .rcv .vault-sync-panel .sync-qr > * { display: block; width: 100%; height: auto; }
+  .rcv .vault-sync-panel .sync-invite details textarea { width: 100%; box-sizing: border-box; margin: 8px 0; }
+  .rcv .vault-sync-panel .sync-options { display: flex; flex-direction: column; gap: 14px; }
+  .rcv .vault-sync-panel .sync-options .sync-subhead { margin-bottom: 0; }
+  .rcv .vault-sync-panel .sync-toggle { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: 13.5px; }
+  .rcv .vault-sync-panel .sync-toggle input { flex-shrink: 0; margin-top: 3px; width: 18px; height: 18px; accent-color: var(--brass); }
+  .rcv .vault-sync-panel .sync-toggle small { display: block; margin-top: 3px; color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .rcv .vault-sync-panel .sync-background-settings, .rcv .vault-sync-panel .credential-share { display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+    padding-top: 14px; border-top: 1px solid var(--line); min-width: 0; }
+  .rcv .vault-sync-panel .sync-background-settings > *, .rcv .vault-sync-panel .credential-share > * { max-width: 100%; }
+  .rcv .vault-sync-panel .sync-background-settings p, .rcv .vault-sync-panel .credential-share p { color: var(--mut); font-size: 12.5px; line-height: 1.55; }
+  .rcv .vault-sync-panel .credential-share > div { align-self: stretch; }
+  .rcv .vault-sync-panel .sync-help { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; padding-bottom: 4px; }
+  .rcv .vault-sync-panel .sync-help[open] { padding-bottom: 14px; }
+  .rcv .vault-sync-panel .sync-help > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; min-height: 40px; display: flex; align-items: center; }
+  .rcv .vault-sync-panel .sync-help ol { margin: 0; padding-left: 20px; color: var(--mut); font-size: 12.5px; line-height: 1.6; display: flex; flex-direction: column; gap: 4px; }
+  .rcv .vault-sync-panel .sync-network-check { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .rcv .vault-sync-panel .sync-callout { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--brass-line); background: var(--brass-soft); min-width: 0; }
+  .rcv .vault-sync-panel .sync-callout > span { color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .rcv .vault-sync-panel .sync-preview { align-items: flex-start; }
+  .rcv .vault-sync-panel .sync-primary-settings, .rcv .vault-sync-panel .sync-leave { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--line); min-width: 0; }
+  .rcv .vault-sync-panel .sync-conflict-review { display: flex; flex-direction: column; gap: 8px; align-self: stretch; min-width: 0; }
+  .rcv .vault-sync-panel .sync-candidate { padding: 10px; border: 1px solid var(--line2); border-radius: 8px; min-width: 0; overflow-wrap: break-word; }
+  .rcv .vault-sync-panel .sync-candidate pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+  .rcv .vault-sync-panel .sync-camera { display: block; width: 100%; max-height: 300px; border-radius: 10px; object-fit: contain; background: #000; }
+  .rcv .vault-sync-panel .sync-status .btn { flex: 0 0 auto; }
+  .rcv.phone .vault-sync-panel .sync-status .btn { flex: 1 1 100%; }
+  .rcv .vault-sync-panel .sync-step > .btn { align-self: flex-start; }
+  .rcv.phone .vault-sync-panel .sync-step > .btn { align-self: stretch; }
+  /* A narrow desktop window gets the same whole-label segmented grids as a phone. */
+  @media (max-width: 480px) {
+    .rcv .settings-choice-row { display: grid !important; gap: 8px; }
+    .rcv .settings-theme-choices, .rcv .settings-reading-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rcv .settings-card-choices, .rcv .settings-contrast-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .rcv .settings-choice { width: 100%; min-width: 0; padding-left: 6px; padding-right: 6px; white-space: nowrap; }
+    .rcv .settings-theme-choices .settings-choice-content { flex-direction: column; gap: 4px !important; }
+  }
+  .rcv .sync-progress { display: flex; justify-content: flex-end; margin-bottom: 4px; min-width: 0; }
+  .rcv .sync-progress .btn { display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px; min-height: 44px; max-width: 100%; color: var(--mut); font-size: 12px; }
+  .rcv .sync-progress .spin { width: 12px; height: 12px; flex-shrink: 0; }
+  .rcv .sync-progress .sync-dot { margin-top: 0; }
+  .rcv .sync-progress-alert .btn { color: var(--text); border-color: var(--brass-line); }
+  @media (forced-colors: active) {
+    .rcv .settings-nav-item.active { outline: 2px solid Highlight; }
+    .rcv .sync-dot { forced-color-adjust: none; border: 1px solid CanvasText; }
   }
 `;
 
@@ -3462,11 +4153,15 @@ const GUIDE = [
     title: "Automatic device sync",
     summary: "Pair computers, phones and tablets once, then keep their libraries up to date.",
     body: [
-      "Open Settings on your most up-to-date device, such as your tablet, and choose Use this device as primary under Automatic device sync. This selects the preferred starting library, not a permanently required server.",
-      "Choose Pair another device to display a QR. On another phone, tablet or computer, choose Scan pairing QR or Scan QR image, then Remember and join group. A Windows computer can also Show QR to join an existing group: scan that computer from a paired device, choose Add scanned computer to this group, then accept on the computer. Invitations expire after ten minutes; Refresh pairing QR creates a fresh invitation without leaving your group, even during picture preparation. Group membership is remembered securely and does not expire. After the first sync, all devices are equal peers: any synced device can share updates or pair a new member while the original starting device is offline. A small sync spinner opens detailed progress in Settings. Completed records are saved as their originals arrive, while remaining pictures continue. If interrupted, reopen and unlock the app to resume saved progress without leaving the group. Small writing edits are picked up automatically.",
-      "Review and approve the first comparison on each device. Unique records are kept, and conflicting writing is kept as separate copies labelled sync conflict. Once paired, later changes travel in both directions. Record removals received by another device stay recoverable in its bin. Sync never deletes picture files.",
-      "Keep the apps open and unlocked while syncing. Windows may be minimized. Android pauses when backgrounded or locked and resumes when open and unlocked. Finish editing before incoming changes can be applied. Verified downloaded chunks are reused after interruptions, and Up to date appears after connected peers have published matching revisions.",
-      "Use a trusted private local network and allow the Windows app through the firewall on private networks if prompted. Guest networks can isolate devices. If a peer is missing, reopen and unlock both apps, check Wi-Fi and firewall access, then choose Check now. Do not keep creating new groups to fix a temporary disconnection.",
+      "Open Settings on your most up-to-date device, such as your tablet, choose Sync in the row of sections at the top, name the device and choose Start syncing from this device. This selects the preferred starting library, not a permanently required server.",
+      "Choose Add a device to display a QR. On another phone, tablet or computer, choose Scan pairing QR or Scan QR image, then Remember and join group. A Windows computer can also Show QR to join an existing group: on a paired device open Advanced, scan that computer, choose Add scanned computer to this group, then accept on the computer. Invitations expire after ten minutes; Make a new QR creates a fresh invitation without leaving your group, even during picture preparation. Group membership is remembered securely and does not expire. After the first sync, all devices are equal peers: any synced device can share updates or pair a new member while the original starting device is offline. A small sync spinner opens the Sync section of Settings, which shows each paired device, whether it is connected, and when this device last finished syncing. Completed records are saved as their originals arrive, while remaining pictures continue. If interrupted, reopen and unlock the app to resume saved progress without leaving the group. Small writing edits are picked up automatically.",
+      "Review and approve the first comparison on each device. Unique records are kept. Once paired, later changes travel in both directions. Record removals received by another device stay recoverable in its bin. Sync never deletes picture files. Before selecting the new primary policy, older groups keep competing writing as separate copies labelled sync conflict.",
+      "In private Chat 1.294 or later, first update every paired app, then open Advanced in the Sync section of Settings, choose Make this device primary and confirm. This changes the device used to settle simultaneous competing library edits without changing your group or codes. Ordinary newer edits from any device still update the primary and other peers. Alternatives go to the Bin instead of creating duplicate cards. The primary can be offline for ordinary updates; genuine clashes settle when it reconnects. This is not a one-way mirror and does not erase unique items from another device. Old apps pause sync with the group once this policy is enabled.",
+      "Use Review existing conflict copies, also under Advanced, after selecting a primary. Compare the saved details and choose which version stays in the library, then Keep selected versions. Nothing is preselected, and unselected groups stay unchanged. Other versions and their pictures stay in the Bin. Existing chats keep resolving the retained character without rewriting their transcript or memory. If the library changes during review, reload the review before saving. Do not delete every conflict-labelled card blindly: some contain your newest writing.",
+      "Windows can sync while minimized; keep the app open and unlocked and the computer awake. On Android, the Sync section of Settings offers Sync with screen off. Confirm Keep unlocked and start sync to let this session continue while switching apps or turning off the screen. This keeps the vault unlocked in memory and shows a notification with Stop. Explicit Lock vault, Stop, force-closing, restart, session expiry or Android battery/time limits end it. It does not auto-unlock or restart after the app closes. Without this opt-in, Android keeps its normal background lock and pause. Finish editing before incoming changes can be applied. Downloaded chunks are reused after interruptions, and Up to date requires matching saved revisions from connected peers.",
+      "Updated devices transfer encrypted photo chunks in bounded batches and Android stores received pictures in compact binary form, preserving the original quality. Install current builds on both devices for the fast path. Without the new primary policy, older paired copies use their previous transfer path. Selecting a primary requires updated private Chat apps on every member; you do not need to leave the group or pair again.",
+      "Use Refresh only when I choose to stop automatic paired-device checks on this device. Saved changes remain here until you choose Refresh now in Settings or Chat options. Otherwise Sync now checks every paired device straight away. Each device has its own preference. Leave it off for automatic updates. Use a trusted private local network and allow the Windows app through the firewall on private networks if prompted. Guest networks can isolate devices. If a peer is missing, reopen and unlock both apps, check Wi-Fi and firewall access, then choose Refresh now. Do not keep creating new groups to fix a temporary disconnection.",
+      "Paired devices remember where they last found each other and keep the same connection port, so they reconnect after a lock, an app switch or a restart even when the network blocks automatic discovery. If a device is missing, open Can't see a device? in the Sync section. It lists the usual causes: different or guest Wi-Fi, the app locked or in the background, Windows treating the Wi-Fi as a Public network, device clocks more than two minutes apart, and routers that isolate devices. Run network check shows this device's address, whether discovery is running, how Windows classifies the network, and when each paired device last reached it. When one device can reach another but not the reverse, the Sync section says which device needs its firewall or network setting changed.",
       "Sync is not a backup. Export a backup from each device before the first merge and continue periodic exports afterwards. Device passwords, unlock settings, application settings and pairing secrets are not copied into another vault or backup. Leaving a group stops this device; it does not revoke other members. To replace a shared pairing secret, create and pair a new group."
     ]
   },
@@ -3475,19 +4170,68 @@ const GUIDE = [
     "title": "Getting started",
     "summary": "What the vault is, and how the app is laid out.",
     "body": [
-      "Rolecraft Vault is a private library for the writing behind your roleplay: characters, the personas you play as, lorebooks, and reusable prompts. It keeps them together, lets you edit them properly, and hands them to CharSnap when you want to publish.",
-      "Nothing leaves this device. The interface has no way of reaching the internet at all. It cannot sync, phone home, or send a crash report, because the code that would do it is not there. The one exception is the device transfer you start yourself, covered later in this guide.",
+      "Rolecraft is a private library and chat app for the writing behind your roleplay: characters, the personas you play as, lorebooks, reusable prompts and conversations. It keeps them together, lets you edit them properly, and hands characters to CharSnap when you want to publish.",
+      "Your encrypted library stays on your devices. Paired devices can sync over your local Wi-Fi; explicit Chat sends contact OpenRouter, and explicit image generation contacts the selected image provider. Rolecraft does not send crash reports or silently upload your vault.",
       [
-        "On Windows and the web edition, the column on the left moves between the Dashboard and the four libraries: Characters, Personas, Lorebooks and Prompts.",
-        "On Android those same five destinations sit in the bottom bar. Search, locking and Settings sit in the top bar, and this guide can always be opened from Settings.",
+        "On Windows, the left column moves between Dashboard, Characters, Personas, Lorebooks and Chat. Prompt Vault opens from the Dashboard.",
+        "On Android those five destinations sit in the bottom bar. Prompt Vault opens from the Dashboard; Search, locking and Settings sit in the top bar. This guide can always be opened from Settings.",
         "On Windows and the web edition, Stats, the theme, locking, this guide and Settings sit at the bottom of the left column.",
         "The theme button changes the look of the app. Settings offers Light, Dark, CharSnap and Custom. Custom has colour pickers for the background, cards, accent and text, and remembers the palette on this device.",
         "Escape closes whatever is open, and every window also has an X in its top corner.",
-        "Keyboard users can open character cards, persona cards and gallery tiles with Enter or Space. Buttons within a card keep their own actions.",
-        "Character and persona search includes names, descriptions, tags and search terms, ignores surrounding spaces, and is case-insensitive. Name sorting puts numbered names in natural order, such as Chapter 2 before Chapter 10.",
-        "Press Save to update a record. Recovery drafts are protected as you write; they do not replace the saved record. Closing an editor with unsaved writing asks first. If storage cannot be read, use Retry opening vault and keep the original files rather than resetting the vault."
+        "Nothing is saved until you press Save. Closing an editor with unsaved writing asks first."
       ],
-      "Rolecraft Vault comes as a Windows app, an Android app, and a web edition that runs in a browser. They share the same library and interface. Windows can share a vault over local Wi-Fi and install signed update files, Android can receive that transfer and updates from an APK, and the web edition uses backup files instead."
+      "Rolecraft runs on Windows and Android. Existing installed Chat copies keep their encrypted data during this name change: Windows keeps its existing Chat data folder and Android keeps its existing Chat package identity. An old standard Vault installation has separate storage; verify a backup and migrate it before removing that installation."
+    ]
+  },
+  {
+    "id": "private-chat",
+    "title": "Private AI chat",
+    "summary": "OpenRouter setup, context, lore activation, branching and privacy.",
+    "body": [
+      "Chat is part of Rolecraft, not a second destination or separate app inside it. This renamed build upgrades existing private Chat installations without changing their vault identity. On a fresh Windows installation, Rolecraft can copy and verify an existing standard Vault library; an existing Rolecraft library is never replaced. On Android, the old standard app is still a separate Android package, so import its backup or transfer its library before uninstalling it.",
+      "For image generation, open a character and choose Generate image. Select OpenAI GPT Image or xAI Grok Imagine and save that provider's API key in the panel. Keys stay protected on this device and never enter vault exports or ordinary device sync. API billing is separate from ChatGPT/Grok subscriptions and OpenRouter. Enter a prompt, optionally select up to four reference pictures, and choose the picture count, caption and variant visibility before Generate and save. Each picture is a separate potentially paid request and saves to the gallery as it finishes. Only the prompt and selected references are uploaded; large references are resized as copies. The OpenRouter privacy setting does not control these separate providers. Existing images are never replaced. A failure stops the batch and keeps earlier saved results; Retry save on an unsaved result does not generate or pay for another image. Saved pictures use normal vault backup and library sync and can be deleted from the gallery. Preview full screen opens an unobstructed viewer. Keep the app open and unlocked. Cancel, backgrounding or locking may not prevent charges for work already started by the provider; requests are never automatically retried.",
+      "For a reference-based edit, select a picture and open Reference prompt ideas. Choose from twelve starting points, including More detail, same face, lighting, outfit, background, expression and portrait changes. Choosing an idea only shows its text. Use prompt fills an empty prompt; Add to prompt keeps your existing writing, while Replace prompt explicitly replaces it. Edit the text to describe your own outfit, setting or pose before generating. Ideas request the same identity and likeness, but exact results depend on the provider. They do not choose pictures for you, change output size, start paid requests or replace original artwork. Text-only generation still works without a preset or reference.",
+      "Image aspect ratio, resolution and quality are separate controls. Exact OpenAI output dimensions appear below the choices. Its maximum 2:3 portrait is 2336 x 3504 because of the pixel cap; choose 9:16 for 2160 x 3840 portrait. High resolutions are experimental and may take longer or cost more. Grok offers 1K or 2K, not native 4K. Previews show the dimensions actually received. Images are not upscaled to pretend to have higher native detail.",
+      "After unlocking, choose Chat in the Windows sidebar or Android bottom bar. The Dashboard remains home, and its Prompt Vault shortcut opens your reusable prompts. There is no floating Chat button over other screens. The new-story walkthrough has three steps: choose a character card and version, choose a persona card or play as yourself, then review the model, context budget and scene direction. Search and Show more keep large casts easy to browse. Attached lorebooks travel with the selected character and persona.",
+      "To continue stories on multiple Windows and Android devices, open the main app's Settings and use Automatic device sync. Start with the most up-to-date private library and pair the others once. Conversations, alternate paths, memories and story settings travel with the library; provider keys, passwords and reply drafts stay local. Update every device first: Standard Vault can join the same group for library records, while conversations and memories sync only between Chat devices. Standard devices never import conversations. Existing private groups retain their identity during upgrade. Creating a new group replaces the older one-phone chat link. Keep both apps open and unlocked on the same private network; finish editing or generating a reply before incoming stories are applied.",
+      "The chat link copies complete transcripts, alternate paths, story settings, pinned facts and compacted memories. After a saved paired-device update, Chat shows a small handoff notice for new turns or alternate branches; review a branch or conflict copy before continuing. It never silently sends another reply or deletes the alternate. Conflicting edits keep a separate conflict copy. Deleted conversations are recoverable from Recently deleted beside the conversation list. Saved on this device means a local save; Saved on both devices appears only after a verified peer save. Sync is not a backup. API keys, pairing secrets and image galleries are not copied. Needed character and persona writing travels with a story without creator memo fields. Transfer your image library separately. An exceptionally large conversation may stay local with a visible warning while other records sync; no writing is discarded.",
+      "Conversation cards show portraits, previews and activity dates, and the star pins a favourite. Conversation settings switch between chat bubbles and novel reading. Actions, dialogue and emphasis receive readable formatting. Each message card shows who is speaking, when it was written and, for replies, its token use. Tap or click the three-dot button on a message for Edit, Branch, Regenerate and Delete where available; the menu opens above neighbouring messages and closes with Back, Escape or a tap elsewhere. When a reply has other versions, the arrows under it switch between them. Both reading modes keep text on an opaque theme surface over bucket artwork. The optional background uses the cover assigned to the character's bucket, not the character portrait. With no bucket cover, the normal theme remains. The Scene panel has three sections: Scene (location, shared snapshot, each character's presence and knowledge notes, private events and the story ledger), AI & rules (scene tracking, two-character replies, spending warning, lore scope and knowledge lanes) and Memory. It docks beside the story on wide Windows screens and becomes a sheet on phones. Conversation settings are split the same way into Story, Writing, Memory, Usage, Connection and Export; long explanations show a short preview that expands when you tap More. In group chats, the scene and cast summary sits under the title: tap the title on a phone, or the scene chip on Windows, to see who is present and who replies next. Story branches shows named paths and previews. Search story in Options searches all saved message text, including older hidden turns and other branches; a result reveals that turn and switches paths only when necessary. Search is offline and does not change memory. Decorative motion is disabled in Performance mode or when your device requests reduced motion.",
+      "For group roleplay, add more character cards in the first step of the new-story walkthrough, then choose the first reply speaker at the review step. A new group starts with a blank shared scene instead of one character's solo greeting. In an existing chat, use the small portrait picker by the reply box to choose the next speaker; the full cast panel is still in Options. Adding a character does not change who replies next, spend tokens or make that character arrive in the fictional scene. Choose Reply as before Send or Continue. You can still type @ followed by the first letters of a name as a quick add-and-reply shortcut. Removing a character keeps their earlier messages and branches.",
+      "The compact group scene strip shows who is present and the current scene; open Scene for all details. The Scene panel has a shared snapshot and a presence choice for each group member. A knowledge note or a message-linked scene fact can be sent only when a selected recipient replies. Mark whether a character witnessed, heard, was told or privately knows a fact, then choose the recipients. Shared transcript and story memory are still available to every speaker, so these notes do not hide a secret already written there. Inspect context before a reply to preview what the selected speaker would receive before any automatic compaction on Send. The selected speaker's full profile and directions are sent with concise identity references for the other active cast. Context and memory shows approximate token counts for speaker, other cast, lore and memory; they are portions of the total, not extra fees. The AI is directed to continue the same story as the selected speaker without deciding your persona's thoughts, words or actions.",
+      "Character-specific knowledge lanes are an optional group setting in Scene. When enabled, the reply box can mark a turn as a private aside to the selected character. That turn and its reply stay visible in your transcript, but other characters do not receive them in their AI context. Each character then has separate rolling memory. Earlier shared turns and memory, the shared scene, pinned facts and permanent directions cannot be made secret retroactively. Once private turns or lane memories exist, this setting stays on to prevent accidental exposure. Review context for each speaker before sending sensitive writing.",
+      "The group story ledger is for concise, reviewed facts, relationships and promises. Use a message's Actions menu to add a note linked to that source turn. Review, edit or remove notes in Scene. A note enters a speaker's prompt only while its source remains unchanged, on the current branch and visible to that speaker. Search story can filter by speaker and current branch without deleting other results. The optional group automation spending warning uses reported charges and estimates where available; it pauses extra automatic checks or asks before more queued paid replies. It is not an OpenRouter account limit, and unknown or failed charges may not appear.",
+      "Manual replies are the default. In the cast picker, an optional two- or three-reply round lets you choose additional speakers, review their order and confirm one potentially paid roleplay call for each. If automatic two-character replies are enabled, an explicitly addressed Present character replies first; otherwise a current applied scene suggestion or cast rotation chooses the next one. The second character reads the first saved reply. Your unsent draft applies only to the first reply. Each later reply follows the prior saved one; Stop, lock, a failed reply or a failed save prevents the remaining requests. Automatic memory updates can add paid calls. You can reopen and continue manually if a round stops. Update each paired Rolecraft device before using the new group controls.",
+      "Group chats can optionally enable AI scene tracking in the Scene panel. It reads a bounded recent excerpt and memory to suggest or update AI-only scene, presence and knowledge notes; your own scene notes stay authoritative. Choose a separate coordinator model if a lower-cost model suits this task, and choose balanced, scene-change-only or every-reply checks. The first reply and a completed group round are checked; repeated analysis of the same unchanged scene is skipped unless you explicitly force another paid check. Ordinary phrases about a left hand or turning left do not count as someone leaving a scene. Review or undo a fresh AI scene change from the compact notice, or open Scene for the full comparison. In Suggest mode, compare each proposed fact with its previous value and the source reply, uncheck any guesses you do not want, or correct an AI value before applying. Current AI-inferred notes can also be corrected separately from your manual notes. Undo is available while the scene has not changed. Scene tracking never starts a roleplay reply for you. Switch it off to make no coordinator requests.",
+      "You can write your next draft while the character replies. Drafts are saved locally inside the encrypted vault and do not sync between devices. On phones, the three-dot Options button contains model selection, the cast and next speaker (the speaker button beside the reply box also offers Preview what they will see), scene tools, branches, search, conversation settings, model prices, Return to vault and Context & memory. On Windows, Context & memory and the price estimate sit beside Send and open above the reply box. When the phone keyboard is open, a group's speaker shrinks to a portrait button beside the reply box. Inspect context explains each active lore entry with the whole trigger word and matching message or draft. Conversations open at the latest message; scrolling up during a reply keeps your place. Android uses your keyboard's correction and sentence-capitalisation preferences.",
+      "Drafts normally stay on the device where you type them. For a deliberate handoff, open Chat Options and choose Draft handoff, then offer your unsent text to a currently paired device. The source keeps its copy so a missed offer cannot erase writing; stop editing it once offered. On the receiving device, open the same story and accept only when the branch and saved revision match and its local draft is empty. The transfer uses the encrypted paired network lane, expires, and never silently overwrites a local draft or sends a paid AI reply.",
+      [
+        "Press Inspect context before sending to see the current reply context. When automatic memory reaches its threshold, Send first sends older messages, the previous memory and pinned facts to the selected memory model for summarization. Choose a separate memory model in conversation settings or leave it on the roleplay model. The same conversation privacy setting applies. The completed memory then replaces older text in the reply request. Pictures and unrelated records are not included.",
+        "Lore entries activate only when their lorebook is attached and a whole trigger word or phrase appears in your or the character's latest eight messages. Matching ignores letter case: elf matches ELF, but not herself or shelf. Phrases must occur within one message. An entry without triggers stays inactive until you add a trigger.",
+        "Author note supplies direction for tone, pacing, boundaries or the next event. It is included in the permanent system context until you clear it.",
+        "Edit saves a new alternate message without deleting the original or its replies. Branch creates a separate conversation from that point. Regenerate keeps alternate replies beside each other and the arrows switch between them. Deleting a message also deletes the replies beneath it and asks you to confirm first.",
+        "Verify and load models retrieves the selected model's limits. Context controls allow preset or custom windows up to two million tokens, capped by the known model limit. Reply space and a safety margin are reserved. Counts are estimates; the provider decides the final token count. Older turns omitted from a request remain saved locally. Larger contexts may cost more and increase waiting time.",
+        "Automatic story memory starts on Send when older, unsummarized messages reach about 5,000 estimated tokens, or when the input budget reaches 75%. Conversation settings can choose an 8,000-token trigger or the previous 75%-only behavior. Opening a chat or changing this option does not compact anything. By default it keeps five recent messages plus your newest message verbatim. Each compaction summarizes only newly covered messages and appends that summary without rewriting earlier memory. Conversation settings also let you keep three to five recent messages, edit memory, pin facts or turn automatic updates off. Rebuild memory in a copy rereads this branch from the beginning and creates a separate repaired chat; the original and its alternate replies stay unchanged. Confirming a rebuild uses the selected model and privacy setting and may require multiple paid requests, but does not generate a reply. The full transcript and checkpoints remain saved. Memory grows over time; increase context or edit it when needed. Summaries can still miss details, so review and pin important facts.",
+        "Compaction adds one or more provider requests, cost and delay. Stop cancels it and keeps your draft. Failed, incomplete or unsaved summaries do not replace the last good memory; retry Send after resolving the error. Turning automatic memory off retains the existing memory but stops refreshing it.",
+        "The new-story walkthrough can load available models before you create the roleplay. To change later, click the model beside the chat title, choose your model and press Use model. This preserves your draft and returns to the reply box. You cannot change models while a reply or memory update is running.",
+        "Provider privacy is available in model selection, new-story setup and conversation settings. Require zero data retention is the default. Allow providers that may retain data can make more models available, but providers may store the context sent for replies and memory compaction. The choice is saved with this conversation and can be turned back on. OpenRouter account privacy restrictions still apply; this setting does not bypass them.",
+        "Conversation settings separate provider-reported cost for roleplay, memory, Story Director and scene tracking. A missing price is marked unknown, not free. This is a lower bound from saved requests, not your OpenRouter account balance; older, failed or deleted calls may be absent. A price preview before Send or a group round uses catalog token prices and an assumed reply size. It is approximate, not a spending limit or final bill; reasoning, cache pricing, memory and optional checks may add cost. Roleplay requests keep a stable conversation routing hint and stable directions before changing scene facts to improve eligible prompt-cache reuse, but a cache hit is not guaranteed and Require zero data retention is never relaxed for it. The Prompt cache trend in settings counts only provider-reported reads and writes; missing values are unavailable, not zero, and the read rate is not a dollar-savings estimate. Inspect a reply's token badge to see cache reads and writes when reported.",
+        "Story Director is an optional per-conversation Jev check in conversation settings. Off makes no extra calls. Score completed replies sends a bounded excerpt of the completed character reply, recent story and roleplay directions to OpenRouter after a successful reply; inspect the resulting tone, continuity and user-agency scores below the transcript. For an optional multi-character reply queue, it checks once after the final completed reply rather than after every character. Score + gently guide later replies also adds a temporary note to a later reply if at least two of the latest three character replies score poorly on a measure. It never changes saved messages, compacts history, regenerates automatically or overrides your permanent roleplay directions. Each check may incur an extra API charge. Scores are stored locally on this device and do not sync. The check pauses while Require zero data retention is selected, because the Decisions API has no documented per-request zero-retention control here. Choosing Allow providers that may retain data can enable it, subject to your OpenRouter account policies. Locking or backgrounding cancels the check.",
+        "How replies are written offers first-person or third-person narration, dialogue-heavy, balanced or narration-heavy writing, and short, medium or long replies. Choose Character default to leave that preference to the card. These instructions persist after compaction, but the maximum reply-token cap still limits the output.",
+        "Always-active prompt is optional and available in new-story setup and conversation settings. Priority 1 is your always-active super prompt; priority 2 is core character details and permanent roleplay settings; priority 3 is temporary context and conversation messages. Reply-style selections override card style suggestions but yield to your super prompt. It is included on every reply and regeneration, never silently trimmed, and is not used to instruct the memory worker. These directions guide the model but cannot override the selected provider's rules.",
+        "Use Actions, then Edit on a sent message. Save and branch here keeps the revised turn without requesting a reply. Save and regenerate reply saves your edited message and asks the model for a new response from that point. The original message and its replies remain on another branch. If saving fails, no request is sent; keep Chat open and retry saving. Finishing or stopping a reply does not automatically focus the reply box.",
+        "Small portraits appear beside messages, in the conversation list and in the top bar. Open Edit Character, choose its Portrait, then use Chat portrait crop to adjust zoom and horizontal/vertical position. Save character to keep the framing. Each variant's own portrait can have its own crop. Reset Chat crop returns to centred framing. The original image and gallery are unchanged; user messages use the selected persona's avatar, or an initial when no picture is available.",
+        "Permanent tokens cover core character/persona context, active directions, pinned facts, style preferences and your always-active prompt. Temporary/changing tokens cover messages, current scene, lore and memory, plus opening scenario/examples while they still fit. Scenario/examples retire after compaction; original messages remain saved. Both token categories use the model window and can incur costs on each request. Reply badges show provider-reported total, input and output; expand one for cache reads and writes, reasoning included in output and cost when reported. Context estimates are not billed usage. Creator memo fields are not attached to Chat or memory requests.",
+        "Phones initially draw only the latest 12 messages for responsive typing. Scrolling toward the top reveals earlier messages in groups while your place stays put; Show earlier messages does the same on request, and Show latest messages only hides them again. This display limit does not remove saved messages or change the AI context, story search, sync or the automatic-memory threshold. Opening a story shows the most recent message. While you read older messages, a streaming reply never moves the page; a Latest or New reply button takes you back to the end.",
+        "While Chat is open, Automatic device sync exchanges conversations only; full-library scans, picture preparation and hidden library drawing remain paused. Approve the first library comparison in Settings, then Chat can sync before all pictures finish. Open the same conversation on your paired phone, tablet or PC. Sent turns and completed AI replies appear on the other devices; streaming tokens and unsent drafts are not shared. Keep both apps open and unlocked on the same network, or use the explicit Android screen-off sync session. Incoming changes wait during an edit or reply generation. New turns written independently on two devices become alternate paths in the same chat; conflicting edits to existing text or memory keep recoverable copies. The older one-phone link can also catch up while Chat is open, but large histories and more than two devices need Automatic device sync. Return to the vault to resume library and picture sync. Context estimates refresh when you open their details; Send always uses the exact current story.",
+        "Android briefly protects an active reply from CPU and Wi-Fi sleep, for at most ten minutes. This is not a guarantee against battery restrictions or connection changes. Provider generation stops when backgrounded, including during an enabled screen-off vault-sync session. Received reply text is retained; choose Regenerate to try again. Retrying contacts the provider and can incur another charge. Background vault sync does not generate paid replies or share API keys.",
+        "Stop cancels a reply and keeps its partial writing. Save status appears beside the composer, with Retry save if storage fails. On touch devices Enter adds a line; tap Send when ready. Desktop Enter sends and Shift+Enter adds a line. Conversation settings offer Export chat JSON for the original complete chat record, and Export review JSON for every branch, saved memory, provider usage and the context assembled at export time without an unsent draft. The review file can help diagnose unexpectedly high token use but cannot reproduce an earlier request exactly. Android saves review JSON to Downloads or reports a failure. Both exports are unencrypted and may contain sensitive writing. They exclude API keys and picture bytes, and are never uploaded automatically. Attach a file yourself only if you want someone to review it."
+      ],
+      "Add your own OpenRouter API key in Chat settings. Windows protects it with account encryption and Android protects it with the Android Keystore. The interface cannot read the saved key back, and the key is not part of backups or transfers.",
+      "In Edit character, choose a Character voice and optional Voice direction. Variants can inherit the default voice or have their own. Suggest from character details makes an optional paid OpenRouter request to propose a stock Gemini voice and direction; review and Save the character to keep it. In a completed character reply's Actions menu, Play voice makes a separate paid Gemini 3.8 Flash TTS request and plays the returned audio. It uses your existing protected OpenRouter key, never runs automatically, and does not save generated audio into your library or sync. Replies over 4,000 characters need a shorter version for playback. Leaving Chat or locking stops playback. Provider privacy rules and account restrictions still apply.",
+      "API balances in Chat settings offers Refresh allowance for your normal saved OpenRouter key. It shows remaining key spending allowance and all-time key usage, not the account credit balance. No cap set does not mean unlimited funds. Open provider billing to check actual credits. The image studio has billing shortcuts for OpenAI and xAI because their normal image keys do not provide an account balance here. No management or administrator key is needed. Refresh contacts OpenRouter only when pressed; leaving the app or locking clears displayed amounts.",
+      "To share a saved OpenRouter, OpenAI or xAI/Grok key with another private Chat device, pair both apps in Automatic device sync, then open Share API keys between devices in Settings on both. On the source choose a saved provider and Share for 5 minutes. On the receiver choose Find shared keys, then Import on this device. Anyone in the paired group can import an offered key and spend its provider credits, so share only in your trusted group. Keys remain excluded from normal vault sync and backups. Existing saved keys are never overwritten; remove one in provider settings before replacing it. Keep both apps open and unlocked. Closing the panel, locking, backgrounding or expiry stops sharing. Stopping sharing does not revoke an already imported key; revoke it with the provider if needed. Both apps need version 1.287 or later, installed using the full Windows installer or APK.",
+      "Completions follow the conversation's provider privacy setting, with zero-data-retention routing required by default. OpenRouter and the selected model provider still receive the context you inspect and send, and using a model can cost money under your OpenRouter account. Pictures, unrelated records, the master password, PIN and vault encryption key are never sent.",
+      "The browser bundle does not offer provider chat because a browser page cannot safely protect a reusable API key. Use the installed Windows or Android Rolecraft app for Chat."
     ]
   },
   {
@@ -3533,6 +4277,9 @@ const GUIDE = [
       [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
+        "To change a character or persona's profile picture, open Grid view, tick one picture, then choose Set as profile picture. For characters with variants, choose Default or the variant you want from the profile selector. The previous portrait is kept in the gallery. You can also open a picture full screen and use Set as profile.",
+        "Tick one picture in Grid and choose Photo info, or use Photo info in the full-screen viewer, to see the original format, dimensions and file size. Save JPG copy exports a separate JPG at the same resolution with your chosen quality. Transparency becomes white, animations become still images, and camera/GPS metadata is not copied. Your original stays in the vault. Android uses the picture export location shown after saving; Windows uses Downloads.",
+        "Open a grid picture full screen and choose Hide controls to see only the picture. Tap the picture to show the controls again; Escape or Android Back still closes the viewer. This does not change or export the image.",
         "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
         "In grid view, Small, Medium and Large change how many pictures fit. A phone uses 3, 2 or 1 per row; a tablet uses 4, 3 or 2; Windows fits as many as its current width allows. The controls scroll away on Android so they do not cover the gallery.",
         "The mouse wheel zooms a picture you have opened, on a computer as well as a phone.",
@@ -3639,7 +4386,7 @@ const GUIDE = [
       ],
       "Update from JSON, inside the character editor, is a different thing from importing: it changes the character you already have rather than creating a new one. It asks whether the file should land on the Default, on the version you have open, or as a new version.",
       "Backups live in Settings. Export backup writes everything (every record and every picture) as one file. On Android it writes that file in small pieces, so a large vault does not need to fit in memory twice. A progress panel shows the current stage and picture counts; keep the app open and screen awake until it finishes. The final filename, location or error stays visible in Settings for this session. Only successful exports update the backup reminder.",
-      "Import backup accepts only a complete vault backup, checks it first, and shows its date, app version, record counts, picture count and any missing pictures before it offers to replace the vault. The replacement is staged and committed together, so a failed restore leaves the vault you already had untouched.",
+      "Import backup accepts only a complete vault backup, checks its records and every referenced picture, and refuses an incomplete file before replacing anything. The replacement is staged and committed together, so a failed restore leaves the vault you already had untouched. A restore does not count as a new backup export. Leave a paired device-sync group before restoring. Pair again explicitly afterward and review incoming libraries before approving them.",
       "While an editor is open, unsaved writing is kept as a private draft inside the encrypted vault. If the app closes unexpectedly, the dashboard and the editor offer to restore it."
     ]
   },
@@ -3687,13 +4434,13 @@ const GUIDE = [
     "summary": "Full screen, how much the app draws, and the size of everything.",
     "body": [
       "Everything here lives in Settings, and none of it touches your vault. It decides how the app looks and how hard it works, nothing more.",
-      "Themes has Light, Dark, CharSnap and Custom. Choose Custom to open four colour pickers for the background, cards, accent and text. Changes apply while you pick and are remembered from the lock screen onwards. Rolecraft derives the remaining shades and balances combinations that would make text unreadable. Reset custom colours returns to the original dark palette without changing your records.",
+      "Themes has Light, Dark, CharSnap and Custom. Choose Custom to open four colour pickers for the background, cards, accent and text. Changes apply while you pick and are remembered from the lock screen onwards. Rolecraft derives the remaining shades and balances combinations that would make text unreadable. Reset custom colours returns to the original dark palette without changing your records. Every theme, including Custom, uses its accent colour for the main action on a screen, the selected option in a choice and the keyboard focus ring. Titles use a serif display face and everything you work with stays in a clear sans serif.",
       "Full screen is on the Windows app. Settings has Screen, with Window and Full screen, and F11 switches between them from anywhere in the app. There is no title bar in full screen, so the way back out is in the same place: open Settings and choose Window. Escape does it too, and so does F11 again. The web edition and the Android app are already whatever size the browser or the device gives them, so the setting is not shown there.",
-      "Graphics has two settings, Quality and Performance.",
+      "Graphics has two settings, Quality and Performance. Both share refined cards, clear navigation, readable fields and the same responsive layout. Quality adds gentle depth and interaction motion; Performance removes decorative motion and backdrop blur, including the phone navigation bar. Image privacy blur stays enabled in either mode.",
       [
         "Quality is everything on: the light that drifts behind your library, the dust, the gleam that crosses the crest, and pictures read ahead so a gallery is ready before you reach it.",
         "Performance is for a machine that finds the app heavy. Nothing moves, the frosted blur behind dialogs is dropped, and the app keeps fewer pictures in memory and stops fetching them in advance.",
-        "Performance is not a plainer version. The colours, the spacing and the size of everything are identical, and no picture is ever shown at lower quality. There is simply less going on.",
+        "Performance keeps the same theme, spacing, control sizes and picture quality. Quality adds layered panel depth, theme-coloured highlights and short, purposeful motion: screens and record pages fade in, dialogs rise into place, the first cards and pictures of a library arrive in a brief cascade, and pictures fade in as they finish loading. Nothing loops and nothing moves over your text or artwork once it has arrived. Performance removes the decorative work. Reduced-motion preferences also stop animations. In private Chat, writing dots animate only while visible and pause when the app is hidden.",
         "Opening a character still shows its pictures at full size in either setting."
       ],
       "The app chooses one for you the first time it runs, going by what your device reports about its memory and its processor. Change it whenever you like. It is remembered, and it applies from the lock screen onwards rather than only once you are inside.",
@@ -3734,7 +4481,7 @@ const GUIDE = [
     "body": [
       "The Android app is the same library, on a device you can carry. It is a separate download from the releases page, a file ending in .apk, and it needs Android 8 or newer.",
       "Install a new one straight over the old one. Do not uninstall first: uninstalling takes that device's vault with it, because the vault lives inside the app.",
-      "The one-time Share this vault tool still starts from Windows and lets Android receive. For automatic transfer in either direction, including Android to Windows, use Automatic device sync instead. A phone or tablet can be the primary starting device. Keep automatic sync open and unlocked on Android; unlike the one-time transfer service, it pauses in the background.",
+      "The one-time Share this vault tool still starts from Windows and lets Android receive. For automatic transfer in either direction, including Android to Windows, use Automatic device sync instead. A phone or tablet can be the primary starting device. Android normally pauses when backgrounded; the explicit Sync with screen off session lets it continue with an unlocked vault and visible Stop notification. Android can still stop the service for battery or time limits. Locking the vault always stops sync.",
       "Moving pictures around uses your finger rather than a mouse:",
       [
         "One finger on a picture moves it. Touch it and it answers, and it goes with your finger from the moment you move.",
@@ -3962,7 +4709,7 @@ function LockScreen({
     live: true
   })), /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
-  }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h1", {
+  }, "Rolecraft"), /*#__PURE__*/React.createElement("h1", {
     className: "serif",
     style: {
       fontSize: pin ? 24 : 30,
@@ -4062,6 +4809,106 @@ function useSwipeNav(onNav) {
     }
   };
 }
+function photoSourceInfo(raw) {
+  if (typeof raw !== "string" || raw.length > 90 * 1024 * 1024) throw new Error("This picture is missing or too large to inspect safely.");
+  const match = /^data:image\/(png|jpe?g|webp|gif|bmp|avif);base64,([A-Za-z0-9+/]*={0,2})$/i.exec(raw);
+  if (!match || !match[2] || match[2].length % 4) throw new Error("This picture is not a supported raster image.");
+  const header = atob(match[2].slice(0, 64));
+  const mime = match[1].toLowerCase().replace("jpg", "jpeg");
+  const matches = { png: header.startsWith("\x89PNG\r\n\x1a\n"), jpeg: header.startsWith("\xff\xd8\xff"),
+    webp: header.startsWith("RIFF") && header.slice(8, 12) === "WEBP", gif: /^GIF8[79]a/.test(header),
+    bmp: header.startsWith("BM"), avif: header.slice(4, 8) === "ftyp" && /avif|avis/.test(header.slice(8)) };
+  if (!matches[mime]) throw new Error("The picture's format does not match its stored data.");
+  return { mime: "image/" + mime, format: mime === "jpeg" ? "JPG (JPEG)" : mime.toUpperCase(),
+    bytes: match[2].length * 3 / 4 - (match[2].endsWith("==") ? 2 : match[2].endsWith("=") ? 1 : 0) };
+}
+function decodePhotoOriginal(raw, signal) {
+  const info = photoSourceInfo(raw);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const cleanup = () => { clearTimeout(timer); img.onload = img.onerror = null; if (signal) signal.removeEventListener("abort", fail); };
+    const fail = () => { cleanup(); img.src = ""; reject(new Error("The original picture could not be decoded on this device.")); };
+    const timer = setTimeout(fail, 20000);
+    if (signal) { if (signal.aborted) { fail(); return; } signal.addEventListener("abort", fail, { once: true }); }
+    img.onerror = fail;
+    img.onload = () => {
+      cleanup();
+      if (!img.naturalWidth || !img.naturalHeight) { fail(); return; }
+      resolve({ ...info, width: img.naturalWidth, height: img.naturalHeight, image: img });
+    };
+    img.src = raw;
+  });
+}
+async function photoJpegCopy(photo, quality) {
+  if (![.85, .92, 1].includes(quality)) throw new Error("Choose a supported JPG quality.");
+  if (!photo || !photo.image || photo.width < 1 || photo.height < 1 || photo.width > 16384 || photo.height > 16384 || photo.width * photo.height > 40000000) throw new Error("This picture is too large to convert safely on this device. The original is unchanged.");
+  const canvas = document.createElement("canvas");
+  try {
+    canvas.width = photo.width; canvas.height = photo.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This device could not prepare the JPG copy.");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(photo.image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("The JPG copy could not be created.")), "image/jpeg", quality));
+    if (blob.type !== "image/jpeg" || !blob.size) throw new Error("This device did not produce a valid JPG copy.");
+    return blob;
+  } finally { canvas.width = canvas.height = 0; }
+}
+function PhotoInfoModal({ item, onClose }) {
+  const [photo, setPhoto] = useState(null), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [quality, setQuality] = useState(.92), [busy, setBusy] = useState(false);
+  const alive = useRef(false), working = useRef(false);
+  useEffect(() => {
+    let current = true, decoded = null;
+    const controller = new AbortController();
+    alive.current = true;
+    const close = () => { current = false; alive.current = false; controller.abort(); onClose(); };
+    const hidden = () => { if (document.hidden) close(); };
+    window.addEventListener("rcv-locking", close); document.addEventListener("visibilitychange", hidden);
+    (async () => {
+      try {
+        const raw = await sGet("img:" + item.imgId);
+        if (!current) return;
+        decoded = await decodePhotoOriginal(raw, controller.signal);
+        if (current) setPhoto(decoded); else decoded.image.src = "";
+      } catch (e) { if (current) setError(e && e.message || "Couldn't read the original picture."); }
+    })();
+    return () => { current = false; alive.current = false; controller.abort(); if (decoded) decoded.image.src = ""; window.removeEventListener("rcv-locking", close); document.removeEventListener("visibilitychange", hidden); };
+  }, [item.imgId]);
+  const saveJpeg = async () => {
+    if (!photo || working.current || photo.mime === "image/jpeg") return;
+    working.current = true; setBusy(true); setError(""); setNotice("");
+    try {
+      const blob = await photoJpegCopy(photo, quality);
+      if (!alive.current || !document.querySelector('.rcv[data-rcv-state="ready"]')) return;
+      const stem = safeFileName(String(item.caption || item.label || "picture").replace(/\.(png|jpe?g|webp|gif|bmp|avif)$/i, "")).slice(0, 100) || "picture";
+      const filename = stem + "-jpg-" + Date.now() + ".jpg";
+      const where = await saveFile(blob, filename, { collection: "pictures", quiet: true });
+      if (alive.current) {
+        if (!where) throw new Error("The JPG could not be saved. Your original is unchanged. You can try again.");
+        setNotice("Saved " + filename + " in " + where + ". The original in your vault is unchanged.");
+      }
+    } catch (e) { if (alive.current) setError(e && e.message || "Couldn't save the JPG copy."); }
+    finally { working.current = false; if (alive.current) setBusy(false); }
+  };
+  const h = React.createElement;
+  return h(SimpleModal, { title: "Photo info", eyebrow: "Original picture", className: "photo-info", zIndex: 260, onClose },
+    h("p", { style: { overflowWrap: "anywhere" } }, item.caption || item.label || "Selected picture"),
+    !photo && !error && h("p", { role: "status" }, "Reading original picture..."),
+    photo && h(React.Fragment, null,
+      h("dl", { style: { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "8px 16px" } },
+        h("dt", null, "Format"), h("dd", { style: { margin: 0 } }, photo.format),
+        h("dt", null, "Dimensions"), h("dd", { style: { margin: 0 } }, photo.width + " × " + photo.height + " pixels"),
+        h("dt", null, "File size"), h("dd", { style: { margin: 0 } }, fmtBytes(photo.bytes) + " (" + fmtNum(photo.bytes) + " bytes)")),
+      h("p", { style: { color: "var(--dim)", fontSize: 13 } }, "JPG is a compressed copy at the original resolution. Transparent areas become white; animation becomes a still image. Metadata such as camera/GPS details is not copied. The vault original is never replaced."),
+      photo.mime !== "image/jpeg" ? h(React.Fragment, null,
+        h("label", { htmlFor: "photo-jpg-quality" }, "JPG quality"),
+        h("select", { id: "photo-jpg-quality", value: quality, disabled: busy, onChange: e => setQuality(Number(e.target.value)), style: { width: "100%", margin: "6px 0 12px" } },
+          h("option", { value: .85 }, "85% · smaller file"), h("option", { value: .92 }, "92% · high quality"), h("option", { value: 1 }, "100% · largest file")),
+        h("button", { className: "btn btn-brass", onClick: saveJpeg, disabled: busy }, busy ? "Saving JPG..." : "Save JPG copy")) : h("p", null, "This picture is already JPG.")),
+    error && h("p", { role: "alert", style: { color: "var(--danger)", overflowWrap: "anywhere" } }, error),
+    notice && h("p", { role: "status", style: { overflowWrap: "anywhere" } }, notice));
+}
 function Lightbox({
   items,
   index,
@@ -4075,9 +4922,23 @@ function Lightbox({
   onSetProfile,
   onCaption,
   onRemove,
-  autoPlay
+  autoPlay,
+  initialControlsHidden = false,
+  previewOnly = false,
+  overlayLevel
 }) {
   const [playing, setPlaying] = useState(!!autoPlay);
+  const [photoInfo, setPhotoInfo] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(!!initialControlsHidden);
+  const viewerRef = useRef(null), tapTimer = useRef(null);
+  useEffect(() => {
+    const before = document.activeElement;
+    viewerRef.current?.focus({ preventScroll: true });
+    return () => { clearTimeout(tapTimer.current); if (before?.isConnected) before.focus({ preventScroll: true }); };
+  }, []);
+  useEffect(() => {
+    if (controlsHidden) viewerRef.current?.focus({ preventScroll: true });
+  }, [controlsHidden]);
   useEffect(() => {
     if (!requestFull || !items.length) return;
     const n = items.length;
@@ -4088,18 +4949,29 @@ function Lightbox({
   }, [index, items, requestFull]);
   useEffect(() => {
     if (!playing || items.length < 2) return;
-    const t = setInterval(() => onNav(1), 3200);
+    const t = setInterval(() => { if (!window.RolecraftChatOpen) onNav(1); }, 3200);
     return () => clearInterval(t);
   }, [playing, items.length, onNav]);
   useEffect(() => {
     const h = e => {
-      if (e.key === "Escape") onClose();
+      if (photoInfo) return;
+      if (e.key === "Tab") {
+        const list = [...(viewerRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex="0"]') || [])].filter(el => el.getClientRects().length);
+        if (!list.length) return;
+        const at = list.indexOf(document.activeElement);
+        e.preventDefault(); e.stopImmediatePropagation();
+        list[(at + (e.shiftKey ? -1 : 1) + list.length) % list.length].focus();
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); onClose(); return; }
+      if (e.target?.closest?.("input, textarea, select")) return;
       if (e.key === "ArrowLeft") onNav(-1);
       if (e.key === "ArrowRight") onNav(1);
+      if (e.key.toLowerCase() === "h") setControlsHidden(value => !value);
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose, onNav]);
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
+  }, [onClose, onNav, photoInfo]);
   const hold = e => e.stopPropagation();
   const item = items[index];
   const stageRef = useRef(null);
@@ -4171,7 +5043,7 @@ function Lightbox({
     }
     if (zoom.current.s > 1.02) {
       pan.current = { x: e.clientX, y: e.clientY, ox: zoom.current.x, oy: zoom.current.y };
-      swipeStart.current = null;
+      swipeStart.current = { x: e.clientX, y: e.clientY };
     } else {
       swipeStart.current = { x: e.clientX, y: e.clientY };
       pan.current = null;
@@ -4198,18 +5070,16 @@ function Lightbox({
   const onUp = e => {
     pts.current.delete(e.pointerId);
     if (pts.current.size < 2) pinch.current = null;
-    if (pan.current) {
-      pan.current = null;
-      return;
-    }
+    pan.current = null;
     const s = swipeStart.current;
     swipeStart.current = null;
-    if (!s || zoom.current.s > 1.02) return;
+    if (e.type === "pointercancel" || !s) return;
     const dx = e.clientX - s.x;
     const dy = e.clientY - s.y;
     const now = Date.now();
     if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
       if (now - lastTap.current < 280) {
+        clearTimeout(tapTimer.current);
         lastTap.current = 0;
         if (zoom.current.s > 1.05) resetZoom();
         else {
@@ -4221,8 +5091,11 @@ function Lightbox({
         return;
       }
       lastTap.current = now;
+      clearTimeout(tapTimer.current);
+      tapTimer.current = setTimeout(() => setControlsHidden(value => !value), 280);
       return;
     }
+    if (zoom.current.s > 1.02) return;
     if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
     if (items.length > 1) onNav(dx > 0 ? -1 : 1);
   };
@@ -4230,6 +5103,9 @@ function Lightbox({
   const src = fullCache && fullCache[item.imgId] || imgCache[item.imgId];
   return /*#__PURE__*/React.createElement("div", {
     className: "lb-root",
+    ref: viewerRef,
+    tabIndex: -1,
+    style: overlayLevel ? { zIndex: overlayLevel } : undefined,
     role: "dialog",
     "aria-modal": "true",
     "aria-label": item.caption || "Picture"
@@ -4259,6 +5135,7 @@ function Lightbox({
     }
   }, "Loading image\u2026"), items.length > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     className: "ss-btn lb-side",
+    hidden: controlsHidden,
     "aria-label": "Previous image",
     onPointerDown: hold,
     onClick: () => onNav(-1),
@@ -4272,6 +5149,7 @@ function Lightbox({
     d: icons.left
   })), /*#__PURE__*/React.createElement("button", {
     className: "ss-btn lb-side",
+    hidden: controlsHidden,
     "aria-label": "Next image",
     onPointerDown: hold,
     onClick: () => onNav(1),
@@ -4284,20 +5162,19 @@ function Lightbox({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.right
   })))), /*#__PURE__*/React.createElement("div", {
-    className: "lb-chrome top"
+    className: "lb-chrome top",
+    hidden: controlsHidden
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "rgba(231,235,247,.8)",
       textShadow: "0 1px 8px rgba(0,0,0,.8)"
     }
-  }, index + 1, " of ", items.length), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginLeft: "auto",
-      display: "flex",
-      gap: 8
-    }
-  }, items.length > 1 && /*#__PURE__*/React.createElement("button", {
+  }, index + 1, " of ", items.length, /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, marginTop: 4 } }, "Tap photo to hide/show controls · Escape or Back to close")), /*#__PURE__*/React.createElement("div", {
+    className: "lb-top-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "ss-btn", onClick: () => setControlsHidden(true), title: "Tap the picture or press H to show controls again"
+  }, "Hide controls"), items.length > 1 && /*#__PURE__*/React.createElement("button", {
     className: "ss-btn",
     "aria-label": playing ? "Pause slideshow" : "Play slideshow",
     onClick: () => setPlaying(p => !p)
@@ -4310,7 +5187,8 @@ function Lightbox({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.x
   })))), /*#__PURE__*/React.createElement("div", {
-    className: "lb-chrome bot"
+    className: "lb-chrome bot",
+    hidden: controlsHidden
   }, onCaption ? /*#__PURE__*/React.createElement("input", {
     value: item.caption || "",
     placeholder: "Add a caption for this image\u2026",
@@ -4345,12 +5223,16 @@ function Lightbox({
   }), blurred && blurred[item.imgId] ? "Unblur" : "Blur")), onSetProfile && /*#__PURE__*/React.createElement("button", {
     className: "ss-btn",
     onClick: () => onSetProfile(item.imgId, item.variantId)
-  }, "Set as profile"), onRemove && /*#__PURE__*/React.createElement(DangerButton, {
+  }, "Set as profile"), !previewOnly && /*#__PURE__*/React.createElement("button", {
+    className: "ss-btn", onClick: () => { setPlaying(false); setPhotoInfo(true); }
+  }, "Photo info"), onRemove && /*#__PURE__*/React.createElement(DangerButton, {
     className: "btn btn-danger",
     label: "Remove",
     armedLabel: "Click again \u2014 this picture is gone",
     onConfirm: () => onRemove(index)
-  })));
+  })), controlsHidden && /*#__PURE__*/React.createElement("button", {
+    className: "ss-btn lb-reveal", onClick: () => setControlsHidden(false), title: "Show controls to close, navigate or edit. Tap the picture or press H."
+  }, "Show controls"), photoInfo && /*#__PURE__*/React.createElement(PhotoInfoModal, { item, onClose: () => setPhotoInfo(false) }));
 }
 
 /* One button instead of five. Import and export had spread across every screen
@@ -4566,7 +5448,7 @@ function GuideModal({ onClose }) {
       margin: "2px 0 6px",
       paddingRight: 44
     }
-  }, "How to use Rolecraft Vault"), /*#__PURE__*/React.createElement("div", {
+  }, "How to use Rolecraft"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--mut)",
@@ -4797,6 +5679,23 @@ function personaImgIds(p) {
   if (!p) return [];
   // deduplicated, for the reason given on charImgIds above
   return [...new Set([p.avatar, ...(p.gallery || []).map(g => g.imgId)].filter(Boolean))];
+}
+function withGalleryProfile(record, imgId, variantId, persona = false) {
+  const ids = persona ? personaImgIds : charImgIds;
+  if (!record || !ids(record).includes(imgId)) throw new Error("That picture is no longer in this gallery. Reopen the gallery and try again.");
+  const target = variantId && variantId !== DEFAULT_VID ? variantId : null;
+  const variant = !persona && target ? (record.variants || []).find(v => v.id === target) : null;
+  if (!persona && target && !variant) throw new Error("That variant no longer exists. Choose a different profile.");
+  const previous = persona ? record.avatar : variant ? variant.profileImg : record.profileImg;
+  const next = persona ? { ...record, avatar: imgId } : variant ? {
+    ...record, variants: record.variants.map(v => v.id === target ? { ...v, profileImg: imgId, chatPortraitCrop: previous === imgId ? v.chatPortraitCrop : null } : v)
+  } : { ...record, profileImg: imgId, chatPortraitCrop: previous === imgId ? record.chatPortraitCrop : null };
+  // Replacing a portrait must not orphan the old original from exports or sync.
+  if (previous && !ids(next).includes(previous)) {
+    const meta = record.imgMeta && record.imgMeta[previous] || {};
+    next.gallery = [...(record.gallery || []), { imgId: previous, caption: "Previous profile picture", album: meta.album || "", variantId: persona ? "" : target || DEFAULT_VID }];
+  }
+  return { ...next, updatedAt: Date.now() };
 }
 function restoreRecordsWithFreshIds(live, incoming) {
   const ids = new Set((live || []).map(r => r && r.id).filter(Boolean));
@@ -5922,6 +6821,19 @@ function ImageGridView({
   toast
 }) {
   const [sel, setSel] = useState({});
+  const [photoInfo, setPhotoInfo] = useState(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const setGalleryProfile = async (imgId, variantId) => {
+    if (profileBusy) return;
+    setProfileBusy(true);
+    try {
+      await onSetProfile(imgId, variantId === DEFAULT_VID ? null : variantId);
+      setSel({});
+      toast && toast("Profile picture updated");
+    } catch (error) {
+      toast && toast(error && error.message || "Couldn't change the profile picture. Try again.");
+    } finally { setProfileBusy(false); }
+  };
   const [vFilter, setVFilter] = useState(null); // null = every variant
   const [album, setAlbum] = useState(null); // null = all albums
   const [albumDraft, setAlbumDraft] = useState("");
@@ -6203,6 +7115,10 @@ function ImageGridView({
       }
     }
   }, shownItems.length > 0 && shownItems.every(it => sel[it.imgId]) ? "Clear selection" : album === null ? "Select all" : "Select all in album"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost", disabled: selCount !== 1,
+    title: "Select one picture to see its details or save a JPG copy",
+    onClick: () => { if (selCount === 1) setPhotoInfo(selectedItems()[0]); }
+  }, "Photo info"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     disabled: !selCount,
     style: {
@@ -6320,30 +7236,40 @@ function ImageGridView({
   }, "Default only"), vOpts.map(v => /*#__PURE__*/React.createElement("option", {
     key: v.id,
     value: v.id
-  }, v.name))), onSetProfile && /*#__PURE__*/React.createElement("select", {
+  }, v.name))))), onSetProfile && /*#__PURE__*/React.createElement("div", {
+    className: "image-grid-profile-row",
+    style: { maxWidth: 2280, margin: "12px auto 0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("span", { className: "eyebrow" }, "Profile picture"), vOpts.length ? /*#__PURE__*/React.createElement("select", {
     value: "",
-    disabled: selCount !== 1,
+    "aria-label": "Set selected picture as profile for",
+    disabled: selCount !== 1 || profileBusy,
     title: selCount === 1 ? "Make the selected image a portrait" : "Select exactly one image",
     style: {
-      width: 205,
+      width: 250,
+      maxWidth: "100%",
       opacity: selCount === 1 ? 1 : .5
     },
     onChange: e => {
       const val = e.target.value;
       if (!val) return;
       const one = selectedItems()[0];
-      if (one) onSetProfile(one.imgId, val === "__base__" ? null : val);
-      setSel({});
+      if (one) setGalleryProfile(one.imgId, val === "__base__" ? null : val);
       e.target.value = "";
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, selCount === 1 ? "Use as portrait for\u2026" : "Portrait: pick 1 image"), /*#__PURE__*/React.createElement("option", {
+  }, profileBusy ? "Saving profile picture..." : selCount === 1 ? "Set as profile picture for..." : "Select one picture first"), /*#__PURE__*/React.createElement("option", {
     value: "__base__"
   }, "Default (main portrait)"), vOpts.map(v => /*#__PURE__*/React.createElement("option", {
     key: v.id,
     value: v.id
-  }, v.name + " portrait"))))), onSetAlbum && /*#__PURE__*/React.createElement("div", {
+  }, v.name + " portrait"))) : /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-brass",
+    disabled: selCount !== 1 || profileBusy,
+    onClick: () => { const one = selectedItems()[0]; if (selCount === 1 && one) setGalleryProfile(one.imgId, null); }
+  }, profileBusy ? "Saving profile picture..." : "Set as profile picture"), /*#__PURE__*/React.createElement("span", {
+    style: { color: "var(--dim)", fontSize: 12 }
+  }, "Tick one picture to use it. Your original pictures are kept.")), onSetAlbum && /*#__PURE__*/React.createElement("div", {
     className: "image-grid-filter-row image-grid-album-row",
     style: {
       maxWidth: 2280,
@@ -6824,10 +7750,9 @@ function ImageGridView({
     } : undefined,
     onSetProfile: onSetProfile ? imgId => {
       const it = lbItems[lb];
-      onSetProfile(imgId, it && it.variantId);
-      toast && toast("Profile image updated");
+      return setGalleryProfile(imgId, it && it.variantId);
     } : undefined
-  }));
+  }), photoInfo && /*#__PURE__*/React.createElement(PhotoInfoModal, { item: photoInfo, onClose: () => setPhotoInfo(null) }));
 }
 
 /* ---------- lore entry viewer (read-only popup) ---------- */
@@ -7547,6 +8472,223 @@ function LorebookPage({
   }), e.images.length)))))));
 }
 
+/* Private image requests go through the privileged shell, never the renderer. */
+function imageGenerationBridge() {
+  if (window.imageGeneration) return window.imageGeneration;
+  if (!window.RolecraftChatSync || !window.Capacitor?.nativePromise) return null;
+  const call = (method, args) => window.Capacitor.nativePromise("ImageGeneration", method, args || {});
+  return { status: () => call("status"), setKey: args => call("setKey", args), clearKey: args => call("clearKey", args),
+    setUnlocked: args => call("setUnlocked", args), cancel: args => call("cancel", args), generate: request => call("generate", { request }) };
+}
+function decodeStudioImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (typeof dataUrl !== "string" || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrlSize(dataUrl) > 20 * 1024 * 1024) { reject(new Error("The provider did not return a supported image within the 20 MB limit.")); return; }
+    const img = new Image(), timer = setTimeout(() => { img.src = ""; reject(new Error("The image could not be decoded in time.")); }, 20000);
+    img.onload = () => { clearTimeout(timer); img.naturalWidth && img.naturalHeight && img.naturalWidth * img.naturalHeight <= 40000000 ? resolve(img) : reject(new Error("The image dimensions are invalid or too large.")); };
+    img.onerror = () => { clearTimeout(timer); reject(new Error("The returned image could not be decoded. Nothing was saved.")); };
+    img.src = dataUrl;
+  });
+}
+async function studioReference(dataUrl) {
+  const img = await decodeStudioImage(dataUrl);
+  if (Math.max(img.naturalWidth, img.naturalHeight) <= 2048 && dataUrlSize(dataUrl) <= 4 * 1024 * 1024) return dataUrl;
+  const scale = Math.min(1, 2048 / Math.max(img.naturalWidth, img.naturalHeight)), canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  let copy = canvas.toDataURL("image/png");
+  if (dataUrlSize(copy) > 4 * 1024 * 1024) copy = canvas.toDataURL("image/webp", .9);
+  if (dataUrlSize(copy) > 4 * 1024 * 1024) throw new Error("A reference is too large. Choose a smaller picture.");
+  return copy;
+}
+function studioOutputSize(provider, shape, resolution) {
+  if (provider === "xai") return resolution === "2k" ? "2K · provider-selected dimensions" : "1K · provider-selected dimensions";
+  const sizes = {
+    standard: { square: "1024 × 1024", portrait: "1024 × 1536", landscape: "1536 × 1024", wide: "1536 × 864", tall: "864 × 1536" },
+    "2k": { square: "2048 × 2048", portrait: "1344 × 2016", landscape: "2016 × 1344", wide: "2048 × 1152", tall: "1152 × 2048" },
+    max: { square: "2880 × 2880", portrait: "2336 × 3504", landscape: "3504 × 2336", wide: "3840 × 2160", tall: "2160 × 3840" }
+  };
+  return sizes[resolution]?.[shape] || "Choose an output size";
+}
+/* Each paid request owns one result. Commit it before requesting the next one,
+   so cancellation and provider/save failures leave earlier pictures recoverable. */
+async function runStudioBatch({ count, request, generate, decode, save, active, newId, progress, preview, saved }) {
+  if (!Number.isInteger(count) || count < 1 || count > 8) throw new Error("Choose between 1 and 8 images.");
+  let completed = 0, pending = null;
+  try {
+    for (let index = 0; index < count; index++) {
+      if (!active()) return { completed, total: count, state: "stopped" };
+      progress(index + 1, count, "generating");
+      const response = await generate({ ...request, requestId: newId() });
+      if (!active()) return { completed, total: count, state: "stopped" };
+      if (!response?.ok) throw new Error(response?.error || "Image generation failed. No automatic paid retry was made.");
+      const decoded = await decode(response.dataUrl);
+      if (!active()) return { completed, total: count, state: "stopped" };
+      pending = { dataUrl: response.dataUrl, imgId: newId(), provider: request.provider, model: request.model, width: decoded.naturalWidth, height: decoded.naturalHeight };
+      preview(pending);
+      progress(index + 1, count, "saving");
+      await save(pending);
+      completed++;
+      saved(pending, completed);
+      pending = null;
+    }
+    return { completed, total: count, state: active() ? "complete" : "stopped" };
+  } catch (error) {
+    return { completed, total: count, state: active() ? "failed" : "stopped", pending, error: error?.message || "The image could not be saved. Keep this preview open and retry." };
+  }
+}
+/* Local writing aids only: choosing an idea never uploads or generates anything. */
+const STUDIO_PROMPT_IDEAS = [
+  ["detail", "More detail, same face", "Enhance fine detail in the selected reference: natural skin texture, individual hair strands, fabric and small accessories. Keep the same face, expression, pose, clothing, framing, lighting and background. Avoid excessive sharpening, waxy skin or beauty-filter changes."],
+  ["faithful", "Faithful recreation", "Recreate the selected reference as faithfully as possible, with clean edges and coherent fine detail. Preserve the face, expression, pose, clothing, colour palette, camera angle and composition. Do not add or remove people, props or accessories."],
+  ["clean", "Clean up a soft or noisy photo", "Gently reduce visible noise, compression artefacts and softness in the selected reference. Keep natural texture and the original scene. Avoid inventing elaborate details where the reference is unclear; do not smooth away distinctive facial features."],
+  ["cinematic", "Cinematic lighting", "Change only the lighting and colour grade to soft cinematic side lighting, with gentle rim light and balanced shadows. Keep the face clearly recognisable and naturally exposed. Preserve the expression, pose, clothing, setting and framing."],
+  ["portrait-light", "Soft portrait lighting", "Relight the selected reference with flattering, soft window light and gentle shadows. Preserve natural skin texture, facial proportions, expression, pose, clothing and background. Do not retouch the character into a different person."],
+  ["outfit", "Different outfit", "Change only the clothing to an elegant, practical travelling outfit with layered fabric and subtle accessories, suited to the reference's setting. Keep the same face, hairstyle, expression, body proportions, pose, lighting and background. Leave the face unobstructed."],
+  ["background", "Different background", "Place the same character in a quiet woodland at dusk, with soft distant lights and subtle depth of field. Preserve the face, expression, hairstyle, clothing, pose and framing. Adjust the light on the character only enough to fit the new setting naturally."],
+  ["pose", "Different pose", "Show the same character standing in a relaxed three-quarter pose, with natural hands and the face visible to the camera. Preserve the facial features, hairstyle, body proportions, clothing, setting and overall visual style. Keep anatomy and perspective coherent."],
+  ["expression", "Different expression", "Change only the expression to a subtle, warm smile with relaxed eyes. Preserve the underlying facial structure, distinctive features, hairstyle, age, clothing, pose, lighting and setting. Avoid exaggerated expressions or changing the character's identity."],
+  ["closeup", "Profile-picture close-up", "Create a head-and-shoulders portrait of the same character, with the face centred and some breathing room around the hair. Preserve the expression, facial features, hairstyle, outfit and visual style. Keep the background quiet, without text or decorative borders."],
+  ["fullbody", "Full-body portrait", "Expand the composition into a full-body portrait of the same character, with space around the head and feet. Preserve all visible facial features, clothing details and proportions. For areas outside the reference, create plausible matching clothing and anatomy; keep the pose natural and the setting consistent."],
+  ["painted", "Painterly illustration", "Reinterpret the selected reference as a detailed painterly illustration, with subtle brushwork and rich but balanced colour. Preserve the recognisable face, expression, hairstyle, proportions, clothing, pose and composition. Change the rendering style, not the character's identity."]
+].map(([id, label, instruction]) => ({ id, label, prompt: "Use the selected reference pictures to preserve the character's identity and likeness: the same facial structure, distinctive features, hair and eye colour, apparent age and body proportions. " + instruction }));
+function CharacterImageStudio({ char, variantId: initialVariant, imgCache, loadImage, blurred, onSave, onClose }) {
+  const h = React.createElement, native = useMemo(imageGenerationBridge, []);
+  const [provider, setProvider] = useState("openai"), [model, setModel] = useState("gpt-image-2.5-flare");
+  const [shape, setShape] = useState("square"), [quality, setQuality] = useState("auto"), [prompt, setPrompt] = useState("");
+  const [promptIdea, setPromptIdea] = useState("");
+  const [resolution, setResolution] = useState("standard");
+  const [count, setCount] = useState(1), [batch, setBatch] = useState(null), [fullPreview, setFullPreview] = useState(false);
+  const [selected, setSelected] = useState([]), [limit, setLimit] = useState(24), [variantId, setVariantId] = useState(initialVariant || "");
+  const [status, setStatus] = useState({}), [key, setKey] = useState(""), [busy, setBusy] = useState(""), [error, setError] = useState("");
+  const [result, setResult] = useState(null), [caption, setCaption] = useState("Generated image"), [saved, setSaved] = useState(false);
+  const operation = useRef(0), working = useRef(false), alive = useRef(true), requestId = useRef(null);
+  const cancelled = useRef(false), phase = useRef(""), batchRef = useRef(null), results = useRef([]);
+  const ids = useMemo(() => charImgIds(char), [char]), visible = ids.slice(0, limit);
+  const valid = token => alive.current && operation.current === token && !document.hidden && !!document.querySelector('.rcv[data-rcv-state="ready"]');
+  const updateBatch = value => { batchRef.current = value; setBatch(value); };
+  function stop() {
+    cancelled.current = true;
+    if (requestId.current) native?.cancel({ requestId: requestId.current }).catch(() => {});
+    requestId.current = null;
+    if (phase.current === "saving") { setBusy("Finishing the current gallery save; remaining requests are stopped…"); return; }
+    operation.current++; working.current = false; phase.current = ""; setBusy("");
+    if (batchRef.current) updateBatch({ ...batchRef.current, state: "stopped" });
+  }
+  useEffect(() => {
+    alive.current = true;
+    if (native) native.status().then(r => { if (alive.current) { if (r?.ok === false) setError(r.error); else setStatus(r || {}); } }).catch(e => { if (alive.current) setError(e.message); });
+    const lock = () => { operation.current++; stop(); setKey(""); setResult(null); setFullPreview(false); onClose(); };
+    const escape = e => { if (e.key === "Escape" && !document.querySelector(".image-studio .lb-root")) { e.preventDefault(); e.stopImmediatePropagation(); if (!working.current) onClose(); } };
+    const hidden = () => { if (document.hidden) lock(); };
+    window.addEventListener("rcv-locking", lock); window.addEventListener("keydown", escape, true);
+    document.addEventListener("visibilitychange", hidden);
+    return () => { alive.current = false; operation.current++; if (requestId.current) native?.cancel({ requestId: requestId.current }).catch(() => {}); window.removeEventListener("rcv-locking", lock); window.removeEventListener("keydown", escape, true); document.removeEventListener("visibilitychange", hidden); };
+  }, []);
+  useEffect(() => { visible.forEach(loadImage); }, [visible.join("\n"), loadImage]);
+  async function keyAction(remove) {
+    if (working.current || !native) return;
+    working.current = true; setBusy("key"); setError(""); const token = ++operation.current, value = key; setKey("");
+    try {
+      const r = await (remove ? native.clearKey({ provider }) : native.setKey({ provider, key: value }));
+      if (r?.ok === false) throw new Error(r.error || "Could not update the key.");
+      if (!valid(token)) return;
+      window.dispatchEvent(new CustomEvent("rcv-provider-key-changed", { detail: { provider } }));
+      const next = await native.status(); if (valid(token)) setStatus(next || {});
+    } catch (e) { if (valid(token)) setError(e.message || "Could not update the provider key."); }
+    finally { if (valid(token)) { working.current = false; setBusy(""); } }
+  }
+  async function generate() {
+    if (working.current || !native || !prompt.trim() || !status[provider] || result) return;
+    working.current = true; cancelled.current = false; phase.current = "preparing"; results.current = [];
+    setBusy("Preparing selected references…"); setError(""); setSaved(false); updateBatch({ completed: 0, total: count, state: "running" });
+    const token = ++operation.current;
+    try {
+      const references = [];
+      for (const imageId of selected) {
+        if (!charImgIds(char).includes(imageId)) throw new Error("A selected reference is no longer in this character.");
+        const raw = await sGet("img:" + imageId); if (!valid(token)) return;
+        if (!raw) throw new Error("A selected reference could not be read. Nothing was sent.");
+        references.push(await studioReference(raw)); if (!valid(token)) return;
+      }
+      if (references.reduce((n, x) => n + dataUrlSize(x), 0) > 12 * 1024 * 1024) throw new Error("Selected references exceed 12 MB. Select fewer pictures.");
+      const outcome = await runStudioBatch({ count, request: { provider, model, prompt: prompt.trim(), references, shape, quality, resolution }, newId: uid,
+        active: () => valid(token) && !cancelled.current, decode: decodeStudioImage,
+        generate: request => { requestId.current = request.requestId; return native.generate(request); },
+        progress: (n, total, stage) => { if (valid(token)) { phase.current = stage; if (stage === "saving") requestId.current = null; setBusy((stage === "saving" ? "Saving image " : "Generating image ") + n + " of " + total + "… Keep the app open and unlocked."); } },
+        preview: value => { if (valid(token)) { setResult(value); setSaved(false); } },
+        save: value => onSave(value, caption, variantId, () => { if (!valid(token)) throw new Error("Generation was closed or the vault locked. Nothing further can be saved."); }),
+        saved: (value, completed) => { if (valid(token)) { results.current.push(value.imgId); setSaved(true); updateBatch({ completed, total: count, state: "running" }); } }
+      });
+      if (valid(token)) { updateBatch(outcome); if (outcome.error) setError(outcome.error); }
+    } catch (e) { if (valid(token)) { setError(e.message || "Image generation failed."); updateBatch({ ...batchRef.current, state: "failed" }); } }
+    finally { if (valid(token)) { requestId.current = null; working.current = false; phase.current = ""; setBusy(""); } }
+  }
+  async function save() {
+    if (working.current || !result || saved) return;
+    working.current = true; phase.current = "saving"; setBusy("Saving to character gallery…"); setError(""); const token = ++operation.current;
+    try { await onSave(result, caption, variantId, () => { if (!valid(token)) throw new Error("The vault is no longer open. Nothing further can be saved."); }); if (valid(token)) { setSaved(true); if (!results.current.includes(result.imgId)) results.current.push(result.imgId); updateBatch({ completed: results.current.length, total: batch?.total || 1, state: "stopped" }); } }
+    catch (e) { if (valid(token)) setError(e.message || "The picture could not be saved. Keep this preview open and retry."); }
+    finally { if (valid(token)) { working.current = false; phase.current = ""; setBusy(""); } }
+  }
+  const inputStyle = { width: "100%", minWidth: 0, boxSizing: "border-box", padding: 10, borderRadius: 10, background: "var(--panel)", color: "var(--text)", border: "1px solid var(--line2)" };
+  const field = (id, label, control) => h("label", { htmlFor: id, style: { display: "grid", gap: 6, minWidth: 0 } }, h("span", null, label), control);
+  const select = (id, value, change, options) => h("select", { id, value, disabled: !!busy || !!result, style: inputStyle, onChange: e => change(e.target.value) }, options.map(([v, label]) => h("option", { key: v, value: v }, label)));
+  const idea = STUDIO_PROMPT_IDEAS.find(value => value.id === promptIdea);
+  const appendedPrompt = idea ? (prompt.trim() ? prompt + "\n\n" : "") + idea.prompt : "";
+  const ideasDisabled = !!busy || !!result || !selected.length;
+  const useIdea = append => {
+    if (working.current || result || !selected.length || !idea) return;
+    const next = append ? appendedPrompt : idea.prompt;
+    if (next.length <= 8000) setPrompt(next);
+  };
+  return h("div", { className: "modal-back image-studio", style: { zIndex: 250 } }, h("div", { className: "modal image-studio-panel", role: "dialog", "aria-modal": true, "aria-labelledby": "image-studio-title", style: { width: "min(780px, calc(100vw - 24px))", maxWidth: 780, maxHeight: "calc(100dvh - 24px)", overflowY: "auto", padding: 20, boxSizing: "border-box", background: "var(--ink)", border: "1px solid var(--line2)" } },
+    h("div", { style: { display: "flex", gap: 12, alignItems: "center" } }, h("h2", { id: "image-studio-title", style: { flex: 1, margin: 0 } }, "Create artwork"), h("button", { className: "btn btn-ghost", disabled: !!busy, "aria-label": "Close image generator", onClick: onClose }, "Close")),
+    h("p", { style: { color: "var(--dim)" } }, "For " + (char.name || "this character") + ". Start with a prompt, or select reference pictures below. Originals are never replaced."),
+    h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 } },
+      field("image-provider", "Provider", select("image-provider", provider, v => { setProvider(v); setModel(v === "openai" ? "gpt-image-2.5-flare" : "grok-imagine-image-2.0"); setQuality("auto"); if (v === "xai" && resolution === "max") setResolution("standard"); setKey(""); setError(""); }, [["openai", "OpenAI · GPT Image"], ["xai", "xAI · Grok Imagine"]])),
+      field("image-model", "Model", select("image-model", model, v => { setModel(v); setQuality("auto"); }, provider === "openai" ? [["gpt-image-2.5-flare", "GPT Image 2.5 Flare"], ["gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst"], ["gpt-image-2", "GPT Image 2"]] : [["grok-imagine-image-2.0", "Grok Imagine Image 2.0"]])),
+      field("image-shape", "Aspect ratio", select("image-shape", shape, setShape, [["square", "1:1 · Square"], ["portrait", "2:3 · Portrait"], ["landscape", "3:2 · Landscape"], ["wide", "16:9 · Wide"], ["tall", "9:16 · Tall"]])),
+      field("image-resolution", "Resolution", select("image-resolution", resolution, setResolution, [["standard", provider === "xai" ? "1K" : "Standard"], ["2k", "2K class"]].concat(provider === "openai" ? [["max", "Maximum · ~4K pixel budget"]] : []))),
+      field("image-quality", "Quality", select("image-quality", quality, setQuality, [["auto", "Automatic"], ["low", "Low"], ["medium", "Medium"]].concat(provider === "openai" ? [["high", "High"]] : [], model.startsWith("gpt-image-2.5-") ? [["xhigh", "Extra high"], ["max", "Maximum"]] : []))),
+      field("image-count", "Number of images", select("image-count", count, value => setCount(Number(value)), Array.from({ length: 8 }, (_, n) => [n + 1, String(n + 1)])))),
+    h("p", { className: "image-output-size", style: { color: "var(--mut)" } }, "Output: " + studioOutputSize(provider, shape, resolution), provider === "openai" && resolution === "max" ? ". Experimental high resolution. Exact 2:3 tops out at 2336 × 3504 because of the provider's pixel cap; 4K-edge portrait is available at 9:16. No upscaling." : provider === "xai" ? ". Grok currently supports up to 2K, not native 4K." : ". Higher resolution and quality can take longer and cost more."),
+    window.RolecraftProviderBalances && h(window.RolecraftProviderBalances, { providers: [provider], disabled: !!busy }),
+    h("details", { open: !status[provider], style: { margin: "16px 0" } }, h("summary", null, status[provider] ? "Provider API key saved on this device" : "Set up this provider"),
+      h("p", null, "Use an OpenAI API key or xAI API key, not your OpenRouter key. API billing is separate from ChatGPT/Grok app subscriptions. Keys are protected on this device and excluded from vault exports and sync."),
+      field("image-api-key", "API key", h("input", { id: "image-api-key", type: "password", autoComplete: "off", spellCheck: false, value: key, disabled: !!busy, maxLength: 512, style: inputStyle, onChange: e => setKey(e.target.value) })),
+      h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 } }, h("button", { className: "btn btn-ghost", disabled: !!busy || !key.trim(), onClick: () => keyAction(false) }, "Save API key"), h("button", { className: "btn btn-ghost", disabled: !!busy || !status[provider], onClick: () => keyAction(true) }, "Remove saved key"))),
+    h("h3", null, "Reference pictures · " + selected.length + "/4"),
+    h("p", { style: { color: "var(--dim)" } }, "Only selected pictures and your prompt are sent. Character profiles and chat history are not included. Large references are resized as upload copies; your originals stay unchanged."),
+    h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))", gap: 8 } }, visible.map((id, i) => h("button", { key: id, type: "button", "aria-label": "Use reference " + (i + 1), "aria-pressed": selected.includes(id), disabled: !!busy || !!result || !selected.includes(id) && selected.length >= 4, onClick: () => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.concat(id)), style: { padding: 3, overflow: "hidden", borderRadius: 10, minWidth: 0, aspectRatio: "1", background: "var(--card)", color: "var(--text)", border: "2px solid " + (selected.includes(id) ? "var(--brass)" : "var(--line2)") } }, imgCache[id] ? h("img", { src: imgCache[id], alt: "Reference " + (i + 1), className: blurred[id] ? "blur-img" : undefined, style: { width: "100%", height: "100%", objectFit: "contain" } }) : "Picture " + (i + 1)))),
+    ids.length > limit && h("button", { className: "btn btn-ghost", onClick: () => setLimit(n => n + 24) }, "Show more reference pictures"),
+    !ids.length && h("p", null, "No pictures yet. You can still generate from a text prompt."),
+    h("details", { className: "image-prompt-ideas", style: { margin: "16px 0", padding: 12, border: "1px solid var(--line2)", borderRadius: 10, background: "var(--panel)" } },
+      h("summary", { style: { cursor: "pointer", color: "var(--text)" } }, "Reference prompt ideas"),
+      h("p", { style: { color: "var(--dim)", fontSize: 13 } }, "Choose a starting point, then edit the prompt below. Every idea asks to preserve the face and identity; exact likeness is not guaranteed. Outfit, setting and pose examples can be changed to your own. Picking an idea does not generate an image or change your output size."),
+      field("image-prompt-preset", "Prompt idea", select("image-prompt-preset", promptIdea, setPromptIdea, [["", "Choose a prompt idea…"], ...STUDIO_PROMPT_IDEAS.map(value => [value.id, value.label])])),
+      idea && h("p", { className: "image-prompt-idea-text", style: { fontSize: 13, lineHeight: 1.6, color: "var(--text)", whiteSpace: "pre-wrap" } }, idea.prompt),
+      !selected.length && h("p", { style: { color: "var(--mut)", fontSize: 13 } }, "Select at least one reference picture above to use these ideas. For text-only generation, write your own prompt below."),
+      idea && h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } },
+        h("button", { type: "button", className: "btn btn-ghost", disabled: ideasDisabled || appendedPrompt.length > 8000, onClick: () => useIdea(true) }, prompt.trim() ? "Add to prompt" : "Use prompt"),
+        !!prompt.trim() && h("button", { type: "button", className: "btn btn-ghost", disabled: ideasDisabled, onClick: () => useIdea(false) }, "Replace prompt")),
+      idea && appendedPrompt.length > 8000 && h("p", { role: "status", style: { color: "var(--mut)", fontSize: 13 } }, "This idea will not fit within the 8,000-character prompt limit. Shorten your text or explicitly replace it; nothing will be cut off.")),
+    field("image-prompt", "Describe your image", h("textarea", { id: "image-prompt", rows: 4, maxLength: 8000, value: prompt, disabled: !!busy || !!result, autoCapitalize: "sentences", autoCorrect: "on", spellCheck: true, placeholder: "Describe appearance, pose, clothing, lighting and setting…", style: { ...inputStyle, marginBottom: 10 }, onChange: e => setPrompt(e.target.value) })),
+    field("image-caption", "Gallery caption", h("input", { id: "image-caption", value: caption, maxLength: 500, disabled: !!busy || saved, style: inputStyle, onChange: e => setCaption(e.target.value) })),
+    field("image-variant", "Gallery visibility", h("select", { id: "image-variant", value: variantId, disabled: !!busy || saved, style: inputStyle, onChange: e => setVariantId(e.target.value) }, h("option", { value: "" }, "Shared across variants"), h("option", { value: DEFAULT_VID }, "Default character only"), (char.variants || []).map(v => h("option", { key: v.id, value: v.id }, v.name || "Variant")))),
+    h("p", { style: { color: "var(--dim)", fontSize: 13 } }, "Generate sends this prompt and the selected references to " + (provider === "openai" ? "OpenAI" : "xAI") + " in up to " + count + " separate paid " + (count === 1 ? "request" : "requests") + ". Each successful image is automatically saved to this character's gallery with the caption and visibility above; delete unwanted pictures from the normal gallery. Provider safety and data policies apply; Chat's OpenRouter privacy setting does not apply here. Cancel, backgrounding or locking stops remaining requests but may not stop provider billing. No automatic paid retries."),
+    batch && h("p", { className: "image-batch-status", role: "status" }, batch.completed + " of " + batch.total + " images saved to gallery" + (batch.state === "complete" ? ". Complete." : batch.state === "stopped" ? ". Stopped; saved pictures are kept." : batch.state === "failed" ? ". Stopped after an error; saved pictures are kept." : ".")),
+    error && h("p", { role: "alert", style: { color: "var(--danger, #e78282)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, error),
+    busy && h("p", { role: "status" }, busy === "key" ? "Updating protected key…" : busy),
+    result && h("section", { "aria-label": "Generated preview" }, h("p", null, "Received: " + result.width + " × " + result.height + " pixels · original provider output"), h("button", { className: "image-preview-open", "aria-label": "Open generated image full screen", onClick: () => setFullPreview(true), style: { display: "block", width: "100%", padding: 0, background: "transparent", border: 0, cursor: "zoom-in" } }, h("img", { src: result.dataUrl, alt: "Generated preview", style: { display: "block", maxWidth: "100%", maxHeight: 420, objectFit: "contain", margin: "12px auto", borderRadius: 12 } })),
+      h("button", { className: "btn btn-ghost", onClick: () => setFullPreview(true) }, "View full screen"),
+      !saved && !busy && h("p", { role: "status" }, "This image has not been saved. Retry saving below without another paid generation."),
+      h("button", { className: "btn btn-primary", disabled: !!busy || saved, onClick: save, style: { marginTop: 12 } }, saved ? "Saved to character gallery" : "Save to character gallery"),
+      h("button", { className: "btn btn-ghost", disabled: !!busy, onClick: () => { setResult(null); setSaved(false); setError(""); updateBatch(null); } }, saved ? "Create more images" : "Discard preview")),
+    !result && !busy && h("button", { className: "btn btn-primary", disabled: !native || !status[provider] || !prompt.trim(), onClick: generate }, "Generate " + count + (count === 1 ? " image" : " images") + " and save to gallery"),
+    busy && phase.current !== "" && h("button", { className: "btn btn-ghost", disabled: cancelled.current, onClick: stop }, "Cancel generation")),
+    fullPreview && result && h(Lightbox, { items: [{ imgId: result.imgId, caption }], index: 0, imgCache: { [result.imgId]: result.dataUrl }, previewOnly: true, overlayLevel: 260, onClose: () => setFullPreview(false), onNav: () => {} }));
+}
+
 /* ---------- character page (view mode) ---------- */
 function CharacterPage({
   char: c,
@@ -7578,6 +8720,7 @@ function CharacterPage({
   onOpenLorebook,
   onTagClick,
   onStats,
+  onGenerateImages,
   toast
 }) {
   const [lb, setLb] = useState(null); // { index, autoPlay }
@@ -8110,7 +9253,7 @@ function CharacterPage({
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
     onClick: onEdit
-  }, "Edit character"), visGallery.length > 1 && /*#__PURE__*/React.createElement("button", {
+  }, "Edit character"), onGenerateImages && /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", onClick: () => onGenerateImages(activeVar) }, "Generate image"), visGallery.length > 1 && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
     onClick: () => setSs(true)
   }, /*#__PURE__*/React.createElement("span", {
@@ -8491,9 +9634,9 @@ function CharacterPage({
         index: (p.index + d + len) % len
       };
     }),
-    onSetProfile: imgId => {
-      onSetProfile(imgId, activeVar);
-      toast("Profile image updated");
+    onSetProfile: async imgId => {
+      try { await onSetProfile(imgId, activeVar); toast("Profile picture updated"); }
+      catch (error) { toast(error && error.message || "Couldn't change the profile picture. Try again."); }
     },
     onCaption: (i, text) => {
       const oi = visGallery[i] && visGallery[i].oi;
@@ -9196,9 +10339,9 @@ function PersonaPage({
       if (len <= 0) return null;
       return (prev + d + len) % len;
     }),
-    onSetProfile: imgId => {
-      onSetAvatar(imgId);
-      toast("Portrait updated");
+    onSetProfile: async imgId => {
+      try { await onSetAvatar(imgId); toast("Profile picture updated"); }
+      catch (error) { toast(error && error.message || "Couldn't change the profile picture. Try again."); }
     },
     onCaption: onCaption,
     onRemove: onDeleteImages ? i => {
@@ -9435,7 +10578,7 @@ function HistoryModal({
    field the app then dropped on the floor. They are variant fields now, with the
    same rule as the rest: empty falls back to the Default. Tags, bucket, sections
    and the gallery stay shared. */
-const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt", "age", "gender", "pronouns"];
+const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt", "age", "gender", "pronouns", "ttsVoice", "ttsStyle"];
 const DEFAULT_VID = "__default__"; // image belongs to the Default variant only
 /* version history: text only — images (profileImg/banner/gallery) are never captured or restored,
    so photos always survive an update or a rollback */
@@ -9656,6 +10799,34 @@ function DraftRecoveryBanner({ draft, onRestore, onDiscard }) {
     style: { display: "flex", gap: 8, flexWrap: "wrap" }
   }, /*#__PURE__*/React.createElement("button", { className: "btn btn-primary", onClick: onRestore }, "Restore draft"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onDiscard }, "Discard draft")));
 }
+const CHARACTER_TTS_VOICES = "Zephyr Puck Charon Kore Fenrir Leda Orus Aoede Callirrhoe Autonoe Enceladus Iapetus Umbriel Algieba Despina Erinome Algenib Rasalgethi Laomedeia Achernar Alnilam Schedar Gacrux Pulcherrima Achird Zubenelgenubi Vindemiatrix Sadachbia Sadaltager Sulafat".split(" ");
+function CharacterVoiceEditor({ voice, style, name, description, onVoice, onStyle }) {
+  const [suggesting, setSuggesting] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  async function suggest() {
+    const native = window.openRouter || window.Capacitor && typeof window.Capacitor.nativePromise === "function" && {
+      voiceSuggest: request => window.Capacitor.nativePromise("OpenRouter", "voiceSuggest", { request })
+    };
+    if (!native || !native.voiceSuggest) { setVoiceError("Voice suggestions need the Windows or Android app."); return; }
+    setSuggesting(true); setVoiceError("");
+    try {
+      const result = await native.voiceSuggest({ name: String(name || "").slice(0, 120), description: String(description || "").slice(0, 1200) });
+      if (!result || !result.ok) throw new Error(result && result.error || "Could not suggest a voice");
+      if (!CHARACTER_TTS_VOICES.includes(result.voice) || typeof result.style !== "string" || result.style.length > 220) throw new Error("The suggestion was invalid");
+      onVoice(result.voice); onStyle(result.style);
+    } catch (error) { setVoiceError(error.message || "Could not suggest a voice"); }
+    finally { setSuggesting(false); }
+  }
+  return /*#__PURE__*/React.createElement("div", { className: "card", style: { padding: 20, marginTop: 20 } },
+    /*#__PURE__*/React.createElement("h3", { style: { marginTop: 0 } }, "Character voice"),
+    /*#__PURE__*/React.createElement("p", { className: "muted" }, "Play saved Chat replies with Gemini 3.8 Flash TTS through your protected OpenRouter key. Playback and AI suggestions are separate paid requests. Nothing is generated automatically."),
+    /*#__PURE__*/React.createElement("label", { className: "lbl" }, "Voice"),
+    /*#__PURE__*/React.createElement("select", { className: "input", value: CHARACTER_TTS_VOICES.includes(voice) ? voice : "Kore", onChange: e => onVoice(e.target.value), style: { width: "100%", maxWidth: 400 } }, CHARACTER_TTS_VOICES.map(item => /*#__PURE__*/React.createElement("option", { key: item, value: item }, item))),
+    /*#__PURE__*/React.createElement("label", { className: "lbl", style: { display: "block", marginTop: 12 } }, "Voice direction"),
+    /*#__PURE__*/React.createElement("textarea", { className: "input", rows: 2, maxLength: 300, value: style || "", onChange: e => onStyle(e.target.value), placeholder: "Warm, hushed, unhurried; soften on vulnerable lines.", style: { width: "100%", boxSizing: "border-box" } }),
+    /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", type: "button", disabled: suggesting, onClick: suggest }, suggesting ? "Suggesting…" : "Suggest from character details"),
+    voiceError && /*#__PURE__*/React.createElement("p", { role: "alert", style: { color: "var(--danger)" } }, voiceError));
+}
 function CharacterEditor({
   initial,
   imgCache,
@@ -9743,10 +10914,10 @@ function CharacterEditor({
   const effF = k => vIdx < 0 ? c[k] || "" : (variants[vIdx] || {})[k] || c[k] || "";
   const inhF = k => vIdx >= 0 && !((variants[vIdx] || {})[k] || "").trim() && !!(c[k] || "").trim();
   const setF = (k, v) => {
-    if (vIdx < 0) set(k, v);else set("variants", variants.map((x, j) => j === vIdx ? {
-      ...x,
-      [k]: v
-    } : x));
+    if (vIdx < 0) set(k, v);else setC(previous => ({
+      ...previous,
+      variants: (previous.variants || []).map((x, j) => j === vIdx ? { ...x, [k]: v } : x)
+    }));
   };
   const addVariant = () => {
     /* Named by the first number nothing else is using rather than by how many
@@ -9938,10 +11109,14 @@ function CharacterEditor({
   };
   const setPortraitFor = imgId => {
     if (vIdx >= 0 && variants[vIdx]) {
-      set("variants", variants.map((x, j) => j === vIdx ? { ...x, profileImg: imgId } : x));
+      set("variants", variants.map((x, j) => j === vIdx ? { ...x, profileImg: imgId, chatPortraitCrop: null } : x));
     } else {
-      set("profileImg", imgId);
+      setC(p => ({ ...p, profileImg: imgId, chatPortraitCrop: null }));
     }
+  };
+  const setChatPortraitCrop = value => {
+    if (vIdx >= 0 && variants[vIdx]) set("variants", variants.map((x, j) => j === vIdx ? { ...x, chatPortraitCrop: value } : x));
+    else set("chatPortraitCrop", value);
   };
   const activeVariantName = vIdx >= 0 && variants[vIdx] ? variants[vIdx].name || "variant" : "Default";
   const editorPortraitId = vIdx >= 0 && variants[vIdx] ? variants[vIdx].profileImg || null : c.profileImg;
@@ -10176,6 +11351,11 @@ function CharacterEditor({
     label: "Remove “" + activeVariantName + "” portrait",
     armedLabel: "Click again — this portrait is gone",
     onConfirm: () => setPortraitFor(null)
+  }), window.RolecraftChatPortraitEditor && /*#__PURE__*/React.createElement(window.RolecraftChatPortraitEditor, {
+    src: profileSrc,
+    blurred: !!blurred[editorPortraitId],
+    value: vIdx >= 0 && variants[vIdx] ? variants[vIdx].chatPortraitCrop : c.chatPortraitCrop,
+    onChange: setChatPortraitCrop
   }), vIdx >= 0 && !editorPortraitId && c.profileImg && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
@@ -10647,7 +11827,14 @@ function CharacterEditor({
     value: getF("firstMessage"),
     onChange: e => setF("firstMessage", e.target.value),
     placeholder: "The opening message the character sends — sets tone, formatting and writing style"
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(CharacterVoiceEditor, {
+    voice: effF("ttsVoice"),
+    style: effF("ttsStyle"),
+    name: c.name,
+    description: [effF("tagline"), effF("personality"), effF("story")].filter(Boolean).join("\n").slice(0, 1200),
+    onVoice: value => setF("ttsVoice", value),
+    onStyle: value => setF("ttsStyle", value)
+  }), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       padding: "16px 20px",
@@ -12066,7 +13253,7 @@ function CommandPalette({ items, actions, favorites, onToggleFavorite, onOpen, o
     onClick: () => onToggleFavorite(x)
   }, fav.has(x.type + ":" + x.id) ? "★" : "☆")))), !actionHits.length && !itemHits.length && /*#__PURE__*/React.createElement("div", { className: "empty-palette" }, "Nothing matches that search.")));
 }
-function BackupRestoreModal({ file, onRestore, onClose }) {
+function BackupRestoreModal({ file, onRestore, onClose, pairedSyncActive }) {
   const [preview, setPreview] = useState(null);
   useEffect(() => { let alive = true; readBackupPreview(file).then(v => alive && setPreview(v)); return () => { alive = false; }; }, [file]);
   const info = preview && preview.info;
@@ -12076,7 +13263,7 @@ function BackupRestoreModal({ file, onRestore, onClose }) {
     onClose,
     className: "backup-preview",
     zIndex: 170
-  }, !info ? /*#__PURE__*/React.createElement("div", { className: "busy-line" }, /*#__PURE__*/React.createElement("span", { className: "spin" }), " Checking the backup…") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { className: "backup-summary" }, /*#__PURE__*/React.createElement("strong", null, info.ok ? "Backup is readable" : "This backup cannot be restored"), info.exportedAt && /*#__PURE__*/React.createElement("span", null, "Created " + historyWhen(info.exportedAt) + " · app " + info.appVersion), /*#__PURE__*/React.createElement("span", null, info.counts.chars + " characters · " + info.counts.personas + " personas · " + info.counts.lore + " lore · " + info.counts.prompts + " prompts · " + info.imageCount + " pictures")), info.fatal.concat(info.warnings).map((m, i) => /*#__PURE__*/React.createElement("div", { key: i, className: info.fatal.includes(m) ? "validation-error" : "validation-warning" }, m)), /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "Restoring replaces every current record, grouping, picture and bin entry. The preview above was read without changing the vault."), /*#__PURE__*/React.createElement("div", { className: "shortcut-row" }, /*#__PURE__*/React.createElement("button", { className: "btn btn-danger", disabled: !info.ok, onClick: () => onRestore(preview.data) }, "Replace and restore"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onClose }, "Cancel"))));
+  }, !info ? /*#__PURE__*/React.createElement("div", { className: "busy-line" }, /*#__PURE__*/React.createElement("span", { className: "spin" }), " Checking the backup…") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { className: "backup-summary" }, /*#__PURE__*/React.createElement("strong", null, info.ok ? "Backup is complete" : "This backup cannot be restored"), info.exportedAt && /*#__PURE__*/React.createElement("span", null, "Created " + historyWhen(info.exportedAt) + " · app " + info.appVersion), /*#__PURE__*/React.createElement("span", null, info.counts.chars + " characters · " + info.counts.personas + " personas · " + info.counts.lore + " lore · " + info.counts.prompts + " prompts · " + info.imageCount + " pictures")), info.fatal.concat(info.warnings).map((m, i) => /*#__PURE__*/React.createElement("div", { key: i, className: info.fatal.includes(m) ? "validation-error" : "validation-warning" }, m)), /*#__PURE__*/React.createElement("p", { className: "modal-intro" }, "Restoring replaces every current record, grouping, picture and bin entry. The preview above was read without changing the vault. A restore is not a fresh backup export."), pairedSyncActive && /*#__PURE__*/React.createElement("p", { className: "validation-error" }, "Leave your paired group in Settings > Automatic device sync before restoring. Afterward, pair again explicitly and review incoming libraries before approving them. The restore clears this device's old sync ancestry."), /*#__PURE__*/React.createElement("div", { className: "shortcut-row" }, /*#__PURE__*/React.createElement("button", { className: "btn btn-danger", disabled: !info.ok || pairedSyncActive, onClick: () => onRestore(preview.data) }, "Replace and restore"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onClose }, "Cancel"))));
 }
 function TransferWizard({ onClose, onVaultReplaced, onAdvanced }) {
   const [mode, setMode] = useState(null);
@@ -12185,13 +13372,110 @@ function BackupExportStatus({ status }) {
     role: status.phase === "error" ? "alert" : "status",
     "aria-live": "polite",
     style: { overflowWrap: "break-word", minWidth: 0 }
-  }, React.createElement("strong", null, status.kind === "characters" ? (status.phase === "error" ? "Characters were not exported" : busy ? "Exporting characters" : "Character export prepared") : status.phase === "error" ? "Backup was not exported" : busy ? "Exporting backup" : "Backup exported"),
+  }, React.createElement("strong", null, status.phase === "error" ? "Backup was not exported" : busy ? "Exporting backup" : "Backup exported"),
     React.createElement("span", null, status.message),
     status.filename && React.createElement("span", null, "File: " + status.filename),
     status.location && React.createElement("span", null, "Location: " + status.location),
     busy && React.createElement("progress", { max: status.total || 1, value: status.total ? status.done || 0 : undefined, "aria-label": "Backup progress", style: { width: "100%" } }),
     busy && React.createElement("span", null, "Keep Rolecraft open and the screen awake. " + Math.max(0, Math.floor((now - status.startedAt) / 1000)) + " seconds elapsed."),
     stalled && React.createElement("span", null, "Still waiting for storage. No completion has been confirmed; do not start another export."));
+}
+/* 1.333: Settings had grown into one page about 3,000px tall. A sticky row of
+   section chips jumps to each section and follows the reader. Sections are
+   found by data-settings-section anchors, so an edition without a section
+   (the browser edition has no device sync or updates) shows no chip for it.
+   window.__rcvSettingsSection lets a caller, such as the sync status pill,
+   open Settings at one section. Every section stays mounted. */
+const SETTINGS_SECTIONS = [["appearance", "Appearance"], ["security", "Security"], ["updates", "Updates"], ["sync", "Sync"], ["backup", "Backup"], ["help", "Help"]];
+function SettingsNav({
+  scroller
+}) {
+  const [present, setPresent] = useState([]);
+  const [active, setActive] = useState("appearance");
+  const navRef = useRef(null);
+  const lock = useRef(0);
+  const find = () => {
+    const box = scroller.current;
+    return box ? SETTINGS_SECTIONS.filter(([id]) => box.querySelector('[data-settings-section="' + id + '"]')) : [];
+  };
+  function go(id, smooth) {
+    const box = scroller.current,
+      el = box && box.querySelector('[data-settings-section="' + id + '"]');
+    if (!el) return;
+    const head = box.querySelector(".settings-top"),
+      y = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - (head ? head.offsetHeight : 0) - 10;
+    const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    box.scrollTo({
+      top: Math.max(0, y),
+      behavior: smooth && !reduce ? "smooth" : "auto"
+    });
+    // Hold the chosen chip while a smooth scroll passes other sections.
+    lock.current = Date.now() + 1400;
+    setActive(id);
+  }
+  useEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+    setPresent(find());
+    let frame = 0;
+    const spy = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (Date.now() < lock.current) return;
+        const head = box.querySelector(".settings-top"),
+          line = box.getBoundingClientRect().top + (head ? head.offsetHeight : 0) + 28,
+          rows = find();
+        let current = rows.length ? rows[0][0] : null;
+        for (const [id] of rows) {
+          const el = box.querySelector('[data-settings-section="' + id + '"]');
+          if (el && el.getBoundingClientRect().top <= line) current = id;
+        }
+        if (rows.length && box.scrollTop > 0 && box.scrollTop + box.clientHeight >= box.scrollHeight - 4) current = rows[rows.length - 1][0];
+        setActive(current);
+      });
+    };
+    box.addEventListener("scroll", spy, {
+      passive: true
+    });
+    const observer = typeof MutationObserver === "function" ? new MutationObserver(() => setPresent(previous => {
+      const next = find();
+      return next.map(r => r[0]).join() === previous.map(r => r[0]).join() ? previous : next;
+    })) : null;
+    if (observer) observer.observe(box, {
+      childList: true,
+      subtree: true
+    });
+    spy();
+    const wanted = window.__rcvSettingsSection;
+    window.__rcvSettingsSection = null;
+    const timer = wanted ? setTimeout(() => go(wanted, false), 80) : 0;
+    return () => {
+      box.removeEventListener("scroll", spy);
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      if (observer) observer.disconnect();
+    };
+  }, []);
+  useEffect(() => {
+    const nav = navRef.current,
+      chip = nav && nav.querySelector(".settings-nav-item.active");
+    if (!chip || nav.scrollWidth <= nav.clientWidth) return;
+    const left = chip.offsetLeft - nav.offsetLeft,
+      right = left + chip.offsetWidth;
+    if (left < nav.scrollLeft) nav.scrollLeft = left - 8;else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
+  }, [active, present]);
+  if (present.length < 2) return null;
+  return /*#__PURE__*/React.createElement("nav", {
+    ref: navRef,
+    className: "settings-nav",
+    "aria-label": "Settings sections"
+  }, present.map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    type: "button",
+    className: "settings-nav-item" + (active === id ? " active" : ""),
+    "aria-current": active === id ? "true" : undefined,
+    onClick: () => go(id, true)
+  }, label)));
 }
 function SettingsModal({
   onOpenTrash,
@@ -12232,6 +13516,7 @@ function SettingsModal({
   refreshAuth
 }) {
   const [form, setForm] = useState(null); // password, PIN, and device-unlock forms
+  const settingsScrollRef = useRef(null);
   const [pendingImport, setPendingImport] = useState(null);
   const [xfer, setXfer] = useState(null);
   const [xferBusy, setXferBusy] = useState(false);
@@ -12248,6 +13533,10 @@ function SettingsModal({
   }, React.createElement("span", { className: "spin" }), label);
   const [xferCode, setXferCode] = useState("");
   const [xferMsg, setXferMsg] = useState(null);
+  const xferMessageRef = useRef(null);
+  useEffect(() => {
+    if (xferMsg && xferMessageRef.current) xferMessageRef.current.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [xferMsg]);
   /* Mirroring deletes from whichever device is receiving. It used to be on by
      default, which is the wrong way round for a destructive option: merging
      costs nothing to undo, mirroring the wrong way costs a vault. */
@@ -12470,12 +13759,16 @@ function SettingsModal({
     className: "modal-back",
     onClick: onClose
   }, /*#__PURE__*/React.createElement("div", {
-    className: "card modal",
+    className: "card modal settings-modal",
+    ref: settingsScrollRef,
     role: "dialog",
     "aria-modal": "true",
     "aria-label": "Settings",
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("div", {
+    className: "settings-top"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "settings-title-row",
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -12484,7 +13777,7 @@ function SettingsModal({
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
-  }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h2", {
+  }, "Rolecraft"), /*#__PURE__*/React.createElement("h2", {
     className: "serif",
     style: {
       margin: "2px 0 0",
@@ -12493,9 +13786,11 @@ function SettingsModal({
   }, "Settings")), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-ghost",
     onClick: onClose
-  }, "Close")), /*#__PURE__*/React.createElement("div", {
-    className: "divider"
-  }), /*#__PURE__*/React.createElement("div", {
+  }, "Close")), /*#__PURE__*/React.createElement(SettingsNav, {
+    scroller: settingsScrollRef
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "appearance",
     style: {
       fontWeight: 700,
       marginBottom: 10
@@ -12580,13 +13875,14 @@ function SettingsModal({
       marginBottom: 10
     }
   }, "Graphics"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-graphics-choices",
     style: {
       display: "flex",
       gap: 8
     }
   }, [["quality", "Quality"], ["performance", "Performance"]].map(([m, label]) => /*#__PURE__*/React.createElement("button", {
     key: m,
-    className: "btn " + (perfMode === m ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (perfMode === m ? "btn-primary" : "btn-ghost"),
     style: {
       flex: 1
     },
@@ -12611,13 +13907,14 @@ function SettingsModal({
       marginBottom: 10
     }
   }, "Screen"), /*#__PURE__*/React.createElement("div", {
+    className: "settings-choice-row settings-screen-choices",
     style: {
       display: "flex",
       gap: 8
     }
   }, [[false, "Window"], [true, "Full screen"]].map(([on, label]) => /*#__PURE__*/React.createElement("button", {
     key: label,
-    className: "btn " + (fullScreen === on ? "btn-primary" : "btn-ghost"),
+    className: "btn settings-choice " + (fullScreen === on ? "btn-primary" : "btn-ghost"),
     style: {
       flex: 1
     },
@@ -12723,6 +14020,8 @@ function SettingsModal({
   }, "Darkens the smaller grey text — labels, captions and secondary lines. Everything already meets the accessibility standard at Normal; these go further if you want it plainer."), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "security",
     style: {
       fontWeight: 700,
       marginBottom: 4
@@ -12929,6 +14228,8 @@ function SettingsModal({
   }, v)))), window.updater && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "updates",
     style: {
       fontWeight: 700,
       marginBottom: 4
@@ -12995,33 +14296,27 @@ function SettingsModal({
       if (!f) return;
       installUpdateFile(f);
     }
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "divider"
-  }), /*#__PURE__*/React.createElement("button", {
-    className: "filerow",
-    "aria-label": "Guide",
-    onClick: onOpenGuide
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "fr-label"
-  }, "Guide"), /*#__PURE__*/React.createElement("div", {
-    className: "fr-hint"
-  }, "How the dashboard, libraries, pictures, transfers, security and every edition work.")), /*#__PURE__*/React.createElement("button", {
-    className: "filerow",
-    onClick: onOpenTrash
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "fr-label"
-  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
-    className: "fr-hint"
-  }, (trash || []).length === 0 ? "Nothing waiting. Anything you delete is kept here for 30 days." : (trash.length === 1 ? "1 item" : trash.length + " items") + " waiting, kept for 30 days.")), /*#__PURE__*/React.createElement("button", {
-    className: "filerow",
-    onClick: onOpenHistory
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "fr-label"
-  }, "Version history"), /*#__PURE__*/React.createElement("div", {
-    className: "fr-hint"
-  }, "This copy is v" + APP_VERSION + ". Read what changed in each release.")), /*#__PURE__*/React.createElement("div", {
+  })), window.RolecraftSyncPanel && syncEngine && syncEngine.supported && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "sync",
+    style: {
+      fontWeight: 700,
+      marginBottom: 8
+    }
+  }, "Sync between devices"), /*#__PURE__*/React.createElement(window.RolecraftSyncPanel, {
+    engine: syncEngine,
+    status: syncStatus,
+    renderQr: code => React.createElement(TransferQr, {
+      text: code,
+      size: 360
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "backup",
     style: {
       fontWeight: 700,
       marginBottom: 4
@@ -13033,7 +14328,7 @@ function SettingsModal({
       lineHeight: 1.5,
       marginBottom: 12
     }
-  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), window.RolecraftSyncPanel && React.createElement(window.RolecraftSyncPanel, {engine:syncEngine,status:syncStatus,renderQr:code=>React.createElement(TransferQr,{text:code,size:360})}), /*#__PURE__*/React.createElement("div", {
+  }, "Export everything — ", counts.chars, " characters, ", counts.personas, " personas, ", counts.lore, " lore entries, ", counts.prompts, " prompts, and all images — as one file. Imports are validated and previewed before anything is replaced. The export itself is a plain file, so store it somewhere you trust."), /*#__PURE__*/React.createElement("div", {
     className: "backup-health " + (backupDue ? "due" : "good")
   }, /*#__PURE__*/React.createElement("strong", null, backupDue ? "A fresh backup is recommended" : "Backup health looks good"), /*#__PURE__*/React.createElement("span", null, lastBackup ? "Last successful export: " + historyWhen(lastBackup) : "No successful backup is recorded on this device yet.")), React.createElement(BackupExportStatus, { status: backupExport }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13198,6 +14493,9 @@ function SettingsModal({
     style: { fontSize: 13, color: "var(--text)", marginBottom: 10, lineHeight: 1.55, padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--panel)" }
   }, "You are on ", /*#__PURE__*/React.createElement("strong", null, thisDevice || "this device"), ". Nothing below changes the other device \u2014 sending only offers this vault up, and receiving writes onto ", /*#__PURE__*/React.createElement("strong", null, thisDevice || "this device"), "."),
   xferMsg && /*#__PURE__*/React.createElement("div", {
+    ref: xferMessageRef,
+    role: xferMsg.ok ? "status" : "alert",
+    "data-transfer-result": true,
     style: { fontSize: 13, color: xferMsg.ok ? "var(--brass)" : "#e2698a", marginBottom: 10, lineHeight: 1.5 }
   }, xferMsg.text),
   canShare && /*#__PURE__*/React.createElement("div", {
@@ -13307,9 +14605,14 @@ function SettingsModal({
       if (!xferPlan) {
         setXferBusy(true);
         setXferMsg(null);
-        const p = window.transfer.preview
-          ? await window.transfer.preview(xferCode.trim(), xferReplace)
-          : { ok: false, error: "This build cannot preview a sync \u2014 update both devices." };
+        let p;
+        try {
+          p = window.transfer.preview
+            ? await window.transfer.preview(xferCode.trim(), xferReplace)
+            : { ok: false, error: "This build cannot preview a sync \u2014 update both devices." };
+        } catch (e) {
+          p = { ok: false, error: e && e.message || "Could not check this transfer. Keep both apps open and try again." };
+        }
         setXferBusy(false);
         if (p && p.ok) {
           if (p.device) setThisDevice(p.device);
@@ -13362,6 +14665,37 @@ function SettingsModal({
   }, "Cancel")), !xfer && (!xferProg || xferProg.phase !== "preparing") && xferBar()), /*#__PURE__*/React.createElement("div", {
     className: "divider"
   }), /*#__PURE__*/React.createElement("div", {
+    className: "settings-section-title",
+    "data-settings-section": "help",
+    style: {
+      fontWeight: 700,
+      marginBottom: 8
+    }
+  }, "Help & history"), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    "aria-label": "Guide",
+    onClick: onOpenGuide
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Guide"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, "How the dashboard, libraries, pictures, transfers, security and every edition work.")), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    onClick: onOpenTrash
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Recently deleted"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, (trash || []).length === 0 ? "Nothing waiting. Anything you delete is kept here for 30 days." : (trash.length === 1 ? "1 item" : trash.length + " items") + " waiting, kept for 30 days.")), /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    onClick: onOpenHistory
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Version history"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, "This copy is v" + APP_VERSION + ". Read what changed in each release.")), /*#__PURE__*/React.createElement("div", {
+    className: "divider"
+  }), /*#__PURE__*/React.createElement("div", {
     style: { fontWeight: 700, marginBottom: 4 }
   }, "Privacy & support"), /*#__PURE__*/React.createElement("div", {
     className: "muted",
@@ -13378,6 +14712,7 @@ function SettingsModal({
       marginBottom: 4
     }
   }, /*#__PURE__*/React.createElement("button", {
+    className: "disclosure-toggle",
     onClick: () => setContribOpen(o => !o),
     "aria-expanded": contribOpen,
     style: {
@@ -13421,7 +14756,7 @@ function SettingsModal({
       lineHeight: 1.6,
       marginTop: 14
     }
-  }, "Rolecraft Vault v" + APP_VERSION + " \u00b7 Everything stays on this device. Nothing is uploaded anywhere.")));
+  }, "Rolecraft v" + APP_VERSION + " \u00b7 Your vault is encrypted. Chat and image generation contact providers only when you use them.")));
 }
 
 /* ---------- main app ---------- */
@@ -13467,18 +14802,6 @@ const BUILT_IN_TEMPLATES = [{
 }];
 function textOnlyCopy(type, source, prefix) {
   const out = JSON.parse(JSON.stringify(source || {}));
-  const copySections = record => {
-    const keys = new Map();
-    record.sections = (record.sections || []).map(s => {
-      const id = uid();
-      keys.set("sec:" + s.id, "sec:" + id);
-      return { ...s, id };
-    });
-    if (Array.isArray(record.sectionOrder)) record.sectionOrder = record.sectionOrder
-      .filter(k => !String(k).startsWith("sec:") || keys.has(k))
-      .map(k => keys.get(k) || k);
-    return record;
-  };
   out.id = uid();
   out.createdAt = null;
   out.updatedAt = null;
@@ -13487,16 +14810,12 @@ function textOnlyCopy(type, source, prefix) {
   if (type === "character") {
     out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
     out.profileImg = null; out.banner = null; out.gallery = []; out.albums = []; out.imgMeta = {};
-    copySections(out);
-    out.variants = (out.variants || []).map(v => {
-      const variant = { ...v, id: uid(), profileImg: null };
-      if (Array.isArray(variant.sections)) copySections(variant);
-      return variant;
-    });
+    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
+    out.variants = (out.variants || []).map(v => ({ ...v, id: uid(), profileImg: null }));
   } else if (type === "persona") {
     out.name = prefix && out.name ? "Copy of " + out.name : out.name || "";
     out.avatar = null; out.gallery = []; out.albums = []; out.imgMeta = {};
-    copySections(out);
+    out.sections = (out.sections || []).map(s => ({ ...s, id: uid() }));
   } else {
     out.title = prefix && out.title ? "Copy of " + out.title : out.title || "";
     out.images = [];
@@ -13537,7 +14856,7 @@ function VaultBusyScreen({
     size: 96
   })), /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
-  }, "Rolecraft Vault"), /*#__PURE__*/React.createElement("h1", {
+  }, "Rolecraft"), /*#__PURE__*/React.createElement("h1", {
     className: "serif",
     style: {
       fontSize: 26,
@@ -13585,6 +14904,29 @@ function VaultBusyScreen({
     }
   })));
 }
+function waitForVaultSyncReload(reloadRef, requestReload, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const complete = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (reloadRef.current === reload) reloadRef.current = null;
+      if (error) reject(error instanceof Error ? error : new Error(String(error)));
+      else resolve();
+    };
+    const reload = async loadError => {
+      if (loadError) return complete(loadError);
+      try {
+        if (window.RolecraftChatReloadAfterSync) await window.RolecraftChatReloadAfterSync();
+        complete();
+      } catch (error) { complete(error); }
+    };
+    const timer = setTimeout(() => complete(new Error("The vault saved the sync, but this screen did not reload in time. Refresh this device to see the latest chats.")), timeoutMs);
+    reloadRef.current = reload;
+    try { requestReload(); } catch (error) { complete(error); }
+  });
+}
 function RolecraftVault() {
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
   /* Android uses the shortest physical screen edge so rotation and WebView text
@@ -13593,6 +14935,26 @@ function RolecraftVault() {
     ? Math.min(window.screen.width || 0, window.screen.height || 0) : 0;
   const ON_TABLET = ON_PHONE && SHORT_EDGE >= 600;
   const [ready, setReady] = useState(false);
+  const [imageStudio, setImageStudio] = useState(null);
+  const imageStudioEpoch = useRef(0);
+  useEffect(() => {
+    const native = imageGenerationBridge();
+    if (!native) return;
+    const update = () => native.setUnlocked({ unlocked: ready && !document.hidden }).catch(() => {});
+    const lock = () => { imageStudioEpoch.current++; setImageStudio(null); native.setUnlocked({ unlocked: false }).catch(() => {}); };
+    const visibility = () => { if (document.hidden) lock(); else update(); };
+    update(); window.addEventListener("rcv-locking", lock); document.addEventListener("visibilitychange", visibility);
+    return () => { window.removeEventListener("rcv-locking", lock); document.removeEventListener("visibilitychange", visibility); };
+  }, [ready]);
+  useEffect(() => {
+    const native = typeof window.rolecraftProviderBalancesBridge === "function" ? window.rolecraftProviderBalancesBridge() : null;
+    if (!native) return;
+    const update = () => native.setUnlocked({ unlocked: ready && !document.hidden }).catch(() => {});
+    const lock = () => native.setUnlocked({ unlocked: false }).catch(() => {});
+    const visibility = () => { if (document.hidden) lock(); else update(); };
+    update(); window.addEventListener("rcv-locking", lock); document.addEventListener("visibilitychange", visibility);
+    return () => { lock(); window.removeEventListener("rcv-locking", lock); document.removeEventListener("visibilitychange", visibility); };
+  }, [ready]);
   const [loadError, setLoadError] = useState(null); // [damaged keys] — the vault refused to open
   const [authState, setAuthState] = useState({
     passwordSet: false,
@@ -14168,9 +15530,11 @@ function RolecraftVault() {
   const [backupExport, setBackupExport] = useState(null);
   const [backupExportOpen, setBackupExportOpen] = useState(false);
   const backupExportBusy = useRef(false);
+  const backupRestoreBusy = useRef(false);
   const vaultSyncRef = useRef(null);
   const vaultSyncReload = useRef(null);
   const [vaultSyncStatus, setVaultSyncStatus] = useState(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   useEffect(() => {
     if (!window.RolecraftVaultSync) return;
     const engine = window.RolecraftVaultSync.create({
@@ -14178,18 +15542,28 @@ function RolecraftVault() {
       namespace: window.RolecraftSyncNamespace || "library1",
       previousNamespace: window.RolecraftPreviousSyncNamespace,
       ready: () => !!document.querySelector('.rcv[data-rcv-state="ready"]'),
-      canApply: () => !pendingVaultWrites && !backupExportBusy.current && !document.activeElement?.matches("input, textarea, [contenteditable=true]") && document.querySelectorAll(".modal-back:not(.sync-saving)").length <= (document.querySelector(".vault-sync-panel") ? 1 : 0),
+      canApply: () => (!window.RolecraftChatSyncIdle || window.RolecraftChatSyncIdle()) && !pendingVaultWrites && !backupExportBusy.current && !backupRestoreBusy.current && !document.activeElement?.matches("input, textarea, [contenteditable=true]") && document.querySelectorAll(".modal-back:not(.sync-saving)").length <= (document.querySelector(".vault-sync-panel") ? 1 : 0),
+      canApplyStories: () => !!window.RolecraftChatSyncIdle && window.RolecraftChatSyncIdle() && !pendingVaultWrites && !backupExportBusy.current && !backupRestoreBusy.current,
+      onStoriesApplied: () => window.RolecraftChatReloadStories ? window.RolecraftChatReloadStories() : Promise.resolve(),
+      onDraftHandoffsApplied: () => window.RolecraftDraftHandoffReload ? window.RolecraftDraftHandoffReload() : Promise.resolve(),
       imageIds: (kind, record) => {
         if (kind === "trash") return record.record ? imageIdsOf(record.type, record.record) : [];
         if (["bucket", "personaBucket", "loreBook", "promptBook"].includes(kind)) return record.cover ? [record.cover] : [];
         return imageIdsOf(kind, record);
       },
-      onApplied: () => new Promise(resolve => { const timer=setTimeout(resolve,15000); vaultSyncReload.current = () => { clearTimeout(timer); resolve(); }; setVaultTick(t => t + 1); })
+      onApplied: () => waitForVaultSyncReload(vaultSyncReload, () => setVaultTick(t => t + 1))
     });
     vaultSyncRef.current = engine;
-    const off = engine.subscribe(setVaultSyncStatus);
+    const off = engine.subscribe(status => { setVaultSyncStatus(status); window.RolecraftDeviceSyncStatus=status; window.RolecraftDeviceSyncEnabled=!!status.settings?.enabled; window.dispatchEvent(new CustomEvent("rcv-device-sync-status",{detail:status})); });
+    window.RolecraftDeviceSyncRefresh = () => engine.retry();
+    window.RolecraftDeviceSyncDraftHandoffSaved = () => engine.localDraftHandoffSaved();
+    const activity = e => engine.setWorkspacePaused && engine.setWorkspacePaused(e.detail === true);
+    const chatSaved = () => engine.localStorySaved ? engine.localStorySaved() : engine.wakeStories && engine.wakeStories();
+    window.addEventListener("rcv-workspace", activity);
+    window.addEventListener("rcv-chat-saved", chatSaved);
+    if (window.RolecraftChatOpen) activity({detail:true});
     engine.start();
-    return () => { off(); engine.stop(); vaultSyncRef.current = null; };
+    return () => { window.removeEventListener("rcv-workspace", activity); window.removeEventListener("rcv-chat-saved", chatSaved); delete window.RolecraftDeviceSyncRefresh; delete window.RolecraftDeviceSyncDraftHandoffSaved; delete window.RolecraftDeviceSyncStatus; off(); engine.stop(); vaultSyncRef.current = null; };
   }, []);
   const refreshDrafts = useCallback(() => {
     sGet(DRAFT_INDEX_KEY).then(v => {
@@ -14198,11 +15572,13 @@ function RolecraftVault() {
   }, []);
   useEffect(() => {
     if (!authState.checked || authState.locked) return;
+    const reloadForThisLoad = vaultSyncReload.current;
     (async () => {
       /* A record that won't parse must never quietly become an empty list: the app
          would open looking wiped, and the next save would write that emptiness back
          over the real data. Collect the damage instead and refuse to open. */
       const damaged = [];
+      let reloadFailure = null;
       const parse = (raw, key, fallback) => {
         if (!raw) return fallback;
         try {
@@ -14262,6 +15638,7 @@ function RolecraftVault() {
         const lastSeen = await sGet("ui:lastseenversion");
         if (damaged.length) {
           setLoadError(damaged);
+          reloadFailure = new Error("The synced library could not be reloaded safely. Reopen the app or refresh this device after checking storage.");
           return; // nothing is loaded, so nothing can be written back over it
         }
         setChars(charList);
@@ -14303,9 +15680,10 @@ function RolecraftVault() {
           if (ch.profileImg) loadImage(ch.profileImg);
         });
       } catch (e) {
+        reloadFailure = e;
         setLoadError([]); // storage itself failed; damaged list is unknown
       } finally {
-        if (vaultSyncReload.current) { vaultSyncReload.current(); vaultSyncReload.current = null; }
+        if (reloadForThisLoad && vaultSyncReload.current === reloadForThisLoad) await reloadForThisLoad(reloadFailure);
       }
     })();
   }, [authState.checked, authState.locked, vaultTick]);
@@ -14642,7 +16020,7 @@ function RolecraftVault() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  const modalCount = [showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, showTrash, showHistory].filter(Boolean).length + (editingChar ? 1 : 0) + (editingRecord ? 1 : 0);
+  const modalCount = [showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, showTrash, showHistory, imageStudio].filter(Boolean).length + (editingChar ? 1 : 0) + (editingRecord ? 1 : 0);
   useEffect(() => {
     if (!modalCount) return;
     const before = document.activeElement;
@@ -14794,12 +16172,12 @@ function RolecraftVault() {
     await sSet("ui:contrast", v);
   };
   useEffect(() => {
-    if (view !== "dashboard") return;
+    if (view !== "dashboard" || workspaceOpen) return;
     const t = setInterval(() => {
       if (!wallHoverRef.current) setWallTick(x => x + 1);
     }, 10000);
     return () => clearInterval(t);
-  }, [view]);
+  }, [view, workspaceOpen]);
   const [personaQ, setPersonaQ] = useState("");
   const [pSelMode, setPSelMode] = useState(false);
   const [pSelected, setPSelected] = useState({});
@@ -14992,6 +16370,12 @@ function RolecraftVault() {
       const a = authRef.current;
       if (!a || a.locked || !a.checked) return;
       if (!a.passwordSet && !a.pinSet) return;
+      // Explicit, native-confirmed foreground-service session only. Manual lock
+      // always revokes it; permission expiry resumes normal background locking.
+      if (window.RolecraftSyncBackground?.active()) {
+        retryWhileHidden(1000);
+        return;
+      }
       const pickerWait = pickerGate.remaining();
       if (pickerWait) {
         retryWhileHidden(pickerWait + 50);
@@ -15360,12 +16744,12 @@ function RolecraftVault() {
     };
   }, [requestFull, queueFull]);
   useEffect(() => {
-    quietRef.current = !!(showSettings || showGuide || showTransfer || commandOpen || showOnboarding || showWhatsNew || restoreFile);
+    quietRef.current = !!(workspaceOpen || showSettings || showGuide || showTransfer || commandOpen || showOnboarding || showWhatsNew || restoreFile);
     if (quietRef.current) return;
     pumpImg();
     pumpFull();
     flushFull();
-  }, [showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, pumpImg, pumpFull, flushFull]);
+  }, [workspaceOpen, showSettings, showGuide, showTransfer, commandOpen, showOnboarding, showWhatsNew, restoreFile, pumpImg, pumpFull, flushFull]);
   /* After unlock, pull some originals in the background so the first thing you
      open is already sharp.
 
@@ -15412,8 +16796,10 @@ function RolecraftVault() {
      as though it had worked, and only revealed itself as missing after a
      restart. sSet was fixed to throw for exactly this reason; doing the display
      before the write put the same lie back one level up. */
-  const saveImage = useCallback(async (imgId, dataUrl, thumb) => {
+  const saveImage = useCallback(async (imgId, dataUrl, thumb, assertActive = () => {}) => {
+    assertActive();
     await sSet("img:" + imgId, dataUrl);
+    assertActive();
     try {
       if (thumb) await sSet("th:" + imgId, thumb);
     } catch (e) {
@@ -15422,6 +16808,7 @@ function RolecraftVault() {
       await Promise.all([sDel("img:" + imgId).catch(() => {}), sDel("th:" + imgId).catch(() => {})]);
       throw e;
     }
+    assertActive();
     /* Stats used to read every original back in full just to measure it — the
        whole vault, one picture at a time, to work out a byte count from the
        length of a string. An image never changes once written (a replacement
@@ -15431,6 +16818,7 @@ function RolecraftVault() {
     try {
       await sSet("sz:" + imgId, String(dataUrlSize(dataUrl)));
     } catch (e) {}
+    assertActive();
     fullMem.current[imgId] = dataUrl;
     fullOrder.current = fullOrder.current.filter(x => x !== imgId).concat(imgId);
     markShow(imgId);
@@ -15487,6 +16875,48 @@ function RolecraftVault() {
     const cur = charsRef.current.find(x => x.id === id);
     if (!cur) return;
     return persistChar(fn(cur));
+  };
+  const saveGeneratedImage = async (charId, result, caption, variantId, activeGuard) => {
+    const epoch = imageStudioEpoch.current;
+    const guard = () => {
+      if (epoch !== imageStudioEpoch.current || document.hidden || !document.querySelector('.rcv[data-rcv-state="ready"]')) throw new Error("Vault locked or backgrounded. Nothing further can be saved.");
+      if (activeGuard) activeGuard();
+      if (!charsRef.current.some(c => c.id === charId)) throw new Error("This character no longer exists. The image was not attached.");
+    };
+    guard();
+    if (!window.storage.syncCommit) throw new Error("Install the current Chat app to save generated images safely.");
+    pendingVaultWrites++;
+    let committed = false;
+    try {
+      await decodeStudioImage(result.dataUrl); guard();
+      const thumb = await makeThumb(result.dataUrl); guard();
+      await saveImage(result.imgId, result.dataUrl, thumb, guard); guard();
+      const raw = await sGet("chars:all"); guard();
+      const current = JSON.parse(raw || "[]");
+      if (!Array.isArray(current)) throw new Error("The character library could not be read. Nothing was replaced.");
+      const target = current.find(c => c.id === charId);
+      if (!target) throw new Error("This character was removed on another device. Nothing was replaced.");
+      if (variantId && variantId !== DEFAULT_VID && !(target.variants || []).some(v => v.id === variantId)) throw new Error("That variant was removed. Choose Shared across variants and save again.");
+      const next = current.map(c => c.id !== charId || (c.gallery || []).some(g => g.imgId === result.imgId) ? c : {
+        ...c, gallery: [...(c.gallery || []), { imgId: result.imgId, caption: caption.trim(), album: "", variantId: variantId || "", generated: { provider: result.provider, model: result.model } }], updatedAt: Date.now()
+      });
+      guard();
+      await window.storage.syncCommit({ "chars:all": JSON.stringify(next) }, { "chars:all": raw });
+      committed = true; guard();
+      charsRef.current = next; setChars(next);
+      toast("Generated image saved to character gallery");
+    } catch (e) {
+      if (!committed && epoch === imageStudioEpoch.current && !document.hidden) {
+        // A failed acknowledgement can follow a durable commit. Check persisted
+        // references as well as renderer state before removing a staged image.
+        try {
+          guard();
+          const latest = JSON.parse(await sGet("chars:all") || "[]"); guard();
+          if (Array.isArray(latest) && !latest.some(c => charImgIds(c).includes(result.imgId)) && !heldImageIds().has(result.imgId)) await dropImage(result.imgId);
+        } catch (_) {} // uncertain storage keeps the original for a safe retry
+      }
+      throw e;
+    } finally { pendingVaultWrites--; }
   };
   const saveChar = async c => {
     const before = charsRef.current.find(x => x.id === c.id);
@@ -16060,64 +17490,20 @@ function RolecraftVault() {
     }, sanitizeName(c.name) + (label ? "-" + sanitizeName(label) : "") + ".json", "Character exported" + (label ? " \u2014 " + label + " only" : " with all variants"));
   };
   const exportCharsJson = async () => {
-    setBackupExportOpen(true);
-    if (backupExportBusy.current) return;
-    backupExportBusy.current = true;
-    const filename = "rolecraft-characters.json", startedAt = Date.now();
-    let lastPaint = 0;
-    const report = async (message, done = 0, total = 0) => {
-      if (Date.now() - lastPaint < 125 && done !== total) return;
-      lastPaint = Date.now();
-      setBackupExport({ kind: "characters", phase: "working", filename, startedAt, updatedAt: lastPaint, message, done, total });
-      await new Promise(resolve => setTimeout(resolve, 0));
-    };
-    try {
-      await report("Preparing character export…");
-      const ids = [...new Set(chars.flatMap(c => charImgIds(c)).filter(Boolean))];
-      const write = async append => {
-        await append('{"app":"rolecraft-vault","type":"characters","version":3,"exportedAt":' + JSON.stringify(new Date().toISOString()) + ',"chars":[');
-        for (let i = 0; i < chars.length; i++) {
-          await report("Writing character " + (i + 1) + " of " + chars.length, i, chars.length);
-          await append((i ? "," : "") + JSON.stringify(chars[i]));
-        }
-        await append('],"images":{');
-        for (let i = 0; i < ids.length; i++) {
-          await report("Reading picture " + (i + 1) + " of " + ids.length, i, ids.length);
-          const value = (await sGet("img:" + ids[i])) || imgCache[ids[i]];
-          if (!value) throw new Error("A referenced picture could not be read. Export stopped rather than saving an incomplete file.");
-          await append((i ? "," : "") + JSON.stringify(ids[i]) + ":" + JSON.stringify(value));
-        }
-        await append('},"thumbs":{');
-        let comma = false;
-        for (let i = 0; i < ids.length; i++) {
-          await report("Reading preview " + (i + 1) + " of " + ids.length, i, ids.length);
-          const value = await sGet("th:" + ids[i]);
-          if (!value) continue;
-          await append((comma ? "," : "") + JSON.stringify(ids[i]) + ":" + JSON.stringify(value));
-          comma = true;
-        }
-        await append('},"blurred":' + JSON.stringify(ids.filter(id => blurred[id])) + "}");
-        await report("Preparing the download…", ids.length, ids.length);
-      };
-      const stream = phoneJsonStream(filename, write);
-      let saved;
-      if (stream) saved = await stream;
-      else {
-        // Blob fragments avoid V8's single-string size limit and release each
-        // picture's temporary JSON string before reading the next one.
-        const parts = [];
-        await write(async text => { parts.push(new Blob([text])); });
-        saved = await saveFile(new Blob(parts, { type: "application/json" }), filename);
-      }
-      if (!saved) throw new Error("The download could not be started. Check free space and try again.");
-      setBackupExport({ kind: "characters", phase: "success", filename, startedAt, updatedAt: Date.now(), location: typeof saved === "string" ? saved : "Downloads", message: stream ? "Characters and all referenced pictures were exported." : "Download started. Check Downloads for the completed file; keep Rolecraft open until it finishes." });
-      return saved;
-    } catch (e) {
-      setBackupExport({ kind: "characters", phase: "error", filename, startedAt, updatedAt: Date.now(), message: ((e && e.message) || String(e)) + " Your library has not been changed." });
-      return false;
-    } finally {
-      backupExportBusy.current = false;
-    }
+    const {
+      images,
+      thumbs
+    } = await collectImagesFor(chars, []);
+    return exportJSON({
+      app: "rolecraft-vault",
+      type: "characters",
+      version: 3,
+      exportedAt: new Date().toISOString(),
+      chars,
+      images,
+      thumbs,
+      blurred: Object.keys(blurred)
+    }, "rolecraft-characters.json", "Characters exported");
   };
   /* Text-only exports: the same records with everything image-shaped removed, so
      the file is small enough to read, paste into something else, or hand to an AI.
@@ -16466,9 +17852,8 @@ function RolecraftVault() {
     };
     report("Preparing backup…");
     try {
-    /* Let the progress panel paint before inspecting a large library. All
-       preparation belongs inside this catch, not just the final file write. */
     await new Promise(resolve => setTimeout(resolve, 0));
+    const chats = window.RolecraftChatSync.validate(JSON.parse((await sGet("chats:all")) || "[]"));
     const imgIds = [];
     for (const c of chars) imgIds.push(...charImgIds(c));
     for (const p of personas) imgIds.push(...personaImgIds(p));
@@ -16505,6 +17890,7 @@ function RolecraftVault() {
       personas,
       lore,
       prompts,
+      chats,
       blurred: Object.keys(blurred),
       buckets: bucketMeta,
       personaBuckets: pBucketMeta,
@@ -16516,7 +17902,7 @@ function RolecraftVault() {
        is checked against the values actually read below; placeholders here keep
        this structural pass from mistaking not-yet-read pictures for failures. */
     const expectedImages = Object.fromEntries(uniqueIds.map(id => [id, true]));
-    const check = backupInspection({ ...base, images: expectedImages });
+    const check = backupInspection({ ...base, images: expectedImages }, true);
     if (!check.ok) throw new Error(check.fatal[0] || "Backup validation failed");
     report("Opening backup destination…");
     const stream = phoneJsonStream(filename, async append => {
@@ -16527,13 +17913,13 @@ function RolecraftVault() {
       };
       await append("{");
       report("Writing library records…");
-      for (const name of ["app", "version", "exportedAt", "chars", "personas", "lore", "prompts"]) await prop(name, base[name]);
+      for (const name of ["app", "version", "exportedAt", "chars", "personas", "lore", "prompts", "chats"]) await prop(name, base[name]);
       await append(",\"images\":{");
       let comma = false;
       for (const id of uniqueIds) {
         report("Saving picture " + (imageCount + 1) + " of " + uniqueIds.length, imageCount, uniqueIds.length, imageCount === 0);
         const value = (await sGet("img:" + id)) || imgCache[id] || null;
-        if (!value) throw new Error("Backup validation failed because a referenced picture could not be read");
+        if (!backupPictureValid(value)) throw new Error("Backup validation failed because a referenced picture is missing or unreadable");
         await append((comma ? "," : "") + JSON.stringify(id) + ":" + JSON.stringify(value));
         comma = true;
         imageCount++;
@@ -16554,7 +17940,7 @@ function RolecraftVault() {
       await prop("manifest", {
         appVersion: APP_VERSION,
         formatVersion: 4,
-        counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length },
+        counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length, chats: chats.length },
         images: imageCount
       });
       await append("}");
@@ -16584,7 +17970,7 @@ function RolecraftVault() {
         manifest: {
           appVersion: APP_VERSION,
           formatVersion: 4,
-          counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length },
+          counts: { chars: chars.length, personas: personas.length, lore: lore.length, prompts: prompts.length, chats: chats.length },
           images: Object.values(images).filter(Boolean).length
         }
       }, filename);
@@ -16608,11 +17994,14 @@ function RolecraftVault() {
     }
   };
   const importAll = async source => {
+    if (backupRestoreBusy.current) return;
+    backupRestoreBusy.current = true;
     let data;
     try {
       data = source && typeof source.text === "function" ? JSON.parse(await readTextFile(source)) : source;
     } catch (e) {
       toast("That backup is not valid JSON");
+      backupRestoreBusy.current = false;
       return;
     }
     try {
@@ -16621,10 +18010,18 @@ function RolecraftVault() {
         toast(inspected.fatal[0] || "That file isn't a Rolecraft Vault backup");
         return;
       }
+      /* Replacing a paired library while its old causal snapshot survives can
+         republish deleted records or pull the prior peer library back in. Do
+         not silently choose either outcome: leave the group first, then pair
+         again with an explicit starting library. Check the native pairing state
+         immediately before replacement, even if the preview looked unpaired. */
+      const pairing = await backupRestoreSyncState();
+      if (!pairing || pairing.enabled !== false) throw new Error("Leave your paired group in Settings > Automatic device sync before restoring. No files were changed.");
       const nextChars = data.chars;
       const nextPersonas = data.personas;
       const nextLore = data.lore;
       const nextPrompts = data.prompts;
+      const nextChats = Array.isArray(data.chats) ? data.chats : [];
       const imgs = data.images || {};
       const thumbs = data.thumbs || {};
       const blObj = {};
@@ -16636,19 +18033,18 @@ function RolecraftVault() {
          that had nothing to do with it. */
       const pb = data.personaBuckets || {};
       const tr = Array.isArray(data.trash) ? data.trash : [];
-      const verifiedAt = Date.now();
       const values = {
         "chars:all": JSON.stringify(nextChars),
         "personas:all": JSON.stringify(nextPersonas),
         "lore:all": JSON.stringify(nextLore),
         "prompts:all": JSON.stringify(nextPrompts),
+        "chats:all": JSON.stringify(nextChats),
         "blurset": JSON.stringify(Object.keys(blObj)),
         "buckets:meta": JSON.stringify(data.buckets || {}),
         "pbuckets:meta": JSON.stringify(pb),
         "lore:meta": JSON.stringify(data.loreBooks || {}),
         "prompts:meta": JSON.stringify(data.promptBooks || {}),
-        "trash:all": JSON.stringify(tr),
-        "ui:lastbackup": String(verifiedAt)
+        "trash:all": JSON.stringify(tr)
       };
       for (const [id, value] of Object.entries(imgs)) if (value) {
         values["img:" + id] = value;
@@ -16658,7 +18054,7 @@ function RolecraftVault() {
       /* The storage layer stages every value, then commits all pointers/files at
          once. Until that commit succeeds the live vault is untouched. */
       await sReplace(values, {
-        exact: ["chars:all", "personas:all", "lore:all", "prompts:all", "blurset", "buckets:meta", "pbuckets:meta", "lore:meta", "prompts:meta", "trash:all", "ui:lastbackup"],
+        exact: ["chars:all", "personas:all", "lore:all", "prompts:all", "chats:all", "blurset", "buckets:meta", "pbuckets:meta", "lore:meta", "prompts:meta", "trash:all", "ui:lastbackup", "sync:state"],
         prefixes: ["img:", "th:", "sz:", "draft:"]
       });
       charsRef.current = nextChars;
@@ -16685,13 +18081,15 @@ function RolecraftVault() {
       setPromptMeta(data.promptBooks || {});
       setTrash(tr);
       setDrafts([]);
-      setLastBackup(verifiedAt);
+      setLastBackup(0);
       setShowSettings(false);
       setRestoreFile(null);
       toast("Backup restored");
     } catch (e) {
       recordDiag("backup restore failed");
       toast("Couldn't restore the backup: " + ((e && e.message) || "storage error"));
+    } finally {
+      backupRestoreBusy.current = false;
     }
   };
 
@@ -16748,7 +18146,7 @@ function RolecraftVault() {
     try { imageCount = (await sList()).keys.filter(k => k.startsWith("img:")).length; } catch (e) {}
     const platform = typeof window !== "undefined" && window.Capacitor ? "Android" : window.auth ? "Windows" : "Web";
     const report = {
-      app: "Rolecraft Vault",
+      app: "Rolecraft",
       version: APP_VERSION,
       platform,
       settings: { theme, graphics: perfMode, textSize, cardSize, contrast },
@@ -16783,10 +18181,6 @@ function RolecraftVault() {
     id: "lorebooks",
     label: "Lorebooks",
     icon: icons.lore
-  }, {
-    id: "prompts",
-    label: "Prompt Vault",
-    icon: icons.prompt
   }];
   /* On Android these destinations remain visible underneath fixed record sheets.
      Changing only `view` selects a new library behind the sheet, which makes the
@@ -16807,15 +18201,25 @@ function RolecraftVault() {
   const vp = useViewSize();
   const navIcon = vp.w > 1700 ? 20 : vp.w <= 760 ? 18 : 17;
   PERF = perfMode === "performance";
-  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : theme === "custom" ? " custom" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "") + " cards-" + cardSize;
+  const rootClass = "rcv" + (theme === "light" ? " light" : theme === "charsnap" ? " charsnap" : theme === "custom" ? " custom" : "") + (contrast === "normal" ? "" : " contrast-" + contrast) + (PERF ? " perf" : "") + (ON_PHONE ? " phone" : "") + (ON_TABLET ? " tablet" : "") + " cards-" + cardSize + (workspaceOpen ? " workspace-paused" : "");
   const rootThemeStyle = theme === "custom" ? customThemeVars(customTheme, contrast) : {};
   const themeTone = theme === "custom" ? theme + ":" + customTheme.accent : theme;
   const sheetOpen = !!(viewCharId || viewPersonaId);
-  const overlayOpen = !!(showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
+  useEffect(() => {
+    const changed = e => setWorkspaceOpen(e.detail === true);
+    window.addEventListener("rcv-workspace", changed);
+    return () => window.removeEventListener("rcv-workspace", changed);
+  }, []);
+  const overlayOpen = !!(workspaceOpen || showSettings || showGuide || showTransfer || showTemplates || incomingUpdate || commandOpen || showOnboarding || showWhatsNew || restoreFile);
+  const chatLaunchBlocked = sheetOpen || overlayOpen || modalCount > 0 || wallLb || statsOpen || personaGrid ||
+    viewLoreBook !== null || viewLoreEntryId !== null || viewPromptBook !== null || viewPromptEntryId !== null ||
+    newBucketOpen || pNewBucketOpen || newBookOpen || newPBookOpen || confirmBulkDel || pConfirmDel || dupePrompt ||
+    backupExportOpen || exportConfirm || zipProg || vaultSyncStatus?.phase === "applying";
   quietRef.current = overlayOpen;
   useEffect(() => {
     if (!ON_PHONE) return;
     const handleBack = () => {
+      if (typeof window.__rcvWorkspaceBack === "function" && window.__rcvWorkspaceBack()) return true;
       const layered = document.querySelector(".modal-back, .lightbox, .scrollbody.sheet");
       if (layered) {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
@@ -16929,6 +18333,7 @@ function RolecraftVault() {
     className: rootClass,
     "data-theme": theme,
     "data-rcv-state": "ready",
+    "data-rcv-chat-launch": !chatLaunchBlocked ? (ON_PHONE ? "mobile" : "sidebar") : "",
     style: {
       ...rootThemeStyle,
       "--prose-size": proseSizePx,
@@ -16999,7 +18404,7 @@ function RolecraftVault() {
     size: navIcon
   }), /*#__PURE__*/React.createElement("span", {
     className: "navlabel"
-  }, n.label))), /*#__PURE__*/React.createElement("div", {
+  }, n.label))), /*#__PURE__*/React.createElement("div", { id: ON_PHONE ? "rcv-mobile-chat" : "rcv-sidebar-chat" }), /*#__PURE__*/React.createElement("div", {
     className: "side-tools",
     style: {
       marginTop: "auto",
@@ -17096,7 +18501,7 @@ function RolecraftVault() {
       height: "100vh",
       padding: "30px 34px 70px"
     }
-  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onDetails:()=>setShowSettings(true)}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
+  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onDetails:()=>{window.__rcvSettingsSection="sync";setShowSettings(true);}}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
     const rng = mulberry32(dashSeed);
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;
@@ -17197,6 +18602,7 @@ function RolecraftVault() {
       const collapsible = ON_PHONE && DASH_COLLAPSIBLE.includes(id);
       const collapsed = collapsible && !!dashCollapsed[id];
       return /*#__PURE__*/React.createElement("div", {
+        className: "dash-head",
         style: {
           margin: "26px 0 12px",
           display: "flex",
@@ -17420,7 +18826,17 @@ function RolecraftVault() {
           color: "var(--dim)"
         }
       }, "Updated ", timeAgo(spotlight.updatedAt), (spotlight.gallery || []).length > 0 ? " \u00b7 " + (spotlight.gallery || []).length + ((spotlight.gallery || []).length === 1 ? " gallery image" : " gallery images") : "")))))) : null,
-      quick: dashSection("quick", "Start from anywhere", /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      quick: dashSection("quick", "Start from anywhere", /*#__PURE__*/React.createElement(React.Fragment, null,
+      window.Capacitor && window.__rcvChatInternals && !chars.length && !personas.length && !lore.length && !prompts.length && /*#__PURE__*/React.createElement("div", {
+        className: "card",
+        "data-chat-library-setup": true,
+        style: { padding: 16, marginBottom: 12, fontSize: 13, lineHeight: 1.65 }
+      }, /*#__PURE__*/React.createElement("strong", null, "Bring over an existing library"), /*#__PURE__*/React.createElement("p", {
+        style: { margin: "8px 0", color: "var(--mut)" }
+      }, "An older standard Rolecraft Vault installation has separate Android storage. Installing this Rolecraft app does not copy or erase that library. Keep the older app installed until you have verified a full backup or transfer. Copy a Windows vault using Settings > Backup & transfer, or export a full backup from the older Android app to Downloads and restore it here. Automatic device sync can then keep your paired Rolecraft libraries and chats up to date."), /*#__PURE__*/React.createElement("button", {
+        className: "btn btn-brass", onClick: () => setShowSettings(true)
+      }, "Open library import settings")), /*#__PURE__*/React.createElement("div", {
+        className: "quick-grid",
         style: {
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
@@ -17428,7 +18844,7 @@ function RolecraftVault() {
         }
       }, quick.map(q => /*#__PURE__*/React.createElement("button", {
         key: q.label,
-        className: "card",
+        className: "card quick-card",
         onClick: q.fn,
         style: {
           padding: "14px 16px",
@@ -17643,6 +19059,7 @@ function RolecraftVault() {
     return /*#__PURE__*/React.createElement("div", {
       className: "dashwrap"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "dashboard-header",
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -17663,7 +19080,7 @@ function RolecraftVault() {
         color: "var(--mut)",
         fontSize: 14
       }
-    }, "Build, organise and refine your roleplay library.")), /*#__PURE__*/React.createElement("div", {
+    }, "Build, organise and refine your roleplay library."), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", style: { marginTop: 10 }, onClick: () => navigatePrimary("prompts") }, /*#__PURE__*/React.createElement(Ic, { d: icons.prompt, size: 17 }), " Prompt Vault")), /*#__PURE__*/React.createElement("div", {
       className: "dashboard-counts",
       style: {
         display: "grid",
@@ -17731,6 +19148,7 @@ function RolecraftVault() {
       display: "none"
     } : undefined
   }, /*#__PURE__*/React.createElement("div", {
+    className: "library-head",
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -18172,6 +19590,7 @@ function RolecraftVault() {
       marginBottom: 20
     }
   }, /*#__PURE__*/React.createElement("button", {
+    className: "disclosure-toggle",
     onClick: () => setTagsOpen(o => !o),
     "aria-expanded": tagsOpen,
     style: {
@@ -18375,6 +19794,7 @@ function RolecraftVault() {
         display: "none"
       } : undefined
     }, /*#__PURE__*/React.createElement("div", {
+      className: "library-head",
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -18852,6 +20272,7 @@ function RolecraftVault() {
       return scopeDiff || (a || "\uffff").localeCompare(b || "\uffff");
     });
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "library-head",
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -19054,6 +20475,7 @@ function RolecraftVault() {
     });
     const names = Object.keys(books).sort((a, b) => (a || "\uffff").localeCompare(b || "\uffff"));
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "library-head",
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -19253,11 +20675,7 @@ function RolecraftVault() {
           sectionOrder: keys
         });
       },
-      onSetAvatar: imgId => persistPersona({
-        ...vp,
-        avatar: imgId,
-        updatedAt: Date.now()
-      }),
+      onSetAvatar: imgId => persistPersona(withGalleryProfile(personasRef.current.find(p => p.id === vp.id), imgId, null, true)),
       onCaption: (idx, text) => persistPersona({
         ...vp,
         gallery: (vp.gallery || []).map((g, j) => j === idx ? {
@@ -19503,7 +20921,6 @@ function RolecraftVault() {
       onImportEntry: () => triggerJsonImport("lore", viewLoreBook || ""),
       onRename: async name => {
         const nm = name.trim();
-        if (!nm || nm === viewLoreBook) return;
         /* Renaming onto a book that already exists merged the two without a
            word and, worse, handed the target this book's cover — losing the
            cover it had, with the picture left behind in the vault. */
@@ -19743,7 +21160,6 @@ function RolecraftVault() {
       sampleName: "rolecraft-prompt-template.json",
       onRename: async name => {
         const nm = name.trim();
-        if (!nm || nm === viewPromptBook) return;
         // same as lorebooks: renaming onto an existing collection merged them silently
         const clash = [...new Set(prompts.map(x => (x.collection || "").trim()).concat(Object.keys(promptMeta || {})))]
           .find(w => w && w !== viewPromptBook && w.toLowerCase() === nm.toLowerCase());
@@ -20075,7 +21491,8 @@ function RolecraftVault() {
       blurred: blurred,
       onToggleBlur: toggleBlur,
       toast: toast,
-      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingChar || !!editingRecord || !!statsOpen || showGuide,
+      escOff: viewLoreBook !== null || viewLoreEntryId !== null || !!editingChar || !!editingRecord || !!statsOpen || showGuide || !!imageStudio,
+      onGenerateImages: imageGenerationBridge() ? variantId => setImageStudio({ charId: vc.id, variantId: variantId || DEFAULT_VID }) : null,
       onOpenLorebook: w => setViewLoreBook(w),
       onTagClick: t => {
         setViewCharId(null);
@@ -20111,15 +21528,7 @@ function RolecraftVault() {
           sectionOrder: keys
         }));
       },
-      onSetProfile: (imgId, variantId) => variantId ? patchChar(vc.id, cur => ({
-        ...cur,
-        variants: (cur.variants || []).map(v => v.id === variantId ? { ...v, profileImg: imgId } : v),
-        updatedAt: Date.now()
-      })).then(() => toast("Portrait set for \u201c" + (((vc.variants || []).find(v => v.id === variantId) || {}).name || "variant") + "\u201d")) : patchChar(vc.id, cur => ({
-        ...cur,
-        profileImg: imgId,
-        updatedAt: Date.now()
-      })),
+      onSetProfile: (imgId, variantId) => patchChar(vc.id, cur => withGalleryProfile(cur, imgId, variantId)),
       onCaption: (idx, text) => patchChar(vc.id, cur => ({
         ...cur,
         gallery: (cur.gallery || []).map((g, j) => j === idx ? {
@@ -20220,7 +21629,13 @@ function RolecraftVault() {
         toast("Gallery order updated");
       }
     });
-  })(), editingChar && /*#__PURE__*/React.createElement(CharacterEditor, {
+  })(), imageStudio && chars.find(c => c.id === imageStudio.charId) && /*#__PURE__*/React.createElement(CharacterImageStudio, {
+    key: imageStudio.charId,
+    char: chars.find(c => c.id === imageStudio.charId), variantId: imageStudio.variantId,
+    imgCache, loadImage, blurred,
+    onSave: (result, caption, variantId, activeGuard) => saveGeneratedImage(imageStudio.charId, result, caption, variantId, activeGuard),
+    onClose: () => setImageStudio(null)
+  }), editingChar && /*#__PURE__*/React.createElement(CharacterEditor, {
     key: editingChar.id,
     initial: editingChar,
     imgCache: imgCache,
@@ -20436,7 +21851,7 @@ function RolecraftVault() {
     onClose: () => setIncomingUpdate(null)
   }, /*#__PURE__*/React.createElement("div", {
     style: { color: "var(--mut)", lineHeight: 1.65, marginBottom: 16 }
-  }, incomingUpdate.ok ? "The signed update passed verification. Relaunch Rolecraft Vault to use it." : incomingUpdate.error), /*#__PURE__*/React.createElement("div", {
+  }, incomingUpdate.ok ? "The signed update passed verification. Relaunch Rolecraft to use it." : incomingUpdate.error), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", gap: 9, flexWrap: "wrap" }
   }, incomingUpdate.ok ? /*#__PURE__*/React.createElement("button", {
     className: "btn btn-primary",
@@ -20550,7 +21965,8 @@ function RolecraftVault() {
   }), restoreFile && /*#__PURE__*/React.createElement(BackupRestoreModal, {
     file: restoreFile,
     onClose: () => setRestoreFile(null),
-    onRestore: importAll
+    onRestore: importAll,
+    pairedSyncActive: !!vaultSyncStatus?.settings?.enabled
   }), showOnboarding && /*#__PURE__*/React.createElement(OnboardingModal, {
     onDone: () => {
       setShowOnboarding(false);
@@ -20616,7 +22032,7 @@ function RolecraftVault() {
   }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
     className: "modal-back", style: { zIndex: 125 }
   }, React.createElement("div", {
-    className: "card modal", role: "dialog", "aria-modal": true, "aria-label": backupExport.kind === "characters" ? "Character export" : "Backup export",
+    className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",
     style: { maxWidth: 520, width: "100%", maxHeight: "85dvh", overflowY: "auto" }
   }, React.createElement(BackupExportStatus, { status: backupExport }), React.createElement("button", {
     className: "btn btn-primary",
@@ -20768,7 +22184,7 @@ class Boundary extends React.Component {
     return { err };
   }
   componentDidCatch(err) {
-    try { console.error("Rolecraft Vault caught a rendering error:", err); } catch (e) {}
+    try { console.error("Rolecraft caught a rendering error:", err); } catch (e) {}
   }
   render() {
     if (!this.state.err) return this.props.children;
@@ -20782,7 +22198,7 @@ class Boundary extends React.Component {
     }, React.createElement("div", { style: { maxWidth: 520 } },
       React.createElement("div", {
         style: { fontSize: 12, letterSpacing: 2, textTransform: "uppercase", color: "#c9a227", marginBottom: 8 }
-      }, "Rolecraft Vault"),
+      }, "Rolecraft"),
       React.createElement("div", { style: { fontSize: 22, marginBottom: 10 } }, "That screen could not be drawn"),
       React.createElement("div", { style: { color: "#9aa3b8", marginBottom: 16 } },
         "Your vault has not been changed. Try again, and if the same screen keeps failing, " +

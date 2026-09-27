@@ -8,7 +8,7 @@
      page's own and are allowed by name; there is no user content here for
      anything to be injected into. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
-<title>Rolecraft Vault Setup</title>
+<title>Rolecraft Setup</title>
 <style>
 @font-face { font-family: "Inter"; font-weight: 400; src: url("fonts/inter-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Inter"; font-weight: 500; src: url("fonts/inter-latin-500-normal.woff2") format("woff2"); }
@@ -163,23 +163,23 @@ h1 {
   <div class="drag"></div>
   <button class="close" id="x" title="Close">×</button>
   <div class="panel">
-    <div class="kicker">Private · Offline</div>
-    <h1>Rolecraft<br>Vault</h1>
-    <p class="lead" id="lead">A private library for your characters, personas, lorebooks and prompts. Everything stays on this computer.</p>
+    <div class="kicker">Your private library</div>
+    <h1>Rolecraft</h1>
+    <p class="lead" id="lead">Your private library plus opt-in OpenRouter roleplay chat. Vault records stay local until you explicitly send chat context.</p>
     <div class="meta" id="meta"></div>
 
     <div id="welcome">
       <ul class="feats">
-        <li>Encrypted on this Windows account. Nothing is uploaded.</li>
+        <li>Vault data is encrypted on this Windows account.</li>
         <li>Characters, personas, lorebooks, prompts and pictures.</li>
-        <li>Move a vault to another device on your own Wi-Fi.</li>
+        <li>Chat sends only the context you inspect and approve.</li>
       </ul>
       <div class="row">
         <input id="dir" spellcheck="false">
         <button class="ghost" id="browse">Browse</button>
       </div>
       <div class="actions">
-        <button class="gold" id="install">Install Rolecraft Vault</button>
+        <button class="gold" id="install">Install Rolecraft</button>
       </div>
       <div class="err" id="werr"></div>
     </div>
@@ -191,14 +191,15 @@ h1 {
     </div>
 
     <div id="done" class="hide">
-      <p class="lead" style="margin-bottom:22px">Rolecraft Vault is on this computer. You will find it in the Start menu and on the desktop.</p>
+      <p class="lead" style="margin-bottom:22px">Rolecraft is installed. Your existing Chat library stays in place. If this is your first install, it can make a safe copy of your older standard Vault library without changing the original.</p>
+      <div class="err" id="done-warning"></div>
       <div class="actions">
-        <button class="gold" id="open">Open Rolecraft Vault</button>
+        <button class="gold" id="open">Open Rolecraft</button>
         <button class="quiet" id="finish">Close</button>
       </div>
     </div>
 
-    <div class="fineprint">The first launch will ask you to set a master password. There is no recovery, so keep it somewhere safe. Your vault is stored per Windows account.</div>
+    <div class="fineprint">A new library asks for a master password on first launch; an existing library keeps its current password. Keep it somewhere safe. Your vault is stored per Windows account.</div>
   </div>
 </div>
 <script>
@@ -258,14 +259,14 @@ h1 {
     $("dir").value = dest;
     $("meta").textContent = "Version " + info.version + (info.payloadBytes ? "  ·  " + (info.payloadBytes / 1048576).toFixed(0) + " MB" : "");
     if (!info.payloadOk) $("werr").textContent = "This setup is missing the app files.";
-    if (info.alreadyInstalled) $("install").textContent = "Reinstall Rolecraft Vault";
+    if (info.alreadyInstalled) $("install").textContent = "Update Rolecraft";
   });
   $("install").onclick = async () => {
     dest = $("dir").value.trim() || dest;
     $("werr").textContent = "";
     $("welcome").classList.add("hide");
     $("work").classList.remove("hide");
-    $("lead").textContent = "Writing Rolecraft Vault onto this computer.";
+    $("lead").textContent = "Installing Rolecraft onto this computer.";
     $("st").textContent = "Installing…";
     const r = await S.install(dest);
     if (!r || !r.ok) {
@@ -277,7 +278,9 @@ h1 {
     }
     $("work").classList.add("hide");
     $("done").classList.remove("hide");
-    $("lead").textContent = "Ready.";
+    $("done-warning").textContent = r.warnings && r.warnings.length
+      ? "Close the earlier Chat app and run setup again to remove its old executable or shortcuts. Your library is safe."
+      : "";
   };
 })();
 </script>

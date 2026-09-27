@@ -44,8 +44,23 @@ try { new Function(web); } catch (e) {
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, web);
+for (const name of ["vault-sync-core.js", "vault-sync-review.js", "vault-sync.js", "vault-sync-background.js", "vault-sync-ui.js", "private-sync.js"]) fs.copyFileSync(path.join(root,"app",name),path.join(root,"web","js",name));
 console.log("Wrote " + path.relative(root, outPath) + " (" + Math.round(web.length / 1024) + " KB)");
-for (const name of ["vault-sync-core.js", "vault-sync.js", "vault-sync-ui.js"]) fs.copyFileSync(path.join(root,"app",name),path.join(root,"web","js",name));
+for (const [from, to] of [
+  [path.join(root, "app", "provider-balances-ui.js"), path.join(root, "web", "js", "provider-balances-ui.js")],
+  [path.join(root, "app", "chat-sync-core.js"), path.join(root, "web", "js", "chat-sync-core.js")],
+  [path.join(root, "app", "chat-group-coordinator.js"), path.join(root, "web", "js", "chat-group-coordinator.js")],
+  [path.join(root, "app", "chat-knowledge-lanes.js"), path.join(root, "web", "js", "chat-knowledge-lanes.js")],
+  [path.join(root, "app", "chat-story-ledger.js"), path.join(root, "web", "js", "chat-story-ledger.js")],
+  [path.join(root, "app", "chat-draft-handoff.js"), path.join(root, "web", "js", "chat-draft-handoff.js")],
+  [path.join(root, "app", "chat-draft-handoff-controller.js"), path.join(root, "web", "js", "chat-draft-handoff-controller.js")],
+  [path.join(root, "app", "chat.js"), path.join(root, "web", "js", "rolecraft-chat.js")],
+  [path.join(root, "app", "chat.css"), path.join(root, "web", "css", "chat.css")],
+]) {
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+  console.log("Copied Rolecraft asset " + path.relative(root, to));
+}
 for (const name of ["crest-loop.mp4", "crest-256.png", "crest-1024.png", "qrcode.js", "jsQR.js", "jsQR-LICENSE.txt", "jsQR-NOTICE.txt"]) {
   const from = path.join(root, "app", "vendor", name);
   if (!fs.existsSync(from)) continue;

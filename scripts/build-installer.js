@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 /* Builds the HD Windows installer.
 
-   1. Syncs app/ into dist/Rolecraft Vault/ (the product)
+   1. Syncs app/ into a private, legacy-named staging directory
    2. Stages an Electron "Setup" app whose window is installer/index.html
       and whose payload is that product folder
    3. Wraps the Setup app in a silent NSIS exe so there is one file to run
 
-   Needs a packaged Electron app in dist/Rolecraft Vault/ — see README.
+   Needs a packaged Electron app in dist/Rolecraft Vault Chat/.
    Needs NSIS (makensis). */
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const staged = path.join(root, "dist", "Rolecraft Vault");
-const runtime = path.join(root, "dist", "Rolecraft-Setup-runtime");
+const staged = path.join(root, "dist", "Rolecraft Vault Chat");
+const runtime = path.join(root, "dist", "Rolecraft-Chat-Setup-runtime");
 const nsi = path.join(root, "build", "installer.nsi");
 const electronDist = path.join(root, "node_modules", "electron", "dist");
 const { signWindowsFile } = require("./windows-signing");
+const { PRODUCT_NAME, APP_EXE } = require("../installer/identity");
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
@@ -34,7 +35,7 @@ if (!fs.existsSync(electronDist)) {
    even after package-lock.json was upgraded. */
 fs.rmSync(staged, { recursive: true, force: true });
 copyDir(electronDist, staged);
-fs.renameSync(path.join(staged, "electron.exe"), path.join(staged, "Rolecraft Vault.exe"));
+fs.renameSync(path.join(staged, "electron.exe"), path.join(staged, APP_EXE));
 fs.rmSync(path.join(staged, "resources", "default_app.asar"), { force: true });
 copyDir(path.join(root, "app"), path.join(staged, "resources", "app"));
 console.log("Built the packaged app from the current Electron runtime and app source.");
@@ -55,9 +56,9 @@ const stamp = (exe, icon, name, orig) => {
   ], { stdio: "inherit" });
 };
 
-const appExe = path.join(staged, "Rolecraft Vault.exe");
+const appExe = path.join(staged, APP_EXE);
 try {
-  stamp(appExe, path.join(root, "app", "icon.ico"), "Rolecraft Vault", "Rolecraft Vault.exe");
+  stamp(appExe, path.join(root, "app", "icon.ico"), PRODUCT_NAME, APP_EXE);
   console.log("Stamped the app exe.");
 } catch (e) {
   console.warn("Could not stamp the app exe: " + e.message);
@@ -66,13 +67,13 @@ signWindowsFile(appExe);
 
 fs.rmSync(runtime, { recursive: true, force: true });
 copyDir(electronDist, runtime);
-const setupExe = path.join(runtime, "Rolecraft Vault Setup.exe");
+const setupExe = path.join(runtime, "Rolecraft Setup.exe");
 fs.renameSync(path.join(runtime, "electron.exe"), setupExe);
 fs.rmSync(path.join(runtime, "resources", "default_app.asar"), { force: true });
 
 const setupApp = path.join(runtime, "resources", "app");
 fs.mkdirSync(setupApp, { recursive: true });
-for (const f of ["main.js", "preload.js", "index.html", "package.json", "backdrop.jpg"]) {
+for (const f of ["main.js", "preload.js", "identity.js", "index.html", "package.json", "backdrop.jpg"]) {
   const from = path.join(root, "installer", f);
   if (fs.existsSync(from)) fs.copyFileSync(from, path.join(setupApp, f));
 }
@@ -83,7 +84,7 @@ copyDir(staged, path.join(runtime, "resources", "payload"));
 console.log("Staged HD setup app with payload.");
 
 try {
-  stamp(setupExe, path.join(root, "build", "setup-icon.ico"), "Rolecraft Vault Setup", "Rolecraft-Vault-Setup.exe");
+  stamp(setupExe, path.join(root, "build", "setup-icon.ico"), "Rolecraft Setup", "Rolecraft-Setup.exe");
   console.log("Stamped the setup exe.");
 } catch (e) {
   console.warn("Could not stamp the setup exe: " + e.message);
@@ -101,6 +102,6 @@ try {
   console.error("\nmakensis failed or is not installed (winget install NSIS.NSIS).");
   process.exit(1);
 }
-const installerOut = path.join(root, "dist", `Rolecraft-Vault-Setup-${stampVersion}.exe`);
+const installerOut = path.join(root, "dist", `Rolecraft-Setup-${stampVersion}.exe`);
 signWindowsFile(installerOut);
 console.log("Installer written to " + installerOut);

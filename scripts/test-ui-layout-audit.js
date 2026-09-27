@@ -328,6 +328,8 @@ const AUDIT = `(async () => {
   await sleep(350); out.loreEntry = layer(document.querySelector(".scrollbody.sheet"));
   out.screens.push(fit("Lore entry"));
 
+  /* 1.303 moved Prompt Vault from the navigation to the Dashboard. */
+  button(/^Dashboard$/).click(); await sleep(300);
   button(/^Prompt Vault$/).click(); await sleep(450); out.screens.push(fit("Prompt Vault"));
   const promptBook = action(/Scenes/);
   if (promptBook) promptBook.click();
@@ -413,7 +415,8 @@ app.whenReady().then(async () => {
         r.dashboard.spotlightDirection === "row" && r.dashboard.spotlightPictureBesideCopy,
         `direction=${r.dashboard.spotlightDirection} beside=${r.dashboard.spotlightPictureBesideCopy}`);
       check("tablet Dashboard shows at least eight pictures in wider rows",
-        r.dashboard.galleryPictures >= 8 && r.dashboard.galleryColumns > 2,
+        r.dashboard.galleryPictures >= 8 && r.dashboard.galleryColumns > 2 &&
+          (size.w !== 820 || r.dashboard.galleryPictures === 12),
         `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns}`);
       check("tablet Grid sizes are exactly four, three and two per row",
         r.imageGrid.columns.small === 4 && r.imageGrid.columns.medium === 3 && r.imageGrid.columns.large === 2,
@@ -423,8 +426,9 @@ app.whenReady().then(async () => {
         "object-fit=" + r.dashboard.spotlightObjectFit);
     }
     check("backup is kept out of the Dashboard warning area", !r.dashboard.backupAtTop);
-    const expectedPictures = Math.min(r.dashboard.galleryTotal,
-      Math.min(12, Math.max(8, Math.ceil(8 / Math.max(1, r.dashboard.galleryColumns)) * Math.max(1, r.dashboard.galleryColumns))));
+    const cols = Math.max(1, r.dashboard.galleryColumns);
+    const rows = cols <= 2 ? Math.ceil(8 / cols) : cols <= 4 ? 3 : 2;
+    const expectedPictures = Math.min(r.dashboard.galleryTotal, Math.min(12, Math.max(8, rows * cols)));
     check("the Dashboard gallery uses a deliberate responsive picture count",
       r.dashboard.galleryPictures === expectedPictures,
       `pictures=${r.dashboard.galleryPictures} columns=${r.dashboard.galleryColumns} expected=${expectedPictures}`);

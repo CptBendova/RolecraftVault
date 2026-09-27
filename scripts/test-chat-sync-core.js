@@ -1,0 +1,24 @@
+const assert = require("assert"), core = require("../app/chat-sync-core");
+let sequence = 0;
+const uid = () => "rev-" + (++sequence);
+const chat = { id:"story",title:"Story",messages:[{id:"one",role:"user",content:"Hello"}],memories:[{throughId:"one",text:"An important memory"}],memoryPins:"Keep this",model:"chosen/model" };
+const base = core.stamp([chat], [], uid);
+function edit(rows,text) { return core.stamp(rows.map(c=>({...c,messages:c.messages.concat({id:text,role:"assistant",content:text})})),rows,uid); }
+const pc = edit(base,"PC reply"), phone = edit(base,"Phone reply");
+assert.deepStrictEqual(core.merge(base,pc).chats,pc);
+assert.deepStrictEqual(core.merge(pc,base).chats,pc);
+const merged = core.merge(pc,phone);
+assert.strictEqual(merged.chats.length,2);
+assert.strictEqual(merged.conflicts,1);
+assert.deepStrictEqual(core.merge(pc,phone).chats,core.merge(phone,pc).chats,"conflict resolution converges");
+assert.deepStrictEqual(core.merge(merged.chats,phone).chats,merged.chats,"retry creates no duplicate conflicts");
+assert(merged.chats.every(c=>c.memoryPins===chat.memoryPins && c.memories[0].text===chat.memories[0].text && c.model===chat.model));
+const deleted = core.stamp([],base,uid);
+assert(deleted[0]._sync.deleted && deleted[0].messages.length===1,"deletion retains recoverable text");
+assert(core.merge(base,deleted).chats[0]._sync.deleted,"uncontested deletion propagates");
+assert(core.merge(pc,deleted).chats.some(c=>!c._sync.deleted && c.messages.length===2),"offline deletion cannot erase new writing");
+assert.throws(()=>core.merge(pc,[{...phone[0],_sync:pc[0]._sync}]),/conflicting data/);
+assert.throws(()=>core.validate([chat,chat]),/duplicate/);
+const again = core.stamp([chat],[],uid);
+assert.strictEqual(core.merge(base,again).chats.length,1,"identical legacy copies deduplicate");
+console.log("PASS: sync ancestry, conflict preservation, retries, deletion recovery and memory/settings retention");

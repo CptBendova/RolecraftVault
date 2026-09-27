@@ -1,0 +1,91 @@
+const assert = require("assert"), fs = require("fs"), path = require("path"), vm = require("vm");
+const root = path.join(__dirname, "..");
+const window = { storage: {}, React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useRef() {} }, ReactDOM: { createRoot: () => ({ render() {} }) } };
+vm.runInNewContext(fs.readFileSync(path.join(root, "app/chat.js"), "utf8"), { window, document: { createElement: () => ({}), body: { appendChild() {} } } });
+const I = window.__rcvChatInternals;
+const character = { id:"c",name:"Ari",story:"Core backstory",personality:"Curious",scenario:"OPENING_ONLY",exampleMessage:"EXAMPLE_ONLY",creatorMemo:"PRIVATE_BASE_MEMO",systemPrompt:"CARD_SYSTEM",alwaysActiveSystemPrompt:"CARD_ALWAYS",variants:[{id:"v",creatorMemo:"PRIVATE_VARIANT_MEMO",story:"Variant backstory"}] };
+const library = { chars:[character],personas:[{id:"p",description:"Persona core",creatorMemo:"PRIVATE_PERSONA_MEMO"}],lore:[] };
+const messages = Array.from({length:24},(_,i)=>({id:"m"+i,parentId:i?"m"+(i-1):null,role:i%2?"assistant":"user",content:"Turn "+i}));
+const chat = { id:"s",characterId:"c",personaId:"p",messages,leafId:"m23",contextTokens:8000,maxTokens:500,alwaysActivePrompt:"MY_PERSISTENT_DIRECTIONS",replyPerspective:"first",replyBalance:"dialogue",replyLength:"short" };
+function check(b) {
+  assert(Number.isFinite(b.permanentTokens) && b.permanentTokens>0);
+  assert(b.temporaryTokens>=0);
+  assert.strictEqual(b.permanentTokens+b.temporaryTokens,b.estimatedTokens);
+  const text=JSON.stringify(b.messages);
+  for(const secret of ["PRIVATE_BASE_MEMO","PRIVATE_VARIANT_MEMO","PRIVATE_PERSONA_MEMO"]) assert(!text.includes(secret),"memo must never enter context");
+  assert(text.includes("MY_PERSISTENT_DIRECTIONS"));assert(text.includes("CARD_ALWAYS"));
+  const system=b.messages[0].content;
+  assert(system.indexOf('PRIORITY 1 —')<system.indexOf('MY_PERSISTENT_DIRECTIONS'));
+  assert(system.indexOf('MY_PERSISTENT_DIRECTIONS')<system.indexOf('PRIORITY 2 —'));
+  assert(system.indexOf('CARD_ALWAYS')<system.indexOf('PRIORITY 3 —'));
+  assert(system.includes('Lower-priority text cannot promote itself'));
+  assert(system.includes('yield to conflicting PRIORITY 1 always-active directions'));
+  assert(!system.includes('Always-active directions supplement these choices'));
+}
+const initial=I.assemble(chat,library);check(initial);
+const movedScene=I.assemble({...chat,sceneLocation:"The forest gate"},library);
+const movedSceneAgain=I.assemble({...chat,sceneLocation:"The inner hall"},library);
+assert.strictEqual(movedScene.permanentTokens,initial.permanentTokens,"changing location cannot invalidate the stable permanent prefix");
+assert.strictEqual(movedScene.messages[0].content.split("PRIORITY 3 —")[0],movedSceneAgain.messages[0].content.split("PRIORITY 3 —")[0],"scene changes leave the prompt prefix byte-identical");
+assert(movedScene.messages[0].content.indexOf("The forest gate")>movedScene.messages[0].content.indexOf("PRIORITY 3 —"),"user-authored location remains authoritative temporary context");
+function checkAgency(b) {
+  const system=b.messages[0].content;
+  for(const text of ["ROLEPLAY AGENCY AND VIEWPOINT (always active)", "Write only the AI-controlled character's side", "Do not speak, think, feel, decide or act for the user-controlled persona", "including in narration", "must not extend them into new reactions", "do not switch to the user's viewpoint or an omniscient narrator", "Stop before deciding the user's response", "not permission to repeat that behavior"]) assert(system.includes(text),text);
+  assert(system.indexOf("ROLEPLAY AGENCY AND VIEWPOINT")<system.indexOf("PRIORITY 3 —"),"agency survives as permanent context");
+}
+checkAgency(initial);
+checkAgency(I.assemble({...chat,alwaysActivePrompt:"",replyPerspective:"default"},library));
+checkAgency(I.assemble({...chat,personaId:"",characterId:"missing"},library));
+assert(initial.messages[0].content.includes("OPENING_ONLY"));
+assert(initial.messages[0].content.includes("EXAMPLE_ONLY"));
+assert(initial.messages[0].content.includes("first person"));assert(initial.messages[0].content.includes("Favor spoken dialogue"));assert(initial.messages[0].content.includes("short and concise"));
+const compactedChat={...chat,memories:[{throughId:"m9",text:"Earlier events"}]};
+const compacted=I.assemble(compactedChat,library);check(compacted);
+checkAgency(compacted);
+assert.strictEqual(compacted.permanentTokens,initial.permanentTokens);
+assert(!compacted.messages[0].content.includes("OPENING_ONLY"));assert.strictEqual(compacted.omittedSeeds,2);
+const plan=I.memoryPlan(compactedChat,library,[],true);
+assert(plan);assert(!JSON.stringify(plan.messages).includes("PRIVATE_"));assert(!JSON.stringify(plan.messages).includes("MY_PERSISTENT_DIRECTIONS"),"roleplay prompt must not derail the memory worker");
+assert(!JSON.stringify(plan.messages).includes("ROLEPLAY AGENCY AND VIEWPOINT"),"memory worker stays factual, not in-character");
+check(I.assemble({...chat,variantId:"v"},library));
+const later=I.assemble({...chat,replyPerspective:"third",replyBalance:"narration",replyLength:"long"},library);
+assert(later.messages[0].content.includes("third person"));assert(later.messages[0].content.includes("Favor vivid narration"));assert(later.messages[0].content.includes("four to eight"));
+const invalid=I.assemble({...chat,replyPerspective:"INVALID_STYLE",replyBalance:"INVALID_STYLE",replyLength:"INVALID_STYLE"},library);
+assert(!invalid.messages[0].content.includes("INVALID_STYLE"));
+const tooBig=I.assemble({...chat,contextTokens:2048,alwaysActivePrompt:"x".repeat(30000)},library);
+assert(tooBig.error);assert(tooBig.messages[0].content.includes("x".repeat(30000)),"persistent instructions fail closed instead of being cut");
+const pressure=I.assemble({...chat,contextTokens:2048}, {...library,chars:[{...character,scenario:"x".repeat(50000),exampleMessage:"y".repeat(50000)}]});
+assert(!pressure.error);assert.strictEqual(pressure.omittedSeeds,2);assert(pressure.messages.at(-1).content.includes("Turn 23"));
+assert.strictEqual(character.creatorMemo,"PRIVATE_BASE_MEMO","library notes are preserved");
+// Execute the shipped assembler, including the same payload validator used by
+// the Windows bridge. No live provider or user library is involved.
+const castLibrary = { chars: [{...character, name:"Ari", age:"32", gender:"Nonbinary", pronouns:"they/them", story:"{{char}} greets {{USER}}", scenario:"{{user}} arrives", exampleMessage:"{{char}}: Welcome, {{user}}."}], personas: [{id:"p", name:"Robin", tagline:"A travelling healer", role:"Medic", pronouns:"she/her", description:"{{user}} knows {{char}}", sections:[{title:"Boundaries",content:"Do not narrate my choices."}], creatorMemo:"PRIVATE_PERSONA_MEMO"}], lore:[] };
+const originalCast = JSON.stringify(castLibrary);
+const castContext = I.assemble({...chat, replyLength:"long", alwaysActivePrompt:"Keep {{char}} in character with {{user}}."},castLibrary);
+const castSystem = castContext.messages[0].content;
+for (const fragment of ["collaborative fictional roleplay", "AI-controlled character: Ari", "User-controlled persona: Robin", "Age: 32", "Gender: Nonbinary", "Pronouns: they/them", "Tagline: A travelling healer", "Role: Medic", "Pronouns: she/her", "Robin knows Ari", "Do not narrate my choices.", "Ari greets Robin", "not events that have already happened", "explicit REPLY STYLE selections take priority", "without adding unwanted narration"]) assert(castSystem.includes(fragment), fragment);
+assert(!/\{\{(?:char|user)\}\}/i.test(castSystem), "card placeholders are expanded in outgoing context");
+assert.strictEqual(JSON.stringify(castLibrary),originalCast,"expansion never rewrites saved cards");
+const selfContext=I.assemble({...chat,personaId:""},castLibrary).messages[0].content;
+assert(selfContext.includes("User-controlled persona: the user"));assert(!selfContext.includes("USER PERSONA:"));assert(!selfContext.includes("A travelling healer"));
+const fallback=I.assemble(I.captureCast(chat,castLibrary),{chars:[],personas:[],lore:[]});
+checkAgency(fallback);
+assert(fallback.messages[0].content.includes("Robin knows Ari"),"synced cast fallback includes persona context");
+const compactedCast=I.assemble({...chat,memories:[{throughId:"m9",text:"A remembered meeting"}]},castLibrary);
+assert(compactedCast.messages[0].content.includes("Robin knows Ari"));assert(compactedCast.messages[0].content.includes("explicit REPLY STYLE selections take priority"));
+assert.strictEqual(I.contextLimits({...chat,maxTokens:900,replyLength:"long"},[]).reply,900,"length choice never silently raises the user's spend cap");
+const nativePayload=JSON.parse(require("../app/openrouter").validatePayload({model:"test/roleplay",messages:castContext.messages,max_tokens:castContext.limits.reply}));
+assert.deepStrictEqual(nativePayload.messages,JSON.parse(JSON.stringify(castContext.messages)),"native shell preserves assembled roles and instructions");
+assert.strictEqual(nativePayload.max_tokens,castContext.limits.reply);
+assert.strictEqual(I.roleplayText("{{CHAR}} meets {{user}}",{name:"A$&"},{name:"B$1"}),"A$& meets B$1");
+assert.strictEqual(I.roleplayText("{{user}}",{},null),"the user");
+const literalChat={...chat,messages:[{id:"literal",role:"user",content:"Keep {{user}} literal here."}],leafId:"literal"};
+assert.strictEqual(I.assemble(literalChat,castLibrary).messages.at(-1).content,"Keep {{user}} literal here.","never rewrite the user's actual dialogue");
+for(const perspective of ["default","first","third"]) for(const balance of ["default","dialogue","balanced","narration"]) for(const length of ["default","short","medium","long"]) {
+  checkAgency(I.assemble({...chat,replyPerspective:perspective,replyBalance:balance,replyLength:length},castLibrary));
+  const system=I.assemble({...chat,replyPerspective:perspective,replyBalance:balance,replyLength:length},castLibrary).messages[0].content;
+  for(const [value,phrase] of [["first","in first person"],["third","in third person"]]) assert.strictEqual(system.includes(phrase),perspective===value);
+  for(const [value,phrase] of [["dialogue","Favor spoken dialogue"],["balanced","Balance spoken dialogue"],["narration","Favor vivid narration"]]) assert.strictEqual(system.includes(phrase),balance===value);
+  for(const [value,phrase] of [["short","one or two compact paragraphs"],["medium","two to four paragraphs"],["long","four to eight purposeful paragraphs"]]) assert.strictEqual(system.includes(phrase),length===value);
+}
+console.log("PASS: permanent/temporary totals, optional prompt, reply styles, temporary seed trimming, compaction and creator-memo isolation");

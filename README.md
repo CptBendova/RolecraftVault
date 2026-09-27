@@ -1,181 +1,116 @@
-# Rolecraft Vault
+# Rolecraft
 
-Rolecraft Vault is a private, offline-first library for the writing behind your
-roleplay: characters, personas, lorebooks, prompts, and their pictures. It runs
-on Windows and Android without an account, sign-up, subscription, or cloud
-service.
+Rolecraft is an offline-first app for characters, personas, lorebooks, pictures, and
+roleplay conversations. It runs on Windows and Android. The library works
+offline; AI chat and image generation use external providers only when you
+choose to send or generate something.
 
-## Download
+Download the current installer, Android APK, and signed Windows interface update
+from the [latest Rolecraft release](https://github.com/CptBendova/RolecraftVault/releases/latest).
 
-### **[Get the latest release →](https://github.com/CptBendova/RolecraftVault/releases/latest)**
+## Install without losing your library
 
-Every release provides three files:
+Install a newer Rolecraft build **over the existing Chat-edition installation**.
+Never uninstall first to update: uninstalling the Android app removes its
+private vault and conversations.
 
-- **Windows installer:** `Rolecraft-Vault-Setup-<version>.exe`
-- **Android app:** `Rolecraft-Vault-<version>.apk`
-- **Signed Windows interface update:** `Rolecraft-update-<version>.rcvup`
+- **Windows:** The name on screen is now Rolecraft, but the app continues to
+  use the existing `%APPDATA%\Rolecraft Vault Chat` profile. The new installer
+  must keep that location so your encrypted library, chats, and settings remain
+  available. Use a full installer when native shell files change; a renderer
+  update alone cannot deliver those changes.
+- **Android:** The launcher name is now Rolecraft, but the application ID stays
+  `com.cptbendova.rolecraftvault.chat`. A correctly signed APK with a higher
+  version code upgrades that existing Chat app in place and keeps its local
+  data. Do not change the application ID or signing key to rebrand it.
 
-For a first Windows installation, use the full installer. For later updates,
-follow the release notes: interface-only releases can be installed by
-double-clicking the `.rcvup` file or through **Settings → App updates**. When a
-release changes the Windows shell, the app refuses the smaller update and names
-the full installer required instead of leaving an incomplete installation.
+The older standard Rolecraft Vault app is a **different installation**. Its
+Android storage is not automatically shared with this app. If your latest
+library is still there, export a complete backup or use the in-app local
+transfer before removing anything. On Windows, an eligible first Chat-edition
+installation may copy the standard vault after verification, but an existing
+Chat profile is never silently replaced. Check the resulting library before
+you retire the older installation.
 
-On Android 8 or newer, install the APK over the existing app. **Do not uninstall
-first:** Android removes that device's private vault when the app is uninstalled.
-The APK keeps the same signing identity so normal releases upgrade in place.
+Before pairing or merging devices, make a full backup of the most up-to-date
+library. Sync is not a backup, and a password cannot be recovered for you.
 
-Each update file contains the complete current interface, so download only the
-newest release. If that release depends on a Windows shell update you skipped,
-Rolecraft Vault refuses the small update and directs you to the current full
-installer. It does not check for or download updates on its own.
+## Use Rolecraft
 
-Rolecraft Vault is free to download and use under the [licence](LICENSE).
+The Dashboard opens first. Characters, Personas, Lorebooks, and Chat are the
+other main destinations in the Windows sidebar and Android bottom bar. Prompt
+Vault opens from the Dashboard. You can also manage galleries, buckets, drafts,
+and backups. Search, tags, workflow status, themes, accessibility options, and
+Quality/Performance modes help organise large libraries. Chat is part of the
+same app, not a separate edition or an always-visible overlay.
 
-## What it does
+Roleplay chats can use character cards, personas, lorebook triggers, branches,
+group participants, and rolling memory. The complete transcript stays in the
+encrypted vault even when older messages are compacted for a model request.
+Review the assembled context before sending sensitive writing to a provider.
+Provider usage may incur charges.
 
-Version 1.254 adds **Settings → Automatic device sync** for Windows and Android.
-Start on the most up-to-date device, choose it as primary, then scan or paste its
-pairing code on the others. Review the first merge before approving it. Pairing
-is remembered securely; later edits sync both ways without another code.
-Unique writing and conflict copies are retained, and received record deletions
-stay recoverable in the bin. Picture files are never deleted by sync.
+In group chats, the portrait picker chooses the next speaker, while optional
+multi-character rounds use the story in order. A compact scene strip and
+recipient-specific scene facts help track who was present or learned something.
+Older groups keep their shared transcript and memory behavior. You can opt in
+to character-specific knowledge lanes for new private asides and separate
+rolling memories; existing shared turns and scene notes remain shared. The
+reviewed story ledger links facts, relationships, and promises to source turns
+on the current branch. AI scene suggestions are optional and can be reviewed
+or undone without regenerating a reply. Optional spending warnings pause
+automatic group extras; they are not provider-side billing caps.
 
-Keep devices on the same private network, open and unlocked. Windows can be
-minimized; Android pauses in the background and resumes when reopened. Permit
-the Windows app through the private-network firewall if prompted. Guest Wi-Fi
-may block discovery. Sync is not a backup: export each library before the first
-merge and keep periodic backups. Windows needs the full 1.254 installer; install
-the APK over the existing Android app without uninstalling.
+You can pair trusted Windows computers and Android devices on the same local
+Wi-Fi for encrypted, two-way library and conversation sync. Pairing and the
+initial merge require approval. Later edits can flow between paired devices;
+concurrent alternatives remain recoverable instead of silently replacing a
+record. API keys and passwords are not part of ordinary vault sync. Android
+screen-off sync requires an explicitly started foreground session with a
+visible Stop notification; otherwise locking or backgrounding pauses access.
+After a saved conversation refresh, Chat highlights incoming turns, alternate
+branches and conflict copies for review; it never auto-sends a roleplay reply.
+You can explicitly offer an unsent draft to another paired device and import it
+there if the same chat revision is open and the receiving draft is empty. Ordinary
+reply drafts remain local and are never copied by routine sync.
 
-Version 1.252 improves consistent character/persona search, natural ordering of
-numbered names, keyboard activation of cards and gallery tiles, and safe retry
-when storage cannot be read. The in-app guide covers those behaviours and
-clarifies how protected drafts differ from saved records. Upgrade in place;
-application identities and vault folders have not changed.
+Chat requests use a protected OpenRouter key. Optional image generation uses
+protected OpenAI or xAI keys and sends only the prompt and selected references
+after an explicit Generate action. The renderer itself cannot make network
+requests; native bridges handle the approved provider and local-network work.
+Keys are kept outside vault records, exports, and normal sync. Any deliberate
+key sharing between paired devices requires a separate, explicit action.
 
-- Keeps **characters** with any number of alternate versions.
-- Separates **personas**, **lorebooks**, and reusable **prompt collections**.
-  Lorebooks support remembered grid/list views, World or Personal grouping, and
-  direct links to every character or persona using them.
-- Stores portraits, banners, galleries, albums, tags, buckets, and per-picture
-  blur choices. Characters can be marked Planned, WIP, or Done and filtered or
-  sorted by that workflow status.
-- Provides built-in and private templates, plus safe text-only duplication that
-  never makes two records compete for ownership of the same picture.
-- Protects in-progress writing with recoverable encrypted drafts and a visible
-  protection status in every editor.
-- Gives deletions an immediate Undo action and keeps all four record types in an
-  encrypted 30-day bin.
-- Counts tokens using CharSnap-compatible accounting.
-- Includes search, favourites, command search, large text, high contrast, and
-  Quality and Performance modes.
-- Uses phone-sized navigation and Android system Back behavior in the APK.
+## Work on the code
 
-Rolecraft Vault reads and writes **CharSnap** characters and lorebooks, and
-imports **Chub**, standalone lorebook v3, embedded character-card lorebooks, and
-**Tavern** v1/v2 character cards. Text, JSON,
-pictures, and complete encrypted backups can be exported so the library is not
-locked to one application.
+Read [AGENTS.md](AGENTS.md) and the relevant section of
+[CLAUDE.md](CLAUDE.md) before editing. In particular, preserve the existing
+Windows profile, Android application ID, release signing identity, encrypted
+storage, and user pictures. Do not run a development build against an installed
+vault. Use a disposable profile instead:
 
-## Privacy and security
-
-Vault records and pictures are encrypted at rest with AES-256-GCM. A master
-password is optional; when enabled, its key is derived with PBKDF2 rather than
-storing the password. Supported Android devices can use a strong fingerprint or
-face after one-time setup, and supported Windows devices can use Windows Hello.
-The operating system protects the sealed vault key and Rolecraft Vault never
-stores biometric data or the master password.
-
-The renderer cannot initiate network traffic. Release builds fail their checks
-if the interface gains `fetch`, `XMLHttpRequest`, `WebSocket`, remote scripts, or
-remote assets. Nothing in a vault is uploaded to a cloud service, analysed, or
-made available to the copyright holder.
-
-Data connections stay on the local network in the privileged native shell.
-One-time transfer serves a copy from Windows without modifying the sharing
-device. Separately, explicitly paired automatic sync lets Windows and Android
-exchange later changes in both directions. Pairing is OS-protected and chunks
-are authenticated and encrypted; neither mode uses a third-party server.
-
-Keep independent backups of anything important. Offline storage protects
-privacy, but it also means nobody else can retrieve a forgotten password or
-restore a lost device.
-
-## Licence
-
-**Free to use, but not open source.** The repository is published for inspection
-and auditing; that does not grant permission to copy, modify, redistribute, or
-rebrand the software. User-created characters, personas, lorebooks, prompts, and
-images remain the user's property. Read the full [LICENSE](LICENSE) before using
-the source for anything beyond inspection.
-
----
-
-## Working on the code
-
-Read [`AGENTS.md`](AGENTS.md) first, then the relevant section of
-[`CLAUDE.md`](CLAUDE.md). Together they document the data-safety, offline,
-transfer, signing, line-ending, Android, installer, and release rules that are
-easy to break accidentally.
-
-Development needs **Node.js 22+** and **git**:
-
-```bash
+```powershell
 npm install
-npm test
+npm run check
 npx electron app --user-data-dir=./tmp-rolecraft-vault
 ```
 
-Always launch development builds with a disposable profile. The installed vault
-lives under `%APPDATA%\Rolecraft Vault\`; launching a mismatched source build
-against it can invalidate an installed interface patch.
-
-Private update and Android signing material belongs in `keys/`. It is ignored by
-Git and must never be printed, committed, or shared.
-
-### Common commands
-
-```bash
-npm run check
-npm test
-npm run build:web
-npm run set-version -- <next-version>
-npm run sign -- <next-version> "what changed"
-npm run build:installer
-```
-
-For Android:
+For Android, rebuild the web payload before syncing Capacitor assets:
 
 ```powershell
+npm run build:web
 Set-Location mobile
 npm run sync
 Set-Location android
 .\gradlew.bat assembleRelease
 ```
 
-`npm run sign` compares shell files with the latest release tag. A `.rcvup`
-contains the renderer bundle only, so changes to `app/main.js`, `app/preload.js`,
-`app/index.html`, or `app/vendor/` require the full Windows installer. Changes to
-the interface also require rebuilding the web edition and Android APK.
+The Android signing keystore and Windows update-signing material are private.
+Never print, commit, upload, or replace them casually. Verify a release APK's
+certificate with `apksigner verify --print-certs` before treating it as an
+in-place update.
 
-Published releases also include `SHA256SUMS.txt`. Compare its hashes after a
-download when independently verifying an installer, APK, or update package.
+## Licence
 
-### Repository layout
-
-```text
-app/        Electron app and the interface source of truth
-web/        generated embeddable browser edition
-mobile/     Capacitor Android wrapper and transfer bridge
-installer/  custom Windows setup application
-build/      NSIS wrapper and setup artwork
-scripts/    builds, signing, integrity checks, and regression tests
-keys/       private release material, always ignored
-dist/       generated release artifacts, always ignored
-```
-
-A change is ready only after the focused regression, `npm test`, affected
-cross-platform builds, and relevant real UI checks pass. A release is ready only
-after the public GitHub Release contains the updater, installer, and APK and the
-published hashes match the locally verified artifacts.
+Rolecraft is free to use but not open source. User-created writing and images
+remain the user's property. See [LICENSE](LICENSE) for the full terms.

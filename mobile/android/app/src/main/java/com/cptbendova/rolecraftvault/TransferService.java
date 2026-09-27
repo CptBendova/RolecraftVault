@@ -62,7 +62,7 @@ public class TransferService extends Service {
             Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0
         );
         Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Rolecraft Vault")
+            .setContentTitle("Rolecraft")
             .setContentText("Copying your vault. You can turn the screen off.")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(pi)

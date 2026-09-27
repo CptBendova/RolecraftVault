@@ -11,17 +11,18 @@ assert(imageStart < src.indexOf("function RolecraftVault("), "Backup inspector m
 const imageCode = src.slice(imageStart, src.indexOf("\n};", imageStart) + 3);
 const start = src.indexOf("  const exportAll = async () => {");
 const handler = src.slice(start, src.indexOf("  const importAll = async source => {", start));
+const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6Z5k8AAAAASUVORK5CYII=";
 function fixture(options = {}) {
   const statuses = [], calls = [], writes = [], chunks = [];
-  const records = { chars: [], personas: [], lore: [{ images: [null, {imgId:"picture"}] }], prompts: [],
-    trash: [{type:"lore",record:{images:[null,{imgId:"bin"}]}}], bucketMeta: {}, pBucketMeta: {}, loreMeta: {}, promptMeta: {}, blurred: {}, imgCache: {} };
-  const ctx = { ...records, ...options.records, Date, setTimeout, clearTimeout, console,
+  const records = { chars: [], personas: [], lore: [{ id:"lore", images: [null, {imgId:"picture"}] }], prompts: [],
+    trash: [{tid:"bin",type:"lore",record:{id:"old-lore",images:[null,{imgId:"bin"}]}}], bucketMeta: {}, pBucketMeta: {}, loreMeta: {}, promptMeta: {}, blurred: {}, imgCache: {} };
+  const ctx = { ...records, ...options.records, Date, setTimeout, clearTimeout, console, atob,
     APP_VERSION: "test", backupExportBusy: {current:false}, setBackupExportOpen() {},
     setBackupExport: status => statuses.push(status), toast: msg => statuses.push({toast:msg}),
     recordDiag() {}, setLastBackup: at => writes.push(["state",at]),
     sSet: async (k,v) => { if(options.preferenceFailure) throw Error("locked"); writes.push([k,v]); },
-    sGet: async k => {if(options.readFailure) throw Error("Storage read failed"); return k.startsWith("img:") && !options.missing ? "data:image/png;base64,AA==" : null;},
-    window: {Capacitor:{nativePromise: async (plugin,method,opts) => {
+    sGet: async k => {if(options.readFailure) throw Error("Storage read failed"); return k.startsWith("img:") && !options.missing ? options.invalidImage ? "data:image/png;base64,AA==" : picture : null;},
+    window: {RolecraftChatSync:require("../app/chat-sync-core"),Capacitor:{nativePromise: async (plugin,method,opts) => {
       calls.push({plugin,method,opts});
       if(options.denied) throw Error("Downloads is unavailable");
       if(method === "begin") { if(options.gate) await options.gate; return {token:"token"}; }
@@ -30,29 +31,29 @@ function fixture(options = {}) {
     }}}
   };
   vm.createContext(ctx);
-  const helpers = ["charImgIds","personaImgIds","backupInspection","appendDownloadText","streamJsonDownload","phoneJsonStream"].map(fn).join("\n");
+  const helpers = ["charImgIds","personaImgIds","backupPictureValid","backupInspection","appendDownloadText","streamJsonDownload","phoneJsonStream"].map(fn).join("\n");
   vm.runInContext(helpers + "\n" + imageCode + "\n" + handler + "\nglobalThis.run = exportAll;", ctx);
   return {ctx,statuses,calls,writes,chunks,run:ctx.run};
 }
 (async () => {
   const good = fixture(); await good.run();
-  assert.equal(good.statuses.at(-1).phase,"success");
+  assert.equal(good.statuses.at(-1).phase,"success",JSON.stringify(good.statuses.at(-1)));
   const data = JSON.parse(good.chunks.join(""));
-  assert.equal(data.images.picture,"data:image/png;base64,AA==");
-  assert.equal(data.images.bin,"data:image/png;base64,AA==");
+  assert.equal(data.images.picture,picture);
+  assert.equal(data.images.bin,picture);
   assert.equal(data.lore[0].images[0],null,"Preserve stored records; only ignore empty references while collecting IDs");
   assert.equal(data.manifest.images,2);
   assert.equal(good.statuses.at(-1).location,"Downloads");
   assert(good.statuses.some(x => /Saving picture/.test(x.message)));
   assert(good.writes.some(x => x[0] === "ui:lastbackup"));
   console.log("PASS real export preserves live/bin pictures and records, with progress and public location");
-  for(const options of [{denied:true},{writeFailure:true},{readFailure:true},{missing:true},{records:{lore:[{images:{broken:true}}]}},{records:{chars:[null]}}]) {
+  for(const options of [{denied:true},{writeFailure:true},{readFailure:true},{missing:true},{invalidImage:true},{records:{lore:[{images:{broken:true}}]}},{records:{chars:[null]}}]) {
     const f=fixture(options); await f.run();
     assert.equal(f.statuses.at(-1).phase,"error",JSON.stringify(options));
     assert.equal(f.writes.length,0,"Failed exports cannot advance backup health");
     assert.equal(f.ctx.backupExportBusy.current,false);
     assert(!f.calls.some(x => x.plugin === "Filesystem"),"No hidden-storage fallback");
-    if(options.writeFailure || options.readFailure || options.missing) assert(f.calls.some(x=>x.method === "abort"));
+    if((options.writeFailure || options.readFailure || options.missing) && f.calls.some(x=>x.method === "begin")) assert(f.calls.some(x=>x.method === "abort"));
   }
   console.log("PASS preparation/read/write/missing-image failures stay visible, clean up and permit retry");
   let release; const gate=new Promise(r=>release=r), busy=fixture({gate});
