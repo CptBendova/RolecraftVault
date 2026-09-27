@@ -197,11 +197,15 @@ app.whenReady().then(async () => {
     await sleep(700);
     return { found: true, backs: document.querySelectorAll(".modal-back").length,
       releases: before, afterSearch: headings(),
+      expected: (() => { try { return CHANGELOG.length; } catch (_) { return -1; } })(),
       stillMentions: /flicker/i.test(d.textContent) };
   })()`);
   console.log("\nversion history, in its own window");
   check("it opens as its own window over Settings", hist.found && hist.backs === 2);
-  check("every release is listed", hist.releases > 40, hist.releases + " releases");
+  // Older releases are folded into one entry per decade (scripts/fold-changelog.js),
+  // so compare against the real list rather than a fixed count.
+  check("every release entry is listed", hist.expected > 0 && hist.releases === hist.expected,
+    hist.releases + " of " + hist.expected + " entries");
   check("searching the notes, not just the numbers", hist.afterSearch > 0 &&
     hist.afterSearch < hist.releases && hist.stillMentions,
     hist.afterSearch + " of " + hist.releases + " match 'flickering'");
