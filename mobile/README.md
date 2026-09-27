@@ -1,29 +1,43 @@
-# Rolecraft Vault for Android
+# Rolecraft for Android
 
-The web edition in a WebView, plus the half of the device transfer a phone can
-actually do. Same vault, same encryption, same interface.
+The web edition in a Capacitor WebView, plus native plugins for the things a
+WebView cannot do safely. Same vault format, same encryption, same interface.
+
+The application ID is `com.cptbendova.rolecraftvault.chat` and the launcher name
+is Rolecraft. Never change the ID or the signing key: Android would treat the
+result as a different app, and uninstalling the old one erases its vault.
 
 ## What works
 
-- The whole library: characters, versions, personas, lorebooks, prompts,
-  pictures, buckets, tokens, the guide. It is the same `app.js`.
+- The whole library and Chat: characters, versions, personas, lorebooks,
+  prompts, pictures, buckets, the guide and roleplay conversations. It is the
+  same `app.js` and `chat.js` as Windows.
 - Storage is an encrypted folder in the app's private files (`vault/`), plus
   IndexedDB for pointers and fingerprints. Encryption is WebCrypto AES-256-GCM,
   with the master password when one is set, otherwise a device wrap key. The
   interface only reads a picture when it is on screen. There is no Windows
   account tie on Android, so the master password is doing the real work: set one.
-- **Receiving a vault over Wi-Fi from the PC**, including mirroring, using the
-  protocol the desktop already speaks. Nothing on the PC needs changing.
-- Backups: Export backup on the PC, move the file, Import backup here.
+- **Paired device sync** (`VaultSyncPlugin`, `VaultSyncService`): two-way,
+  encrypted library and conversation sync with paired Windows and Android
+  devices on the same Wi-Fi. It pauses on lock or background unless you start
+  the explicit screen-off session, which shows a Stop notification.
+- **Receiving a one-off vault transfer from the PC**, including mirroring, using
+  the older passive protocol (`TransferTransportPlugin`, `TransferService`).
+- **Provider bridges** (`OpenRouterPlugin`, `ImageGenerationPlugin`,
+  `ProviderBalancesPlugin`): explicit chat, voice and image requests to fixed
+  HTTPS endpoints, with keys kept in Android Keystore and never given to the
+  WebView.
+- Biometric unlock (`DeviceUnlockPlugin`) and public Downloads/Pictures exports
+  (`FileExportPlugin`).
+- Backups: Export backup on one device, move the file, Import backup here.
 
 ## What it deliberately does not do
 
-- **Sharing from the phone.** A transfer needs one side to listen on a socket
-  and a WebView cannot. The phone is the receiver; the PC is the source of
-  truth. `window.transfer.canShare` is false and the interface says so rather
-  than offering a button that cannot work.
+- **Serve the one-off transfer.** The older passive transfer still treats the
+  phone as a receiver only, so `window.transfer.canShare` is false. Use paired
+  device sync to send changes from the phone.
 - **In-app updates.** The `.rcvup` system signs a desktop bundle. On Android a
-  new build is a new APK.
+  new build is a new APK, installed over the existing one.
 
 ## Building it
 
@@ -57,7 +71,7 @@ npm run build:web     # in the repo root
 cd mobile && npm run sync
 ```
 
-## How a transfer works here
+## How a one-off transfer works here
 
 1. On the PC: Settings, then **Share this vault**. Wait for it to say ready, and
    read the code.
@@ -87,6 +101,7 @@ the transfer for keeping it current after that.
 src/rc-transfer.js    window.transfer for Android: pairing code, crypto, receive
 scripts/build-www.js  copies ../web into www/ and adds the script tag above
 www/                  generated, not committed
-android/              the Capacitor project (committed: it carries the manifest
-                      and the network config, which are edited by hand)
+android/              the Capacitor project and native plugins (committed: it
+                      carries the manifest, the network config and the Java
+                      plugins, which are edited by hand)
 ```

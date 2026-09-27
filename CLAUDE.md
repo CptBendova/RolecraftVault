@@ -892,8 +892,9 @@ initial reconciliation. Tests cover four-way convergence, later edits, deletion
 recovery, restart/discovery, native codec interoperability, IDB races and phone
 layout. Physical-device Wi-Fi/firewall/lifecycle checks still matter.
 
-A private, offline roleplay library: characters, personas, lorebooks and prompts,
-with encrypted local storage. Ships as a Windows Electron app, plus an embeddable
+A private, offline-first roleplay library and chat app: characters, personas,
+lorebooks, prompts, pictures and conversations, with encrypted local storage.
+Ships as a Windows Electron app and an Android app, both built on the same
 web edition. Built for CharSnap creators.
 
 **Read this file before changing anything.** It records decisions that are easy to
@@ -958,8 +959,11 @@ Editing it by script is normal here. Two things bite repeatedly:
 
 1. **The interface never touches the network.** No `fetch`, `XMLHttpRequest`,
    `WebSocket`, `sendBeacon`, or `http://` in `app/app.js` or the web bundle.
-   `npm run check` enforces this. Networking lives *only* in `main.js`, and only
-   for the opt-in Wi-Fi transfer.
+   `npm run check` enforces this. Networking lives *only* in the privileged
+   shell: `main.js` and the sync/transfer modules for the local network, and
+   the fixed-endpoint provider bridges (`openrouter.js`, `image-generation.js`,
+   `provider-balances.js` and their Android plugins) for explicit user actions.
+   AGENTS.md lists exactly what each bridge may contact.
 2. **Images are sacred.** Version history, JSON updates and restores capture text
    only — never `profileImg`, `banner`, `gallery`, or variant portraits. A restore
    must never change a picture. **Use `charImgIds(c)` / `personaImgIds(p)` for any

@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible Rolecraft Vault problem
+description: Report a reproducible Rolecraft problem
 title: "[Bug] "
 labels: [bug]
 body:
@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Rolecraft version
-      placeholder: "1.245"
+      placeholder: "1.336"
     validations:
       required: true
   - type: dropdown
@@ -36,4 +36,4 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Never attach a real vault, password, signing key, or pairing code.
+      description: Never attach a real vault, backup, password, API key, signing key, or pairing code.

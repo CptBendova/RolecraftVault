@@ -7,6 +7,21 @@ choose to send or generate something.
 
 Download the current installer, Android APK, and signed Windows interface update
 from the [latest Rolecraft release](https://github.com/CptBendova/RolecraftVault/releases/latest).
+GitHub Releases is the only official distribution channel. The app never checks
+for or downloads updates by itself.
+
+## Verify your download
+
+Every release includes `SHA256SUMS.txt`. Compare it with the file you downloaded,
+for example `Get-FileHash .\Rolecraft-Setup-<version>.exe -Algorithm SHA256` in
+PowerShell or `sha256sum Rolecraft-<version>.apk` elsewhere.
+
+- The Windows installer is not Authenticode-signed yet, so Windows SmartScreen
+  may warn before it runs. Check the hash first.
+- `.rcvup` interface updates carry a Rolecraft signature that installed Windows
+  copies verify before applying them. Install one from **Settings > App updates**.
+- The Android APK is signed with the same key as earlier Rolecraft Chat builds,
+  so it upgrades that installation in place.
 
 ## Install without losing your library
 
@@ -81,7 +96,33 @@ requests; native bridges handle the approved provider and local-network work.
 Keys are kept outside vault records, exports, and normal sync. Any deliberate
 key sharing between paired devices requires a separate, explicit action.
 
+## Privacy at a glance
+
+- Your library, pictures and conversations are stored encrypted on your own
+  devices. There is no Rolecraft account, server, telemetry or analytics.
+- AI features are optional. A chat message, image prompt or selected reference
+  picture is sent only to the provider you configured (OpenRouter, OpenAI or
+  xAI), only as part of an action you take (a Send can also run memory
+  summaries or optional story features you enabled), and under that provider's
+  own terms. Chats request zero-data-retention routing by default; you can turn
+  that off per conversation.
+- Device sync and transfers stay on your local network, between devices you
+  paired yourself, and are encrypted in transit.
+- Exports and backups are unencrypted files by design. Store them carefully.
+
+## Report a problem
+
+Use [GitHub Issues](https://github.com/CptBendova/RolecraftVault/issues) for
+bugs and suggestions. Report security problems privately as described in
+[SECURITY.md](SECURITY.md). Never attach a real vault, backup, password, API
+key or pairing code.
+
 ## Work on the code
+
+The source is published so its privacy and security claims can be inspected.
+The [licence](LICENSE) does not grant permission to modify, build or
+redistribute it; the notes below are for the maintainer and anyone working on
+it with written permission.
 
 Read [AGENTS.md](AGENTS.md) and the relevant section of
 [CLAUDE.md](CLAUDE.md) before editing. In particular, preserve the existing
