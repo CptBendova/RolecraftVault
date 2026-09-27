@@ -138,5 +138,5 @@ console.log("  version:", version, "| app.js sha256:", hashes["app.js"].slice(0,
 console.log("  Windows shell compatibility: build " + minShellBuild + " or newer.");
 if (needsShell) {
   console.log("  This release changes the shell, so existing builds need the full installer.");
-  console.log("  Ship Rolecraft-Vault-Setup-" + version + ".exe and say so in the release notes.");
+  console.log("  Ship Rolecraft-Setup-" + version + ".exe and say so in the release notes.");
 }

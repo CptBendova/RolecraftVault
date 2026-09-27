@@ -9,8 +9,8 @@ const version = process.argv[2] || require(path.join(root, "app", "package.json"
 const dist = path.join(root, "dist");
 const names = [
   `Rolecraft-update-${version}.rcvup`,
-  `Rolecraft-Vault-Setup-${version}.exe`,
-  `Rolecraft-Vault-${version}.apk`,
+  `Rolecraft-Setup-${version}.exe`,
+  `Rolecraft-${version}.apk`,
 ];
 const lines = names.map(name => {
   const file = path.join(dist, name);
