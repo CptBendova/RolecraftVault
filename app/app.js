@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.336";
+const APP_VERSION = "1.337";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,9 @@ const APP_VERSION = "1.336";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.337",
+  notes: ["Chat saves are much faster on long stories. Each saved turn used to re-check every conversation you have, even ones you had not touched; now only the conversation that changed is checked, so a large history saves in a fraction of the time. On Windows the app also stops re-reading and decrypting the whole chat table before every save, and no longer re-reads its security settings from disk on every storage call, so replies stream more smoothly while a save is in progress. Your conversations, pictures and sync history are unchanged. Use the full Windows installer for this release; the smaller update file alone cannot deliver the Windows part of these changes."]
+}, {
   heading: "1.336 (private Rolecraft)",
   notes: ["Fixed Chat rejecting OpenRouter latest-model aliases such as ~deepseek/deepseek-pro-latest with 'The chat request is invalid'. Roleplay replies, memory model choices, AI group coordination and paired sync now accept this official model ID on Windows and Android. The existing conversation and model choice are preserved; regenerate a previously failed reply after installing over your current app. No API request was sent for replies blocked by the old local validation."]
 }, {
