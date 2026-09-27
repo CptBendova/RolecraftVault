@@ -1,7 +1,7 @@
 {
   "name": "rolecraft-vault-mobile",
   "version": "1.0.0",
-  "description": "Rolecraft Vault for Android — wraps the web edition, adds LAN transfer",
+  "description": "Rolecraft for Android: Capacitor wrapper around the web edition, with native sync, transfer, provider and export plugins",
   "scripts": {
     "build": "node scripts/build-www.js",
     "sync": "node scripts/build-www.js && cap sync android",
