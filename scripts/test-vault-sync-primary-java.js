@@ -1,6 +1,6 @@
 // Execute the shipped Android register/selection methods, with OS storage stubbed.
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert"),{spawnSync}=require("child_process");
-const source=fs.readFileSync(path.join(__dirname,"../mobile/android/app/src/main/java/com/cptbendova/rolecraftvault/VaultSyncPlugin.java"),"utf8");
+const source=fs.readFileSync(path.join(__dirname,"../mobile/android/app/src/main/java/com/cptbendova/rolecraftvault/VaultSyncPlugin.java"),"utf8").replace(/\r\n/g,"\n");
 function method(name){const start=source.search(new RegExp("    private (?:static |synchronized )?[^\\n]+ "+name+"\\("));assert(start>=0,name);let depth=0,quote=false,escape=false;for(let i=source.indexOf("{",start);i<source.length;i++){const c=source[i];if(quote){if(escape)escape=false;else if(c==="\\")escape=true;else if(c==='"')quote=false;}else if(c==='"')quote=true;else if(c==="{")depth++;else if(c==="}"&&--depth===0)return source.slice(start,i+1);}throw Error("Unclosed Java method");}
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"rcv-primary-java-")),file=path.join(temp,"PrimaryCheck.java");
 const harness=`import java.io.*;import java.util.*;import java.security.*;import java.nio.charset.StandardCharsets;

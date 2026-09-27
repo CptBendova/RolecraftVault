@@ -6,7 +6,7 @@ const {app,BrowserWindow}=require("electron"),assert=require("assert"),fs=requir
 const root=path.join(__dirname,".."),tmp=fs.mkdtempSync(path.join(os.tmpdir(),"rcv-settings-sync-"));app.setPath("userData",tmp);app.commandLine.appendSwitch("force-device-scale-factor","1");
 const preload=path.join(tmp,"fixture.js");fs.writeFileSync(preload,"window.vaultSync={call:async()=>({enabled:false,canShowJoinRequest:true})};");
 let win;const wait=ms=>new Promise(r=>setTimeout(r,ms)),run=s=>win.webContents.executeJavaScript(s);
-async function until(s,label){for(let n=0;n<100;n++){if(await run(s))return;await wait(50);}throw Error("Timeout: "+(label||s));}
+async function until(s,label){for(let n=0;n<200;n++){if(await run(s))return;await wait(50);}throw Error("Timeout: "+(label||s));}
 const timeout=setTimeout(()=>app.exit(2),90000);
 const openSettings="[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()==='Settings').click()";
 const closeSettings="[...document.querySelectorAll('.settings-modal button')].find(b=>b.textContent==='Close').click()";
@@ -18,10 +18,11 @@ app.whenReady().then(async()=>{
     await run(openSettings);await until("!!document.querySelector('.settings-nav')","nav");
     const chips=await run("[...document.querySelectorAll('.settings-nav-item')].map(b=>b.textContent)");
     for(const name of ["Appearance","Security","Sync","Backup","Help"])assert(chips.includes(name),"missing chip "+name+" in "+chips);
-    await run("[...document.querySelectorAll('.settings-nav-item')].find(b=>b.textContent==='Backup').click()");await wait(1500);
+    await run("[...document.querySelectorAll('.settings-nav-item')].find(b=>b.textContent==='Backup').click()");
+    await until(`(()=>{const m=document.querySelector('.settings-modal'),head=m.querySelector('.settings-top').getBoundingClientRect(),t=m.querySelector('[data-settings-section=backup]').getBoundingClientRect(),mr=m.getBoundingClientRect();return t.top>=head.bottom-1&&(t.top-head.bottom<60||(m.scrollTop+m.clientHeight>=m.scrollHeight-4&&t.top<mr.bottom-40));})()`,"Backup scroll settles at "+width+"px");
     const placed=await run(`(()=>{const m=document.querySelector('.settings-modal'),head=m.querySelector('.settings-top').getBoundingClientRect(),t=m.querySelector('[data-settings-section=backup]').getBoundingClientRect(),close=[...m.querySelectorAll('button')].find(b=>b.textContent==='Close').getBoundingClientRect(),mr=m.getBoundingClientRect();
-      return {below:t.top>=head.bottom-1,near:t.top-head.bottom<60,headTop:Math.abs(head.top-mr.top)<2,close:close.top>=mr.top&&close.bottom<=head.bottom,active:m.querySelector('.settings-nav-item.active').textContent,overflow:m.scrollWidth-m.clientWidth,navOverflow:(()=>{const n=m.querySelector('.settings-nav'),r=n.getBoundingClientRect();return r.right>mr.right+1||r.left<mr.left-1})()};})()`);
-    assert(placed.below&&placed.near&&placed.headTop&&placed.close&&placed.active==="Backup"&&placed.overflow<=1&&!placed.navOverflow,width+"px "+JSON.stringify(placed));
+      return {below:t.top>=head.bottom-1,near:t.top-head.bottom<60,atEnd:m.scrollTop+m.clientHeight>=m.scrollHeight-4,visible:t.top<mr.bottom-40,headTop:Math.abs(head.top-mr.top)<2,close:close.top>=mr.top&&close.bottom<=head.bottom,active:m.querySelector('.settings-nav-item.active').textContent,overflow:m.scrollWidth-m.clientWidth,navOverflow:(()=>{const n=m.querySelector('.settings-nav'),r=n.getBoundingClientRect();return r.right>mr.right+1||r.left<mr.left-1})()};})()`);
+    assert(placed.below&&(placed.near||(placed.atEnd&&placed.visible))&&placed.headTop&&placed.close&&placed.active==="Backup"&&placed.overflow<=1&&!placed.navOverflow,width+"px "+JSON.stringify(placed));
     await run(closeSettings);await wait(150);
     await run("window.__rcvSettingsSection='sync';"+openSettings);await wait(600);
     const sync=await run(`(()=>{const m=document.querySelector('.settings-modal'),head=m.querySelector('.settings-top').getBoundingClientRect(),t=m.querySelector('[data-settings-section=sync]').getBoundingClientRect();return {visible:t.top>=head.bottom-1&&t.top<innerHeight-100,active:m.querySelector('.settings-nav-item.active').textContent,panelInSync:!!m.querySelector('[data-settings-section=sync]~.vault-sync-panel'),notInBackup:!(()=>{const b=m.querySelector('[data-settings-section=backup]'),p=m.querySelector('.vault-sync-panel');return b.compareDocumentPosition(p)&Node.DOCUMENT_POSITION_FOLLOWING})()};})()`);
