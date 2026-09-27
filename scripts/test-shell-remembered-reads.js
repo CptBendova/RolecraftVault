@@ -23,7 +23,9 @@ function lift(name) {
 function liftConst(name) {
   const at = main.indexOf("const " + name + " =");
   assert(at >= 0, "missing const " + name);
-  return main.slice(at, main.indexOf(";\n", at) + 2);
+  const end = main.slice(at).search(/;\r?\n/);
+  assert(end > 0, "unterminated const " + name);
+  return main.slice(at, at + end + 1) + "\n";
 }
 const hasRemembered = main.includes("function readValueRemembered(");
 const code = [
