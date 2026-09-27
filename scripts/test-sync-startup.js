@@ -3,7 +3,7 @@ const source=fs.readFileSync(path.join(__dirname,'../app/main.js'),'utf8');
 const handlers={},writes=[];let locked=false,stamp=1,restore=false,yields=0,reads=0;
 const context={ipcMain:{handle:(name,fn)=>handlers[name]=fn},isLocked:()=>locked,activeRestore:null,
   keyToFile:key=>key,fs:{statSync:()=>({ino:1,size:100,mtimeMs:stamp,ctimeMs:stamp})},
-  readValue:key=>{reads++;return key==='sync:state'?'old':'writing';},writeValue:(k,v)=>writes.push([k,v]),
+  readValue:key=>{reads++;return key==='sync:state'?'old':'writing';},readValueRemembered:key=>context.readValue(key),writeValue:(k,v)=>writes.push([k,v]),
   hashOfRecord:()=>{throw Error('A startup cache check decrypted a picture');},
   beginVaultRestore:()=>{restore=true;return 'token';},setVaultRestoreValue:()=>{},commitVaultRestore:()=>{},abortVaultRestore:()=>{},
   setImmediate:fn=>setImmediate(()=>{yields++;fn();}),Date};

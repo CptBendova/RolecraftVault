@@ -1664,7 +1664,10 @@ function writeValue(key, value) {
      themselves too, for a clearer message; this is the backstop that covers
      every other caller, receiving a transfer included. */
   if (isLocked()) throw new Error("locked");
-  writeFileAtomic(keyToFile(key), encodeValue(value, masterKey));
+  const payload = encodeValue(value, masterKey);
+  forgetRememberedRead(key);
+  writeFileAtomic(keyToFile(key), payload);
+  if (REMEMBERED_READ_KEYS.has(key)) rememberRead(key, Buffer.from(payload, "utf8"), String(value));
   rememberHash(key, value);
 }
 /* Sync fingerprints are local cache stamps, not transfer content hashes.
@@ -1788,7 +1791,9 @@ function finishPendingRestore() {
 function readValue(key) {
   const f = keyToFile(key);
   if (!fs.existsSync(f)) return null;
-  let payload = fs.readFileSync(f, "utf8");
+  return decodePayload(fs.readFileSync(f, "utf8"));
+}
+function decodePayload(payload) {
   let v;
   if (payload.startsWith("enc:")) v = safeStorage.decryptString(Buffer.from(payload.slice(4), "base64"));
   else if (payload.startsWith("pln:")) v = payload.slice(4);
@@ -1799,6 +1804,46 @@ function readValue(key) {
   }
   if (v.startsWith("raw:")) return v.slice(4);
   return v;
+}
+/* Chat saves and sync checkpoints compare-and-swap whole records such as
+   chats:all, so every save read back and decrypted the entire table it was
+   about to replace (hundreds of ms on the main thread for a long history,
+   stalling streamed replies too). Like Android's remembered sync reads,
+   keep the exact encrypted file bytes and plaintext of the last read or
+   write of a few whole-table keys. A hit still reads the file and needs the
+   same bytes, so any other writer (restore, rewrap, transfer) falls back to
+   a full decrypt. The entry is tied to the current master key object and
+   dropped on lock. Never pictures or arbitrary keys. */
+const REMEMBERED_READ_KEYS = new Set(["chars:all", "personas:all", "lore:all", "prompts:all", "trash:all", "chats:all",
+  "chats:draft-handoffs", "buckets:meta", "pbuckets:meta", "lore:meta", "prompts:meta", "blurset", "sync:state"]);
+const REMEMBERED_READ_LIMIT = 64 * 1024 * 1024;
+const rememberedReads = new Map();
+let rememberedReadBytes = 0;
+function forgetRememberedRead(key) {
+  const old = rememberedReads.get(key);
+  if (old) { rememberedReadBytes -= old.bytes; rememberedReads.delete(key); }
+}
+function forgetRememberedReads() { rememberedReads.clear(); rememberedReadBytes = 0; }
+function rememberRead(key, stored, value) {
+  forgetRememberedRead(key);
+  if (!REMEMBERED_READ_KEYS.has(key) || !Buffer.isBuffer(stored) || typeof value !== "string") return;
+  const bytes = stored.length + 2 * value.length;
+  if (bytes > REMEMBERED_READ_LIMIT) return;
+  while (rememberedReadBytes + bytes > REMEMBERED_READ_LIMIT && rememberedReads.size) forgetRememberedRead(rememberedReads.keys().next().value);
+  rememberedReads.set(key, { stored, value, key: masterKey, bytes });
+  rememberedReadBytes += bytes;
+}
+/* Same result as readValue(key). */
+function readValueRemembered(key) {
+  if (!REMEMBERED_READ_KEYS.has(key)) return readValue(key);
+  const f = keyToFile(key);
+  if (!fs.existsSync(f)) { forgetRememberedRead(key); return null; }
+  const stored = fs.readFileSync(f);
+  const hit = rememberedReads.get(key);
+  if (hit && hit.key === masterKey && hit.stored.equals(stored)) return hit.value;
+  const value = decodePayload(stored.toString("utf8"));
+  rememberRead(key, stored, value);
+  return value;
 }
 function allKeys() {
   const out = [];
@@ -2106,7 +2151,7 @@ function setupAuthIpc() {
     }
   });
 
-  ipcMain.handle("auth-lock", () => { cancelChatRequests(); masterKey = null; return { ok: true }; });
+  ipcMain.handle("auth-lock", () => { cancelChatRequests(); masterKey = null; forgetRememberedReads(); return { ok: true }; });
   ipcMain.handle("vault-encrypted", () => ({
     dpapi: safeStorage.isEncryptionAvailable(),
     password: passwordSet(),
@@ -2351,7 +2396,7 @@ app.whenReady().then(async () => {
   clearTransferLeftovers();
   finishPendingRewrap();
 
-  ipcMain.handle("vault-get", (e, key) => readValue(key));
+  ipcMain.handle("vault-get", (e, key) => readValueRemembered(key));
   const syncTransport = require("./vault-sync-transport").setupVaultSync({ ipcMain, app, safeStorage, isLocked, getWindow: () => BrowserWindow.getAllWindows()[0] });
   ipcMain.handle("vault-sync-fingerprint", (_e, key) => {
     if (isLocked()) throw new Error("locked");
@@ -2368,7 +2413,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("vault-sync-commit", (_e, values, expected) => {
     if (isLocked()) throw new Error("locked");
-    for (const [key, value] of Object.entries(expected || {})) if (readValue(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
+    for (const [key, value] of Object.entries(expected || {})) if (readValueRemembered(key) !== value) throw new Error("Library changed during sync. Retrying without overwriting your edit.");
     const keys = Object.keys(values);
     if (keys.length === 1 && (keys[0] === "sync:state" || keys[0] === "chats:draft-handoffs" || keys[0] === "chats:all")) {
       if (keys[0] === "chats:draft-handoffs" && !Object.prototype.hasOwnProperty.call(expected || {}, keys[0])) throw new Error("Draft handoff compare-and-swap requires its expected value");
