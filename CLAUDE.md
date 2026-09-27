@@ -509,7 +509,8 @@ pointer CAS to hide this error; genuine concurrent edits still stop safely.
 
 ## Native photo preparation and explicit screen-off session (private 1.296)
 
-The full sync audit is recorded in docs/PRIVATE-SYNC-AUDIT-1.296.md. Android first
+The full 1.296 sync audit was kept private and is not in this repository;
+the essentials are below. Android first
 preparation previously read each entire encrypted photo through Filesystem into
 JS, decrypted and split its data URL, then sent all text back through putBatch.
 storage.stageSyncImage now passes only the exact immutable bin/bin2 pointer and
@@ -1544,6 +1545,16 @@ user-facing reads it — it only names the npm scripts.
 Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
 for a user rather than a developer. Entries before 1.092 are reconstructed from the
 code, not a real record — the UI says so, and that label should stay.
+
+Settings > Version history keeps only the current decade of releases (for 1.337,
+1.330 onwards) as individual entries; every older decade is one entry headed
+`1.320–1.329` whose notes start with the version they shipped in. This took the
+window from 246 entries to 33 in September 2026. After `set-version` crosses into
+a new decade, run `npm run fold-changelog` (idempotent, and it refuses to write
+if any note would change) and then `npm run build:web`. `CHANGELOG[0]` must stay
+the current release on its own, because "What's new" shows exactly that entry.
+Headings are plain versions: no "(private …)" or build-type labels.
+`test-changelog-folding.js` enforces all of this.
 
 ## Settings opens two windows of its own
 
