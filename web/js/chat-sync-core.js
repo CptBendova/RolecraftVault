@@ -182,6 +182,9 @@
   function stamp(next, previous, uid) {
     var prior = new Map(previous.map(function (c) { return [c.id, c]; })), result = next.map(function (c) {
       var old = prior.get(c.id); prior.delete(c.id);
+      // An untouched conversation keeps the same object between saves, so its
+      // payload cannot differ; skip canonicalizing its whole transcript again.
+      if (old && old === c && meta(old).rev) return Object.assign({}, c, { _sync: old._sync });
       if (old && payload(old) === payload(c) && meta(old).deleted === meta(c).deleted && meta(old).rev) return Object.assign({}, c, { _sync: old._sync });
       return Object.assign({}, c, { _sync: { rev: uid(), ancestors: Array.from(new Set(lineage(old).concat(lineage(c)))).sort(), deleted: !!meta(c).deleted } });
     });
