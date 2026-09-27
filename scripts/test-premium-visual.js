@@ -104,7 +104,8 @@ function open(query, w, h, reduced) {
     try {
       await win.loadFile(path.join(ROOT, "web", "index.html"), { search: query });
       await until("!!document.querySelector('.rcv[data-rcv-state=ready]')");
-      if (reduced) { win.webContents.debugger.attach("1.3"); await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }); }
+      win.webContents.debugger.attach("1.3");
+      await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] });
       resolve({ win, run, until,
         reload: async () => { await new Promise(r => { win.webContents.once("did-finish-load", r); win.reload(); }); await until("!!document.querySelector('.rcv[data-rcv-state=ready]')"); await run(HELPERS); await wait(500); } });
     } catch (e) { reject(e); }
@@ -176,6 +177,7 @@ app.whenReady().then(async () => {
   /* ---------- 360px Android phone ---------- */
   const phone = await open("?device=phone", 360, 800);
   await phone.run(SEED); await setLook(phone, "dark", "quality");
+  await phone.until("!!document.querySelector('[data-dashboard-gallery=\"true\"] .wtile')");
   const ph = await phone.run(`(async () => {
     const t = window.__t, sleep = ms => new Promise(r => setTimeout(r, ms));
     const small = scope => [...scope.querySelectorAll("button, select, input:not([type=checkbox]):not([type=radio])")].filter(t.vis)
@@ -183,9 +185,10 @@ app.whenReady().then(async () => {
       .filter(x => x.w < 44 || x.h < 44).map(x => (x.el.getAttribute("aria-label") || x.el.textContent || x.el.tagName).trim().slice(0, 24) + " " + Math.round(x.w) + "x" + Math.round(x.h));
     const out = { dashboardSmall: small(document.querySelector(".rcv")) };
     const tile = document.querySelector('[data-dashboard-gallery="true"] .wtile');
-    tile && (tile.querySelector("button") || tile).click(); await sleep(600);
-    const lb = document.querySelector(".lb-root");
-    out.viewer = !!lb && [[180, 12], [180, 790], [30, 770]].every(([x, y]) => lb.contains(document.elementFromPoint(x, y)));
+    tile && (tile.querySelector("button") || tile).click();
+    for (let i = 0; i < 50 && !document.querySelector(".lb-root"); i++) await sleep(60);
+    const lb = document.querySelector(".lb-root"), half = innerWidth / 2;
+    out.viewer = !!lb && [[half, 12], [half, innerHeight - 10], [30, innerHeight - 30]].every(([x, y]) => lb.contains(document.elementFromPoint(x, y)));
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await sleep(300);
     t.button(/^Characters$/).click(); await sleep(450);
     const head = document.querySelector(".library-head"), tools = head && head.lastElementChild, search = tools && tools.querySelector("input");
