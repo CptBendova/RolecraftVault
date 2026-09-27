@@ -1,15 +1,22 @@
 # Security policy
 
-Rolecraft Vault is offline-first and stores vault data locally, but reports about
-encryption, update verification, local transfer, imports, Android storage, or the
-Windows installer should still be treated as sensitive.
+Rolecraft (repository: Rolecraft Vault) is offline-first and stores vault data
+locally, but reports about any of the following should be treated as sensitive:
+
+- vault encryption, the master password, PIN, Windows Hello or Android biometrics;
+- signed `.rcvup` update verification, the Windows installer or APK signing;
+- local Wi-Fi transfer, paired device sync, the chat link, pairing QR codes or
+  explicit API-key sharing between paired devices;
+- storage of OpenRouter, OpenAI or xAI keys, and the native bridges that send
+  explicit chat, voice or image requests;
+- imports, backups, exports and Android storage.
 
 ## Reporting a vulnerability
 
 Use **Security > Report a vulnerability** on this GitHub repository. That opens a
 private report visible only to the maintainer. Do not include exploit details,
-private vault data, signing material, passwords, or pairing codes in a public
-issue.
+private vault data, signing material, passwords, API keys, or pairing codes in a
+public issue.
 
 Include the affected Rolecraft version and platform, the impact, reproduction
 steps using disposable data, and any suggested mitigation. The latest published

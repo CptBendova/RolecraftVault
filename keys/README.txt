@@ -16,4 +16,4 @@ Keep an offline backup (USB / password manager). Do not put it in the repo,
 in Discord, or in any cloud folder that syncs publicly.
 
 Sign an update:
-  npm run sign 1.9.3 "what changed"
+  npm run sign 1.336 "what changed"     # the flat display version, see CLAUDE.md

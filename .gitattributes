@@ -1,0 +1,16 @@
+# Line endings that the code and its checks depend on. Without these, a
+# checkout's line endings follow the machine's core.autocrlf setting, and
+# test-version-shell.js / test-image-generation-native.js (which require an
+# all-CRLF main.js) pass on Windows but fail on Linux and macOS.
+
+# The Windows shell is CRLF in every working tree (stored LF in the repo).
+app/main.js text eol=crlf
+
+# Scripts that must keep their native line endings on any platform.
+*.sh text eol=lf
+mobile/android/gradlew text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# app/app.js is deliberately left alone: it contains a NUL byte, so Git treats
+# it as binary and never converts it. It must stay LF.

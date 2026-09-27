@@ -1,24 +1,64 @@
-# never commit the signing key — it is the root of trust for every update
-keys/*.pem
+# ---------------------------------------------------------------------------
+# Signing material and credentials: NEVER commit any of this.
+# keys/private_key.pem signs .rcvup updates that every installed copy trusts;
+# the Android keystore is required for in-place APK upgrades. Matched
+# anywhere in the tree, not only in keys/, so a copy dropped beside the Gradle
+# project or a Windows code-signing certificate is caught too.
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.snk
+keystore.properties
+keys/android-keystore.txt
+.env
+.env.*
 
+# ---------------------------------------------------------------------------
+# Build and release output
+# ---------------------------------------------------------------------------
 node_modules/
 dist/
 *.exe
 *.rcvup
+*.apk
+*.aab
+*.idsig
 *.zip
+SHA256SUMS.txt
 
+# ---------------------------------------------------------------------------
+# User data that must never be published: vault profiles, backups, exports,
+# chat review files and sync caches. Real libraries live in %APPDATA% or the
+# Android app sandbox; these patterns catch copies brought into the repo.
+# ---------------------------------------------------------------------------
+# throwaway Electron profiles for driving the app in a test
+# (--user-data-dir=./tmp-...). Chromium keeps them locked after exit.
+tmp-*/
+rolecraft-backup-*.json
+*-review.json
+*.dat
+_xfer-hash-cache.json
+
+# ---------------------------------------------------------------------------
+# Logs, OS and editor files
+# ---------------------------------------------------------------------------
+*.log
+npm-debug.log*
 .DS_Store
 Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
 
-# editor / local dev tooling
+# ---------------------------------------------------------------------------
+# Local agent tooling. These folders can hold attached user documents,
+# screenshots and session state; keep them out of the public repository.
+# ---------------------------------------------------------------------------
 .claude/
 .codex-remote-attachments/
 .gradle-codex-*/
-keys/*.jks
-keys/*.keystore
-keys/*.p12
-keys/android-keystore.txt
-mobile/android/keystore.properties
-# throwaway Electron profiles for driving the app in a test.
-# Chromium keeps them locked after exit, so they cannot always be removed.
-tmp-*/

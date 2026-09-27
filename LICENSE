@@ -58,9 +58,18 @@ PRIVACY, STORAGE, AND YOUR RESPONSIBILITY
 
 The Software stores vault content locally on devices under your control. It does
 not upload, host, collect, analyse, moderate, back up, or provide the copyright
-holder access to that content. An optional transfer initiated by the user sends
-an encrypted copy directly between devices on the user's local network and does
-not pass through the copyright holder or a third-party service.
+holder access to that content. An optional transfer or paired-device sync
+initiated by the user sends an encrypted copy directly between devices on the
+user's local network and does not pass through the copyright holder or a
+third-party service.
+
+Optional AI features send content only to a third-party provider that you
+configure with your own account and key (currently OpenRouter, OpenAI, or xAI),
+and only as part of an action you take: sending or regenerating a chat reply
+(which can also run memory summaries or optional story features you enabled),
+or requesting speech or an image. That content (for example the assembled chat
+context, prompt, or selected reference pictures) is then handled under that provider's terms and privacy
+policy, not by the copyright holder. Provider charges are your responsibility.
 
 Because the copyright holder does not possess your vault, password, encryption
 key, or backup, the copyright holder cannot retrieve lost content, recover a

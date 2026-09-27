@@ -1,8 +1,17 @@
-# Rolecraft Vault — Web Edition
+# Rolecraft — Web Edition
 
 A private, client-side library for roleplay characters, personas, lorebooks
 and prompts. Everything runs in the visitor's browser: there is no backend,
 no network calls, and no data ever leaves the device.
+
+This folder is also the interface payload of the Android app. Features that
+need a native bridge (AI chat and image providers, paired device sync,
+biometric unlock, public exports) are only available inside the Windows and
+Android apps; in a plain browser they stay unavailable rather than falling
+back to network calls from the page.
+
+Hosting or embedding this edition on a site is redistribution under the
+[licence](../LICENSE) and needs the copyright holder's written permission.
 
 ## What's in this folder
 
@@ -11,6 +20,9 @@ no network calls, and no data ever leaves the device.
     js/react(.dom).production.min.js React 18 UMD
     js/rolecraft-web-platform.js     storage + encryption layer (IndexedDB + WebCrypto)
     js/rolecraft-app.web.js          the vault UI (exposes window.RolecraftVaultMount)
+    js/rolecraft-chat.js, js/chat-*  Chat interface and its pure helpers
+    js/vault-sync*.js, private-sync  device-sync engine (idle without a native bridge)
+    vendor/                          QR encoder/decoder and crest artwork
 
 ## Option A — host it as a page (simplest)
 
@@ -21,8 +33,9 @@ in an <iframe>. `index.html` works as-is; everything is relative paths.
 
 ## Option B — embed into an existing page
 
-Load the four scripts IN ORDER (platform before app) plus fonts.css, then
-mount into any container. The UI is a full-height flex layout, so give the
+Load the scripts IN THE ORDER `index.html` uses (platform before app, app
+before Chat) plus fonts.css, then mount into any container. The snippet below
+shows the minimal library-only set. The UI is a full-height flex layout, so give the
 container a real height.
 
     <link rel="stylesheet" href="/vault/fonts.css">
@@ -71,4 +84,4 @@ the bundle uses the globals `React` and `ReactDOM`.
 Evergreen Chrome/Edge/Firefox/Safari. Responsive from phones up to 4K
 (the same breakpoints as the desktop app). Light/dark theme built in.
 
-Provided as-is by the vault's owner for integration on their behalf.
+Provided as-is under the repository [licence](../LICENSE).
