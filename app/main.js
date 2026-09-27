@@ -39,12 +39,30 @@ let activeRestore = null;
 const ITER = 210000;
 const kdf = (secret, salt) => crypto.pbkdf2Sync(secret, salt, ITER, 32, "sha256");
 
+/* isLocked() runs on every vault read/write, every sync fingerprint and every
+   provider guard, so re-reading security.json from disk each time was a
+   synchronous read and parse on the main thread per picture. Only this
+   process writes the file (single-instance lock), always through
+   saveSecurity, so the text can be remembered per path. Callers still get a
+   freshly parsed object they may mutate before saving. */
+let securityCache = null; // { file, text } ; text null when absent/unreadable
+function securityText() {
+  if (securityCache && securityCache.file === securityFile) return securityCache.text;
+  let text = null;
+  try { text = fs.readFileSync(securityFile, "utf8"); } catch (e) { text = null; }
+  securityCache = { file: securityFile, text };
+  return text;
+}
 function loadSecurity() {
-  try { return JSON.parse(fs.readFileSync(securityFile, "utf8")); } catch { return null; }
+  const text = securityText();
+  if (text === null) return null;
+  try { return JSON.parse(text); } catch { return null; }
 }
 function saveSecurity(s) {
+  securityCache = null; // a failed write must re-read the disk next time
   if (s) writeFileAtomic(securityFile, JSON.stringify(s));
   else if (fs.existsSync(securityFile)) fs.unlinkSync(securityFile);
+  securityCache = null;
 }
 /* ---------- signed update system ----------
    Updates swap the renderer bundle (app.js) only. Packages are .rcvup JSON files
@@ -1617,7 +1635,12 @@ async function receiveTransfer(code, mirror, preview, onProgress) {
   return Object.assign({ ok: true, added, updated, removed, unchanged, bytes }, who);
 }
 
-const passwordSet = () => !!loadSecurity();
+let passwordSetCache = null; // { text, set } for the last security text seen
+const passwordSet = () => {
+  const text = securityText();
+  if (!passwordSetCache || passwordSetCache.text !== text) passwordSetCache = { text, set: !!loadSecurity() };
+  return passwordSetCache.set;
+};
 const isLocked = () => passwordSet() && !masterKey;
 
 /* AES-256-GCM wrap/unwrap */
