@@ -9,9 +9,10 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # 8.5.0 reintroduces the xcode/uuid advisory chain removed in 1.245.
+      # 8.5.0 and 8.5.1 reintroduce the xcode/uuid chain removed in 1.245.
+      # 8.4.3 carries the maintained patch without that iOS-only dependency.
       - dependency-name: "@capacitor/cli"
-        versions: ["8.5.0"]
+        versions: ["8.5.0", "8.5.1"]
   - package-ecosystem: gradle
     directory: /mobile/android
     schedule:
