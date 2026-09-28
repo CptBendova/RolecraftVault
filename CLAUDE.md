@@ -1546,15 +1546,20 @@ Add a `CHANGELOG` entry in `app/app.js` for anything users would notice, written
 for a user rather than a developer. Entries before 1.092 are reconstructed from the
 code, not a real record — the UI says so, and that label should stay.
 
-Settings > Version history keeps only the current decade of releases (for 1.337,
-1.330 onwards) as individual entries; every older decade is one entry headed
-`1.320–1.329` whose notes start with the version they shipped in. This took the
-window from 246 entries to 33 in September 2026. After `set-version` crosses into
-a new decade, run `npm run fold-changelog` (idempotent, and it refuses to write
-if any note would change) and then `npm run build:web`. `CHANGELOG[0]` must stay
-the current release on its own, because "What's new" shows exactly that entry.
-Headings are plain versions: no "(private …)" or build-type labels.
-`test-changelog-folding.js` enforces all of this.
+Settings > Version history reads like game patch notes (rewritten September
+2026: 246 long entries became 33 short ones). Each release has a `heading`
+(the plain version, no "(private …)" labels), a short `title` such as "Faster
+Saves", and one to ten `notes`, each at most 140 characters and starting with
+its kind: `New: `, `Improved: `, `Fixed: ` or `Note: ` (install instructions).
+`releaseSections` groups them under those headings in both Version history and
+"What's new", which shows exactly `CHANGELOG[0]`, so that entry must be the
+current release on its own. Only the current decade (1.330 onwards for 1.337)
+stays release by release; each older decade is one "1.320–1.329" highlights
+entry. After `set-version` crosses into a new decade, run
+`npm run fold-changelog` (idempotent; it merges the finished decade's New,
+Improved and Fixed notes into one "Highlights" entry and drops its install
+notes), trim that entry to its best ten and give it a name, then
+`npm run build:web`. `test-changelog-folding.js` enforces all of this.
 
 ## Settings opens two windows of its own
 
