@@ -26,7 +26,7 @@ jobs:
 
   android-web:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile
@@ -40,3 +40,11 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run build
+      - name: Compile the native Android app
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          npm run sync
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleDebug --no-daemon

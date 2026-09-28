@@ -45,12 +45,30 @@ const finish = code => {
 const bail = setTimeout(() => { console.log("\n  timed out"); finish(2); }, 120000);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+async function waitForReady(win) {
+  // reload() returns immediately. Wait for actual controls after asynchronous
+  // vault startup instead of racing a fixed delay on slower CI machines.
+  await win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const deadline = Date.now() + 15000;
+    const probe = () => {
+      const labels = [...document.querySelectorAll("button")]
+        .map(b => (b.getAttribute("aria-label") || b.textContent || "").trim());
+      if (labels.some(s => /^Theme ·/.test(s)) && labels.includes("Settings")) return resolve();
+      if (Date.now() >= deadline) return reject(new Error("UI mode test: vault controls did not become ready"));
+      setTimeout(probe, 50);
+    };
+    probe();
+  })`);
+}
+
 async function setStored(win, theme, mode) {
   await win.webContents.executeJavaScript(
     `localStorage.setItem("rcv-theme", ${JSON.stringify(theme)});` +
     `localStorage.setItem("rcv-perfmode", ${JSON.stringify(mode)});`);
-  await win.webContents.reload();
-  await wait(1800);
+  const loaded = new Promise(resolve => win.webContents.once("did-finish-load", resolve));
+  win.webContents.reload();
+  await loaded;
+  await waitForReady(win);
 }
 
 const qualityProbe = `(async () => {
@@ -139,7 +157,7 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 360, height: 780,
     webPreferences: { preload, contextIsolation: false, backgroundThrottling: false } });
   await win.loadFile(path.join(ROOT, "web", "index.html"));
-  await wait(1500);
+  await waitForReady(win);
   /* Hosted Windows runners may inherit reduced motion from their virtual
      desktop. Quality-mode expectations need an explicit normal-motion baseline;
      the final section separately verifies the reduced-motion branch. */
