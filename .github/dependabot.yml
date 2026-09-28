@@ -9,10 +9,11 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # 8.5.0 and 8.5.1 reintroduce the xcode/uuid chain removed in 1.245.
+      # Every 8.5.x release so far (8.5.0 to 8.5.2) reintroduces the xcode/uuid
+      # chain removed in 1.245, and test-release-engineering.js rejects it.
       # 8.4.3 carries the maintained patch without that iOS-only dependency.
       - dependency-name: "@capacitor/cli"
-        versions: ["8.5.0", "8.5.1"]
+        versions: ["8.5.x"]
   - package-ecosystem: gradle
     directory: /mobile/android
     schedule:
