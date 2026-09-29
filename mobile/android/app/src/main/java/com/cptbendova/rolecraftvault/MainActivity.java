@@ -49,6 +49,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenRouterPlugin.class);
         registerPlugin(ImageGenerationPlugin.class);
         registerPlugin(ProviderBalancesPlugin.class);
+        registerPlugin(ElevenLabsPlugin.class);
         registerPlugin(ChatLinkPlugin.class);
         SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);

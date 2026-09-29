@@ -18,6 +18,7 @@ const parseTargets = [
    "app/app.js",
   "app/openrouter.js",
   "app/image-generation.js",
+  "app/elevenlabs.js",
   "app/provider-balances.js", "app/provider-balances-ui.js", "web/js/provider-balances-ui.js",
   "app/credential-share.js",
   "app/chat-migration.js",

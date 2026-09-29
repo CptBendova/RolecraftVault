@@ -1004,3 +1004,8 @@
 #rcv-chat-root .rcchat-conflict-actions{justify-content:flex-start}
 #rcv-chat-root .rcchat-conflict-confirm{margin-top:12px}
 @media(max-width:760px){#rcv-chat-root .rcchat-conflict-compare{grid-template-columns:minmax(0,1fr)}#rcv-chat-root .rcchat-conflict-card{padding:11px}#rcv-chat-root .rcchat-conflict-actions>.rcchat-btn{flex:1 1 100%}}
+/* 1.339 ElevenLabs voice settings */
+#rcv-chat-root .rcchat-check{display:flex;gap:10px;align-items:flex-start;min-height:44px;margin:10px 0;cursor:pointer}
+#rcv-chat-root .rcchat-check input{flex:none;width:20px;height:20px;margin:2px 0 0;accent-color:var(--brass)}
+#rcv-chat-root .rcchat-check small{display:block;margin-top:3px;color:var(--mut);font-size:12px;line-height:1.45}
+#rcv-chat-root .rcchat-check>span{font-size:14px;line-height:1.4}
