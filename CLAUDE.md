@@ -9,6 +9,23 @@ existing GitHub history, installed data identities, encrypted user data and
 release signing identities intact. Public source and release artifacts must be
 reviewed so local vaults, exports, credentials and signing material stay local.
 
+## Character page and gallery grid polish (1.341)
+
+Owner request: make the character page and gallery grid modern and easy to use.
+Gallery tiles (`.cpage-aside .tile`, `.imggrid .tile`) keep object-fit: contain
+(whole pictures; cropping portrait art was a regression in 1.234 and
+test-grid-view requires it) but now sit in a visible `--panel` frame, so mixed
+shapes read as an even grid. Grid captions are a solid dark strip, not a fade
+(the fade smudged over Light's pale frame). CloseX's icon is always light on its
+fixed dark scrim. Character facts render as a `dl.cpage-facts` of labelled cards;
+`.cpage-actions` becomes a two-column grid on phones.
+
+On phones the grid toolbar filled the first screen. Without a selection, CSS
+hides the selection-only controls (they stay in the DOM with their disabled
+rules; tests read them) and makes the variant/album filter rows single
+swipeable rows. `.has-selection` on the grid view restores them, and floats the
+bulk actions above the bottom navigation because the phone header scrolls away.
+
 ## Unstuck sync overlay and longer Gemini voices (1.340)
 
 1.338's quiet deferral exposed an old gap: a pass interrupted mid-apply (epoch
