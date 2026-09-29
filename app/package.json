@@ -1,7 +1,7 @@
 {
   "name": "rolecraft-vault-chat",
   "productName": "Rolecraft",
-  "version": "1.337",
+  "version": "1.338",
   "description": "An offline-first roleplay library with private, opt-in AI chat.",
   "main": "main.js"
 }

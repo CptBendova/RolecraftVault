@@ -12,6 +12,9 @@
   var DraftHandoffController = window.RolecraftChatDraftHandoffController;
   var Ledger = window.RolecraftChatStoryLedger;
   var MAX_PARTICIPANTS = 8;
+  // 1.338: last keystroke in the composer. Device sync postpones reading and
+  // publishing the Chat table while this is recent or a reply is streaming.
+  var lastChatInputAt = 0;
   function participantKey(participant) { return JSON.stringify([participant.characterId, participant.variantId || ""]); }
   function participantsOf(chat) { return Array.isArray(chat.participants) ? chat.participants : chat.characterId ? [{ characterId: chat.characterId, variantId: chat.variantId || "" }] : []; }
   function selectedParticipant(chat) { var rows = participantsOf(chat); return rows.find(function (p) { return participantKey(p) === chat.activeSpeakerKey; }) || rows[0] || null; }
@@ -1255,12 +1258,13 @@
     var pendingSaves = useRef(0), deviceSyncReload = useRef(null), scrollSize = useRef({ width: 0, height: 0 }), readingAnchor = useRef(null), searchJump = useRef(null);
     var composerRef = useRef(null), draftTimer = useRef(null);
     function setDraft(value) { clearTimeout(draftTimer.current); setDraftState(value); setDraftVersion(function (n) { return n + 1; }); if (composerRef.current) composerRef.current.setValue(value); }
-    function noteDraft(value) { draftRef.current[activeId] = value; clearTimeout(draftTimer.current); draftTimer.current = setTimeout(function () { setDraftState(value); setDraftVersion(function (n) { return n + 1; }); }, 600); }
+    function noteDraft(value) { lastChatInputAt = Date.now(); draftRef.current[activeId] = value; clearTimeout(draftTimer.current); draftTimer.current = setTimeout(function () { setDraftState(value); setDraftVersion(function (n) { return n + 1; }); }, 600); }
     useEffect(function () { return function () { clearTimeout(draftTimer.current); }; }, []);
     deviceSyncReload.current = function () { return load(true); };
     // An open options or read-only modal is not an edit. The actual save queue,
     // streaming reply and editor guards below protect incoming sync commits.
     window.RolecraftChatSyncIdle = function () { return ready && !busyRef.current && !saveFailed.current && !linkBusy.current && !pendingSaves.current && !edit; };
+    window.RolecraftChatSyncQuiet = function () { return busyRef.current || Date.now() - lastChatInputAt < 1500; };
     window.RolecraftChatReloadStories = async function () {
       if (!ready || busyRef.current || saveFailed.current || linkBusy.current || pendingSaves.current || edit) throw new Error("Chat changed during sync. Retrying the conversation refresh after the current edit finishes.");
       var session = epoch.current;
@@ -1755,7 +1759,7 @@
         window.RolecraftChatSyncApplying = state.phase === "applying";
         setDeviceSyncEnabled(enabled);
         setLaunchTarget(chatLauncherTarget());
-        var host = document.getElementById("rcv-chat-root"); if (host) host.inert = state.phase === "applying";
+        var host = document.getElementById("rcv-chat-root"); if (host) host.inert = state.phase === "applying" && !window.RolecraftChatOpen;
         // The remembered one-phone link is paused while group sync is active,
         // not unpaired. Disabling group sync can resume it without another code.
         if (enabled && !wasEnabled && linkNative) linkNative.pause().catch(function () {});
@@ -1766,7 +1770,7 @@
         if (enabled) setLinkStatus(String(state.message || "Checking remembered devices").replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, ""));
       }
       window.addEventListener("rcv-device-sync-status", status);
-      return function () { window.removeEventListener("rcv-device-sync-status", status); delete window.RolecraftChatSyncIdle; delete window.RolecraftChatReloadAfterSync; delete window.RolecraftChatReloadStories; };
+      return function () { window.removeEventListener("rcv-device-sync-status", status); delete window.RolecraftChatSyncIdle; delete window.RolecraftChatSyncQuiet; delete window.RolecraftChatReloadAfterSync; delete window.RolecraftChatReloadStories; };
     }, []);
     useEffect(function () {
       if (!ready) return;
@@ -1973,7 +1977,7 @@
       reloadDraftHandoffs();
       return function () { if (window.RolecraftDraftHandoffReload === reloadDraftHandoffs) delete window.RolecraftDraftHandoffReload; };
     }, [ready, draftHandoffController, draftHandoffOpen]);
-    useEffect(function () { function peers(event) { setDraftHandoffPeers(event && event.detail && Array.isArray(event.detail.peers) ? event.detail.peers : []); } window.addEventListener("rcv-device-sync-status", peers); return function () { window.removeEventListener("rcv-device-sync-status", peers); }; }, []);
+    useEffect(function () { function peers(event) { var next = event && event.detail && Array.isArray(event.detail.peers) ? event.detail.peers : []; setDraftHandoffPeers(function (previous) { try { return JSON.stringify(previous) === JSON.stringify(next) ? previous : next; } catch (_) { return next; } }); } window.addEventListener("rcv-device-sync-status", peers); return function () { window.removeEventListener("rcv-device-sync-status", peers); }; }, []);
     useEffect(function () { if (!ready) { setDraftHandoffOpen(false); setDraftHandoffLane({ format: 1, offers: [], receipts: [] }); setDraftHandoffPeers([]); setDraftHandoffRecovery(""); } }, [ready]);
     useEffect(function () { setFactMessage(null); setHandoff(null); }, [activeId]);
     useEffect(function () { function received(event) { var detail = event && event.detail; if (detail && (detail.active || detail.changes && detail.changes.length)) setHandoff(detail); } window.addEventListener("rcv-chat-handoff", received); return function () { window.removeEventListener("rcv-chat-handoff", received); }; }, []);
@@ -2605,10 +2609,16 @@ scene && active && h(ScenePanel, { active: active, cast: activeCast, character: 
   function chatTitle(chat) {
     return String(chat.title || "").replace(/\s*\(memory rebuilt\)/gi, "").trim() || "Untitled story";
   }
+  // Message arrays are immutable, so their latest real turn time is cached.
+  var lastMessageTimes = typeof WeakMap === "function" ? new WeakMap() : null;
   function lastChatAt(chat) {
     function valid(time) { return typeof time === "number" && Number.isFinite(time) && time > 0 && time <= 8640000000000000; }
-    var latest = 0;
-    (chat.messages || []).forEach(function (m) { if (m && !m.pending && typeof m.content === "string" && m.content.trim() && valid(m.createdAt)) latest = Math.max(latest, m.createdAt); });
+    var messages = Array.isArray(chat.messages) ? chat.messages : [], latest = lastMessageTimes && lastMessageTimes.get(messages);
+    if (latest === undefined) {
+      latest = 0;
+      messages.forEach(function (m) { if (m && !m.pending && typeof m.content === "string" && /\S/.test(m.content) && valid(m.createdAt)) latest = Math.max(latest, m.createdAt); });
+      if (lastMessageTimes) lastMessageTimes.set(messages, latest);
+    }
     return latest || (valid(chat.createdAt) ? chat.createdAt : valid(chat.updatedAt) ? chat.updatedAt : 0);
   }
   function lastChatLabel(chat) {

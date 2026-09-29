@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.337";
+const APP_VERSION = "1.338";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,10 @@ const APP_VERSION = "1.337";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.338",
+  title: "Sync On Your Terms",
+  notes: ["New: Devices sync only when you tap Sync now. For automatic sync, turn off \"Refresh only when I choose\" in Settings > Sync.", "New: A Sync now button sits at the top of the library whenever sync is waiting for you.", "Fixed: The \"Saving verified synced changes\" screen no longer appears over and over.", "Fixed: Chats arriving from another device no longer cover the library or close your keyboard.", "Improved: Chat no longer does sync work while you type or a reply is streaming.", "Improved: Automatic sync checks less often when nothing has changed.", "Note: Windows needs the full installer and Android the new APK for this update."]
+}, {
   heading: "1.337",
   title: "Faster Saves",
   notes: ["Improved: Saving a turn in a long story is much faster.", "Improved: Replies stream more smoothly on Windows while a chat saves.", "Improved: Version history now reads like patch notes, with older releases grouped by decade.", "Note: Windows needs the full installer for this update. Install over your current app."]
@@ -14968,6 +14972,10 @@ function RolecraftVault() {
       namespace: window.RolecraftSyncNamespace || "library1",
       previousNamespace: window.RolecraftPreviousSyncNamespace,
       ready: () => !!document.querySelector('.rcv[data-rcv-state="ready"]'),
+      // 1.338: sync runs when the user chooses Sync now, unless this device has
+      // explicitly switched automatic sync back on in Settings.
+      defaultManual: true,
+      storiesQuiet: () => !!window.RolecraftChatSyncQuiet && window.RolecraftChatSyncQuiet(),
       canApply: () => (!window.RolecraftChatSyncIdle || window.RolecraftChatSyncIdle()) && !pendingVaultWrites && !backupExportBusy.current && !backupRestoreBusy.current && !document.activeElement?.matches("input, textarea, [contenteditable=true]") && document.querySelectorAll(".modal-back:not(.sync-saving)").length <= (document.querySelector(".vault-sync-panel") ? 1 : 0),
       canApplyStories: () => !!window.RolecraftChatSyncIdle && window.RolecraftChatSyncIdle() && !pendingVaultWrites && !backupExportBusy.current && !backupRestoreBusy.current,
       onStoriesApplied: () => window.RolecraftChatReloadStories ? window.RolecraftChatReloadStories() : Promise.resolve(),
@@ -17927,7 +17935,7 @@ function RolecraftVault() {
       height: "100vh",
       padding: "30px 34px 70px"
     }
-  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onDetails:()=>{window.__rcvSettingsSection="sync";setShowSettings(true);}}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
+  }, !sheetOpen && !overlayOpen && window.RolecraftSyncProgress && React.createElement(window.RolecraftSyncProgress, {status:vaultSyncStatus,onSync:()=>vaultSyncRef.current && vaultSyncRef.current.retry(),onDetails:()=>{window.__rcvSettingsSection="sync";setShowSettings(true);}}), view === "dashboard" && !sheetOpen && !overlayOpen && (() => {
     const rng = mulberry32(dashSeed);
     const withProfile = chars.filter(c => c.profileImg);
     const spotlight = withProfile.length ? withProfile[Math.floor(rng() * withProfile.length)] : null;
@@ -21455,7 +21463,7 @@ function RolecraftVault() {
       if (e.target.files[0]) handleJsonImportFile(e.target.files[0]);
       e.target.value = "";
     }
-  }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
+  }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && !vaultSyncStatus.chatOnly && !vaultSyncStatus.reloadOnly && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
     className: "modal-back", style: { zIndex: 125 }
   }, React.createElement("div", {
     className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",

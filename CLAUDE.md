@@ -9,6 +9,41 @@ existing GitHub history, installed data identities, encrypted user data and
 release signing identities intact. Public source and release artifacts must be
 reviewed so local vaults, exports, credentials and signing material stay local.
 
+## Sync on demand by default (1.338)
+
+Owner request (28 September 2026): sync must run only when the user asks and
+must never interrupt Chat or the library. The app passes `defaultManual: true`
+to the engine: a device with no saved `ui:sync-manual-refresh` is on demand;
+an explicit "0" (automatic) or "1" is always respected. On-demand devices still
+passively publish their own saved chats (1.319) but never poll peers, import,
+reload or show the overlay until Sync now (library pill, Settings > Sync, or
+Chat's Refresh paired chats). Library edits reach peers on that device's own
+Sync now pass. An automatic peer of an on-demand device settles on "waiting to
+confirm", not Up to date, because the partner confirms only when asked.
+
+Interruption sources removed, keep them removed:
+- The full-screen "Saving verified synced changes" overlay shows only for
+  `applying` reports that write library records. Chat-only writes (`chatOnly`)
+  and redraw-only retries of an already committed reload (`reloadOnly`) never
+  show it. Every `applying` report sets both flags explicitly, because
+  `report()` merges the previous status and would otherwise inherit them.
+- Chats arriving through the library lane (only `chats:all` + `sync:state`
+  written) reload Chat via `onStoriesApplied`, not the whole library; a failed
+  one sets `storiesNeedReload`, which the full lane now also retries.
+- A refused UI reload retries with exponential back-off (to 60 s) instead of
+  every pass. Clock-only story merges do not report `applying`.
+- `#rcv-chat-root` is never made `inert` while Chat is open: Chromium moves
+  focus out of an inert subtree, closing the Android keyboard on every apply.
+- `report()` drops notifications identical to the current status (lastSynced
+  alone refreshes at most every 30 s); background rechecks from a settled phase
+  do not flash Checking. Each notification re-renders the whole library and Chat.
+- Unchanged polls back off to 4x the interval; wakes, local saves and Sync now
+  reset it. `storiesQuiet` (`window.RolecraftChatSyncQuiet`: streaming or a
+  keystroke in the last 1.5 s) postpones unrequested Chat-lane passes.
+- `lastChatAt` caches per immutable messages array; the story list re-renders
+  with every stream paint. Identical draft-handoff peer lists keep their state.
+`test-sync-on-demand.js` covers these over the real encrypted transport.
+
 ## OpenRouter latest-model aliases (private 1.336)
 
 OpenRouter lists latest-family aliases such as `~deepseek/deepseek-pro-latest`
