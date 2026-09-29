@@ -33,5 +33,10 @@ assert.equal(typeof make, "function");
   assert.throws(() => make({ ...result, mime: "audio/mpeg" }), /invalid voice audio/);
   assert.throws(() => make({ ...result, sampleRate: 16000 }), /unsupported PCM/);
   assert.throws(() => make({ ...result, audio: Buffer.alloc(17).toString("base64") }), /unsupported PCM/);
+  // 1.340: a long reply's PCM (10 MiB, about 3.6 minutes) still plays.
+  const longPcm = Buffer.alloc(10 * 1024 * 1024, 2);
+  const longBlob = make({ ...result, audio: longPcm.toString("base64") });
+  assert.equal(longBlob.size, 44 + longPcm.length);
+  assert.throws(() => make({ ...result, audio: Buffer.alloc(24 * 1024 * 1024 + 2).toString("base64") }), /invalid voice audio/);
   console.log("PASS Gemini raw PCM is wrapped as 24 kHz mono WAV and existing WAV is preserved");
 })().catch(error => { console.error(error); process.exitCode = 1; });

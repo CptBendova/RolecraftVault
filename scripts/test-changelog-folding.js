@@ -65,9 +65,12 @@ const next = "1." + String(keepFrom + 10).padStart(3, "0");
 const future = [{ heading: next, title: "Next", notes: ["New: A future release."] }].concat(CHANGELOG);
 const folded = fold(future, next);
 assert.strictEqual(folded[0].heading, next);
-assert.strictEqual(folded.filter(e => SINGLE.test(e.heading)).length, 1, "only the new decade stays individual");
+// The first release of a decade (1.340) folds alone, so its summary keeps a
+// single-version heading; it is still the one Highlights entry.
+const finished = CHANGELOG.filter(e => SINGLE.test(e.heading));
+assert.strictEqual(folded.filter(e => SINGLE.test(e.heading) && e.title !== "Highlights").length, 1, "only the new decade stays individual");
 const summary = folded[1];
-assert(RANGE.test(summary.heading) && summary.title === "Highlights", "the finished decade becomes one Highlights entry: " + summary.heading);
+assert((RANGE.test(summary.heading) || finished.length === 1 && summary.heading === finished[0].heading) && summary.title === "Highlights", "the finished decade becomes one Highlights entry: " + summary.heading);
 const carried = CHANGELOG.filter(e => SINGLE.test(e.heading)).flatMap(e => e.notes).filter(n => kindOf(n) !== "Note");
 assert(carried.every(n => summary.notes.includes(n)), "every New, Improved and Fixed note is carried into the summary");
 assert(summary.notes.every(n => kindOf(n) !== "Note"), "install notes are not carried into a decade summary");

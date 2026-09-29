@@ -173,7 +173,8 @@ public class OpenRouterPlugin extends Plugin {
                         byte[] buffer = new byte[8192]; int count;
                         while ((count = stream.read(buffer)) != -1) {
                             requireForeground(run);
-                            if (audio.size() + count > 8 * 1024 * 1024) throw new IllegalStateException("Voice response is too large");
+                            // 24 kHz 16-bit mono PCM: 24 MiB is about 4m20s, enough for a 4,000-character reply (1.340).
+                            if (audio.size() + count > 24 * 1024 * 1024) throw new IllegalStateException("This reply is longer than about four minutes of Gemini audio. Voice a shorter reply, or give this character an ElevenLabs voice.");
                             audio.write(buffer, 0, count);
                         }
                     }

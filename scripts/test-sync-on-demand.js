@@ -28,7 +28,7 @@ function make(name,{manualPreference=null,defaultManual=true}={}){
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../app/vault-sync-core.js"),"utf8"),ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../app/vault-sync.js"),"utf8"),ctx);
   window.RolecraftChatSync=require("../app/chat-sync-core");vm.runInContext(fs.readFileSync(path.join(__dirname,"../app/private-sync.js"),"utf8"),ctx);
-  const reload=async()=>{node.reloadAttempts++;if(node.refuseReload)throw Error("Chat is busy. Retrying the conversation refresh after the current edit finishes.");};
+  const reload=async()=>{node.reloadAttempts++;if(node.hold)await node.hold.promise;if(node.refuseReload)throw Error("Chat is busy. Retrying the conversation refresh after the current edit finishes.");};
   node.engine=window.RolecraftVaultSync.create({storage,namespace,intervalMs:100,defaultManual,ready:()=>true,canApply:()=>true,canApplyStories:()=>true,storiesQuiet:()=>node.quiet,
     imageIds:()=>[],onApplied:async()=>{node.applied++;await reload();},onStoriesApplied:async()=>{node.storiesApplied++;await reload();}});
   node.engine.subscribe(s=>{node.status=s;node.statuses.push(s);if(s.phase==="preview")node.engine.approve(s.preview.id);});
@@ -97,5 +97,18 @@ function addTurn(n,chatId,id,text){const rows=chats(n),c=rows.find(r=>r.id===cha
   const resumed=tablet.reloadAttempts;
   await until(()=>tablet.reloadAttempts>resumed&&tablet.status.phase!=="error","reload succeeds once Chat allows it",20000);
   console.log("PASS a refused reload is retried quietly with back-off until Chat is ready");
+
+  // 1.340: a library write interrupted mid-apply (Chat opened, user typing)
+  // must not leave the blocking "Saving verified synced changes" overlay up.
+  let release;tablet.hold={promise:new Promise(resolve=>release=resolve)};
+  const lore=JSON.parse(phone.data.get("lore:all"));lore.find(r=>r.id==="phone").content="Edited on the phone";phone.data.set("lore:all",JSON.stringify(lore));
+  phone.engine.retry();
+  await until(()=>overlay(tablet.status),"tablet shows the saving overlay while it writes library records");
+  tablet.quiet=true;tablet.engine.setWorkspacePaused(true);tablet.hold=null;release();
+  await pause(1500);
+  assert(!overlay(tablet.status),"an interrupted pass must clear the saving overlay: "+JSON.stringify({phase:tablet.status.phase,message:tablet.status.message}));
+  tablet.quiet=false;tablet.engine.setWorkspacePaused(false);
+  await until(()=>JSON.parse(tablet.data.get("lore:all")).some(r=>r.content==="Edited on the phone"),"the edit is kept");
+  console.log("PASS an interrupted library write never leaves the saving overlay stuck");
   process.exitCode=0;
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{for(const n of nodes){n.engine.stop();n.transport.pause();}fs.rmSync(root,{recursive:true,force:true});});

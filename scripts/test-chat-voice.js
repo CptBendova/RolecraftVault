@@ -29,7 +29,7 @@ async function main() {
         response.emit("end");
       });
     };
-    request.destroy = () => request.emit("error", Error("cancelled"));
+    request.destroy = error => request.emit("error", error || Error("cancelled"));
     return request;
   };
   try {
@@ -74,7 +74,19 @@ async function main() {
     assert.equal((await speech(null, { text: "Bad audio", voice: "Kore" })).ok, false);
     responseType = "audio/wav"; responseData = Buffer.alloc(48, 1);
     assert.equal((await speech(null, { text: "Bad WAV", voice: "Kore" })).ok, false);
-    console.log("PASS OpenRouter speech uses saved key, fixed model and bounded audio");
+    // 1.340: a long reply's audio (over the old 8 MiB, about 3 minutes) must play;
+    // only audio beyond about 4m20s is refused, with a plain explanation.
+    responseType = "audio/pcm"; responseData = Buffer.alloc(10 * 1024 * 1024, 1);
+    const long = await speech(null, { text: "A long reply", voice: "Kore" });
+    assert.equal(long.ok, true, long.error);
+    assert.equal(Buffer.from(long.audio, "base64").length, 10 * 1024 * 1024);
+    responseData = Buffer.alloc(24 * 1024 * 1024 + 2, 1);
+    const tooLong = await speech(null, { text: "An even longer reply", voice: "Kore" });
+    assert.equal(tooLong.ok, false);
+    assert.match(tooLong.error, /longer than about four minutes of Gemini audio/);
+    const android = fs.readFileSync(path.join(__dirname, "..", "mobile/android/app/src/main/java/com/cptbendova/rolecraftvault/OpenRouterPlugin.java"), "utf8");
+    assert(/audio\.size\(\) \+ count > 24 \* 1024 \* 1024/.test(android), "Android uses the same 24 MiB voice limit");
+    console.log("PASS OpenRouter speech uses saved key, fixed model and bounded audio up to about 4m20s");
   } finally {
     https.request = original;
     fs.rmSync(profile, { recursive: true, force: true });

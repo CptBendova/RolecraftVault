@@ -1,6 +1,6 @@
 const {app,BrowserWindow}=require('electron'),fs=require('fs'),os=require('os'),path=require('path'),assert=require('assert');
 const root=path.join(__dirname,'..');app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'rcv-sync-progress-')));
-const wait=ms=>new Promise(r=>setTimeout(r,ms));setTimeout(()=>app.exit(2),45000);
+const wait=ms=>new Promise(r=>setTimeout(r,ms));setTimeout(()=>app.exit(2),90000);
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:true,width:360,height:800,webPreferences:{contextIsolation:false}});await win.loadFile(path.join(root,'web/index.html'));await wait(1000);
  await win.webContents.executeJavaScript(`(()=>{document.querySelector('#rolecraft-root').style.display='none';window.RolecraftVaultSync.create=()=>({supported:true,start(){},stop(){},retry(){window.__retried=(window.__retried||0)+1;},subscribe(fn){window.__syncStatus=fn;fn({phase:'preparing',message:'Checking saved pictures',settings:{enabled:true},done:20,total:100});return()=>{};}});const el=document.createElement('div');document.body.append(el);RolecraftVaultMount(el)})()`);await wait(800);
@@ -16,6 +16,12 @@ app.whenReady().then(async()=>{
  assert(await win.webContents.executeJavaScript(`!document.querySelector('.sync-saving')`),'redrawing already-saved records never covers the library');
  await win.webContents.executeJavaScript(`__syncStatus({phase:'applying',chatOnly:false,reloadOnly:false,manualRefresh:true,settings:{enabled:true}})`);await wait(100);
  assert(await win.webContents.executeJavaScript(`!!document.querySelector('.sync-saving')`),'writing library records still protects the screen');
+ // 1.340: the overlay can never freeze the app. With no new status for 20 s it
+ // becomes a small non-blocking banner, and any new status clears it.
+ await wait(21000);
+ assert(await win.webContents.executeJavaScript(`!document.querySelector('.sync-saving')&&!!document.querySelector('.sync-saving-banner')&&!document.querySelector('.modal-back')`),'a long-running save no longer blocks the app');
+ await win.webContents.executeJavaScript(`__syncStatus({phase:'manual',manualRefresh:true,settings:{enabled:true}})`);await wait(100);
+ assert(await win.webContents.executeJavaScript(`!document.querySelector('.sync-saving-banner')`),'the banner clears when sync moves on');
  await win.webContents.executeJavaScript(`__syncStatus({phase:'preparing',message:'Checking saved pictures',settings:{enabled:true},done:20,total:100})`);await wait(150);
  console.log('PASS on-demand Sync now pill fits phone and desktop; the saving overlay covers only library writes');
  await win.webContents.executeJavaScript(`document.querySelector('.sync-progress button').click()`);await wait(200);assert(await win.webContents.executeJavaScript(`!!document.querySelector('.modal-back')`),'Settings remains interactive during preparation');
