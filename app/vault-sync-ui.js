@@ -222,7 +222,7 @@
         h("button",{className:"btn btn-ghost",onClick:()=>setHiddenCode(liveCode)},"Done")),
       h("div",{className:"sync-options"},
         h("div",{className:"sync-subhead"},"Options"),
-        h("label",{className:"sync-toggle"},h("input",{type:"checkbox",checked:manual,disabled:working,onChange:e=>action(()=>engine.setManualRefresh(e.target.checked))}),h("span",null,"Refresh only when I choose",h("small",null,"This device stops checking the others automatically. Your saved chats stay available to them while Rolecraft is open and unlocked here. Set separately on each device."))),
+        h("label",{className:"sync-toggle"},h("input",{type:"checkbox",checked:manual,disabled:working,onChange:e=>action(()=>engine.setManualRefresh(e.target.checked))}),h("span",null,"Refresh only when I choose",h("small",null,"On by default. Nothing is fetched or reloaded until you choose Sync now, so sync never interrupts what you are doing. Chats you save here stay available to your other devices while Rolecraft is open and unlocked. Turn it off for automatic sync. Set separately on each device."))),
         host.RolecraftChatSync&&h(BackgroundSync),
         host.RolecraftChatSync&&h(KeySharePanel)),
       h(Troubleshoot,{paired:true}),
@@ -256,9 +256,16 @@
       errorLine);
   }
   const PILL={checking:"Syncing…",preparing:"Preparing sync…",receiving:"Syncing…",applying:"Syncing…",preview:"Review first sync",error:"Sync needs attention"};
-  function SyncProgress({status,onDetails}){
-    if(!status||!status.settings?.enabled||!PILL[status.phase])return null;
-    if(status.phase==="checking"&&status.initial===false)return null;
+  function SyncProgress({status,onDetails,onSync}){
+    if(!status||!status.settings?.enabled)return null;
+    // 1.338: on-demand devices keep one quiet Sync now control in place, so
+    // syncing is a single tap and the row never jumps in and out.
+    const idle=!PILL[status.phase]||status.phase==="checking"&&status.initial===false&&!status.manualRefresh;
+    if(status.manualRefresh&&idle&&onSync&&!["off","paused"].includes(status.phase))return h("div",{className:"sync-progress sync-progress-manual"},
+      h("button",{className:"btn btn-ghost",onClick:onSync,"aria-label":"Sync now with paired devices",title:cleanError(status.message)},
+        h("span",{className:"sync-dot sync-dot-"+(status.phase==="synced"?"good":"wait"),"aria-hidden":true}),h("span",null,"Sync now")));
+    if(!PILL[status.phase])return null;
+    if(status.phase==="checking"&&status.initial===false&&!status.manualRefresh)return null;
     const busy=!["preview","error"].includes(status.phase);
     return h("div",{className:"sync-progress"+(busy?"":" sync-progress-alert")},
       h("button",{className:"btn btn-ghost",onClick:onDetails,"aria-label":"Device sync details",title:cleanError(status.message)},

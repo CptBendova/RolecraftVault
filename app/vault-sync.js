@@ -12,6 +12,10 @@
     const pictureRepairs=new Set();
     let workspacePaused=false,pauseTask=Promise.resolve(),activityGeneration=0,storyPublication=null,storyLocal=null,storiesNeedReload=false,fullNeedReload=false,draftsNeedReload=false,maintenance=false,wakePending=false;
     let manualRefresh=false,manualModeLoaded=false,manualRequested=false,servingError=false;
+    // 1.338: quiet passes. idleStreak stretches the poll while nothing changes;
+    // quietDeferred postpones background work while Chat is typing/streaming;
+    // reloadFailures backs off a UI reload that keeps being refused.
+    let idleStreak=0,quietDeferred=false,reloadFailures=0;
     let nativeWakeOff=null,nativeWakePending=null,lastFullStoryDiscover=0;
     let localRead=null,localScan=null,publication=null,reconciliation=null;
     const storyRecords=new Map(),draftLane=C.draftHandoff||null;
@@ -40,7 +44,19 @@
       peerRetries.set(peer.id,retry);return {id:peer.id,label:retry.label,online:false,error:retry.error,retryAt:retry.at};
     }
     const listeners=new Set();
-    function report(phase,message,extra={},force=true){if(!force&&phase===current.phase&&Date.now()-lastPaint<750)return;lastPaint=Date.now();current={...current,...(phase!==current.phase?{done:null,total:null}:{}),...extra,phase,message,initial:firstCheck,manualRefresh};for(const fn of listeners)fn(current);}
+    // Every notification repaints the whole library and Chat. A routine recheck
+    // that changes nothing but the lastSynced time stays silent for 30 seconds.
+    const statusKey=s=>{try{return JSON.stringify({...s,lastSynced:null});}catch(_){return null;}};
+    function report(phase,message,extra={},force=true){
+      if(!force&&phase===current.phase&&Date.now()-lastPaint<750)return;
+      const next={...current,...(phase!==current.phase?{done:null,total:null}:{}),...extra,phase,message,initial:firstCheck,manualRefresh};
+      const same=statusKey(next),unchanged=same!==null&&same===statusKey(current);
+      if(unchanged&&(next.lastSynced===current.lastSynced||Date.now()-lastPaint<30000)){current={...next,lastSynced:current.lastSynced};return;}
+      lastPaint=Date.now();current=next;for(const fn of listeners)fn(current);
+    }
+    // Background rechecks keep the settled status instead of flashing Checking.
+    const settled=()=>["synced","waiting","manual","error","busy"].includes(current.phase);
+    const reloadStories=()=>options.onStoriesApplied?options.onStoriesApplied():options.onApplied();
     const get=async key=>{if(suspended())throw Error(pauseMessage);try{const r=await storage.get(key);return r?r.value:null;}catch(e){if(/not found/i.test(e.message))return null;throw e;}};
     const ready=()=>options.ready()&&!(host.Capacitor&&document.hidden&&!host.RolecraftSyncBackground?.active());
     const check=run=>{if(suspended())throw Error(pauseMessage);if(run!==epoch||stopped||!ready())throw Error("Sync paused. Open and unlock the app to resume.");};
@@ -343,8 +359,8 @@
     async function storyTick(run,localOnly=false){
       if(storiesNeedReload){
         if(!(options.canApplyStories||options.canApply)())return;
-        report("applying","Refreshing saved conversations…",{chatOnly:true});
-        if(options.onStoriesApplied)await options.onStoriesApplied();else await options.onApplied();
+        report("applying","Refreshing saved conversations…",{chatOnly:true,reloadOnly:true});
+        await reloadStories();
         check(run);storiesNeedReload=false;
       }
       // Reuse established library metadata; never read, fingerprint or prepare
@@ -416,11 +432,12 @@
         const chatUnchanged=text===raw||Object.entries(merged.snapshot.entries).every(([key,entry])=>entry.applied===snapshot.entries[key]?.applied);
         const mergedState=JSON.stringify({...nextState,snapshot:{format:1,entries:{...combined.entries,...merged.snapshot.entries}}});
         check(run);if(!(options.canApplyStories||options.canApply)())return;
-        report("applying","Updating conversations…",{peers,chatOnly:true});
+        // A clock-only merge changes bookkeeping, not anything on screen.
+        if(!chatUnchanged)report("applying","Updating conversations…",{peers,chatOnly:true,reloadOnly:false});
         await storage.syncCommit(chatUnchanged?{[STATE]:mergedState}:{"chats:all":text,[STATE]:mergedState},{"chats:all":raw,[STATE]:nextStateRaw});
         if(!chatUnchanged){
           storiesNeedReload=true;check(run);
-          if(options.onStoriesApplied)await options.onStoriesApplied();else await options.onApplied();
+          await reloadStories();
           check(run);storiesNeedReload=false;
         }else check(run);
         report("saved","Chats saved here. Waiting for paired devices to catch up.",{peers,chatOnly:true});
@@ -431,7 +448,7 @@
     }
     function wakeStories(){
       if(stopped||suspended()||manualRefresh||maintenance||!transport||!ready())return;
-      wakePending=true;
+      wakePending=true;idleStreak=0;
       if(busy)return;
       clearTimeout(timer);timer=setTimeout(tick,0);
     }
@@ -440,7 +457,7 @@
       if(!manualRefresh)return wakeStories();
       // A native peer wake remains ignored in manual mode, but a local saved
       // turn must be available when another device explicitly refreshes.
-      wakePending=true;
+      wakePending=true;idleStreak=0;
       if(busy)return;
       clearTimeout(timer);timer=setTimeout(tick,0);
     }
@@ -458,18 +475,32 @@
       }
     }
     async function tick(){
-      if(stopped||suspended()||busy||maintenance||!transport)return;busy=true;wakePending=false;const run=epoch,requested=manualRequested;manualRequested=false;
+      if(stopped||suspended()||busy||maintenance||!transport)return;busy=true;const woken=wakePending;wakePending=false;quietDeferred=false;const run=epoch,requested=manualRequested;manualRequested=false;
+      if(requested)idleStreak=0;
       try{
         if(!ready()){clearWorkCache();storyLocal=null;storyPublication=null;remoteCache.clear();peerRetries.clear();await transport.call("pause",{reason:options.ready()?"hidden":"locked"}).catch(()=>{});report("paused","Pairing is remembered. Open and unlock the app to resume.");return;}
-        if(!manualModeLoaded){manualRefresh=(await get("ui:sync-manual-refresh"))==="1";manualModeLoaded=true;}
+        // An explicit "1" or "0" is the user's choice; a device that never chose
+        // follows the app's default (on-demand since 1.338).
+        if(!manualModeLoaded){const mode=await get("ui:sync-manual-refresh");manualRefresh=mode==="1"||mode!=="0"&&options.defaultManual===true;manualModeLoaded=true;}
+        // Never read, hash or publish the Chat table in the middle of typing or
+        // a streaming reply. Nothing is lost: the pass runs a moment later.
+        if(!requested&&(storiesOnly()||manualRefresh)&&typeof options.storiesQuiet==="function"&&options.storiesQuiet()){quietDeferred=true;wakePending=woken;return;}
         settings=await call("status",{},run);
         if(settings.enabled&&options.previousNamespace&&settings.namespace===options.previousNamespace)settings=await call("upgradeNamespace",{from:options.previousNamespace,to:options.namespace||"library1"},run);
         if(peerRetryGroup!==settings.group){peerRetries.clear();storyRecords.clear();remoteCache.clear();peerRetryGroup=settings.group;}
         if(fullNeedReload){
           if(!options.canApply()){report("busy","Saved changes are waiting for this screen to finish editing before it reloads.",{settings});return;}
-          report("applying","Refreshing saved library and conversations…",{settings});
+          // The records are already saved; this only redraws them. Do not cover
+          // the app with the saving overlay on every retry (1.338).
+          report("applying","Refreshing saved library and conversations…",{settings,chatOnly:false,reloadOnly:true});
           await options.onApplied();check(run);fullNeedReload=false;
         }
+        if(storiesNeedReload&&!storiesOnly()){
+          if(!(options.canApplyStories||options.canApply)()){report("busy","Saved chats are waiting for Chat to finish before they reload.",{settings});return;}
+          report("applying","Refreshing saved conversations…",{settings,chatOnly:true,reloadOnly:true});
+          await reloadStories();check(run);storiesNeedReload=false;
+        }
+        reloadFailures=0;
         if(!settings.enabled){report("off","Choose the most up-to-date device as primary, or join its remembered group.",{settings,preview:null,peers:[]});return;}
         await reloadDraftHandoffs(run);
         if(manualRefresh&&!requested){
@@ -479,7 +510,7 @@
           report(warning?"waiting":"manual",warning||"Manual refresh is on. This device serves its published chats; choose Refresh now to fetch changes from peers.",{settings,preview:null,peers:[],chatOnly:!!storiesOnly()});
           return;
         }
-        report("checking",storiesOnly()?"Checking paired Chat devices…":"Checking for changes on this local network…",{settings,chatOnly:!!storiesOnly()});
+        if(requested||!settled())report("checking",storiesOnly()?"Checking paired Chat devices…":"Checking for changes on this local network…",{settings,chatOnly:!!storiesOnly()});
         if(storiesOnly()){await storyTick(run);return;}
         let local=await readLocal();check(run);
         let snapshot;
@@ -596,11 +627,14 @@
           for(const [key,text]of Object.entries(nextRaw))if(tables.has(key)&&text!==local.raw[key]&&(key!=="chats:all"||chatContentChanged)){values[key]=text;writing=true;}
           const nextStateRaw=JSON.stringify(nextState);if(nextStateRaw!==latest.stateRaw)values[STATE]=nextStateRaw;
           if(Object.keys(values).length){
-            if(writing){report("applying","Saving completed records. Remaining pictures will continue next…",{peers,preview:null});await sleep(50);check(run);if(!options.canApply())return false;}
+            // Chats saved on another device change nothing in the library. Chat
+            // reloads them read-only; the library is not covered or redrawn.
+            const chatsOnly=writing&&Object.keys(values).every(key=>key===STATE||key==="chats:all");
+            if(writing){report("applying",chatsOnly?"Updating conversations…":"Saving completed records. Remaining pictures will continue next…",{peers,preview:null,chatOnly:chatsOnly,reloadOnly:false});await sleep(50);check(run);if(!(chatsOnly?(options.canApplyStories||options.canApply):options.canApply)())return false;}
             await refreshPrimary(run);if(C.canonical(settings.primaryPreference||null)!==selection)throw Error("The chosen primary changed. Saved progress is safe; comparing again.");
-            await storage.syncCommit(values,{...local.raw,[STATE]:latest.stateRaw});if(writing)fullNeedReload=true;check(run);committed=true;
+            await storage.syncCommit(values,{...local.raw,[STATE]:latest.stateRaw});if(writing){if(chatsOnly)storiesNeedReload=true;else fullNeedReload=true;}check(run);committed=true;
             local={raw:{...local.raw,...Object.fromEntries(Object.entries(values).filter(([key])=>key!==STATE))},items,state:nextState,stateRaw:nextStateRaw};
-            if(writing){await options.onApplied();check(run);fullNeedReload=false;}
+            if(writing){if(chatsOnly){await reloadStories();check(run);storiesNeedReload=false;}else{await options.onApplied();check(run);fullNeedReload=false;}}
           }
           pending.length=0;lastCommit=Date.now();cacheDirty=false;
           return true;
@@ -638,8 +672,19 @@
           const online=peers.filter(p=>p.online),warning=peerWarning(peers,revision.omittedChats),synced=!warning&&online.length&&online.every(p=>p.revision===revision.library&&(!C.extension||p.extensionRevision===revision.extension));
           report(synced?"synced":warning?"waiting":"checking",warning|| (synced?"Up to date with "+online.length+" online device"+(online.length===1?"":"s")+".":"Exchanging changes with paired devices…"),{peers,preview:null,lastSynced:synced?Date.now():current.lastSynced});
         }
-      }catch(e){clearWorkCache();if(run===epoch){if(suspended())report("paused",pauseMessage);else{storyPublication=null;report("error",e.message+(manualRefresh?" Local changes are retained; choose Refresh now to try again.":" Local changes are retained; sync retries automatically."));}}}
-      finally{if(settings&&settings.enabled&&ready()&&!workspacePaused)firstCheck=false;busy=false;if(!stopped&&!suspended()&&!maintenance&&(!manualRefresh||manualRequested||wakePending||fullNeedReload||storiesNeedReload||draftsNeedReload)){clearTimeout(timer);timer=setTimeout(tick,run!==epoch||wakePending||manualRequested?0:options.intervalMs||(storiesOnly()?2000:5000));}}
+      }catch(e){clearWorkCache();if(fullNeedReload||storiesNeedReload)reloadFailures++;if(run===epoch){if(suspended())report("paused",pauseMessage);else{storyPublication=null;report("error",e.message+(manualRefresh?" Local changes are retained; choose Refresh now to try again.":" Local changes are retained; sync retries automatically."));}}}
+      finally{
+        if(settings&&settings.enabled&&ready()&&!workspacePaused)firstCheck=false;busy=false;
+        // Nothing changed: stretch the next background poll (up to 4x). Wakes,
+        // local saves and Sync now still run at once.
+        if(!quietDeferred)idleStreak=run===epoch&&["synced","waiting","manual"].includes(current.phase)?idleStreak+1:0;
+        const reloadPending=fullNeedReload||storiesNeedReload;
+        if(!stopped&&!suspended()&&!maintenance&&(!manualRefresh||manualRequested||wakePending||quietDeferred||reloadPending||draftsNeedReload)){
+          const base=options.intervalMs||(storiesOnly()?2000:5000);
+          const delay=run!==epoch||manualRequested?0:quietDeferred?Math.min(base,1000):wakePending?0:reloadPending&&reloadFailures?Math.min(60000,base*2**Math.min(reloadFailures,4)):base*Math.min(4,Math.max(1,idleStreak));
+          clearTimeout(timer);timer=setTimeout(tick,delay);
+        }
+      }
     }
     async function exclusive(fn){
       if(maintenance)throw Error("Another sync setting is being saved. Try again in a moment.");

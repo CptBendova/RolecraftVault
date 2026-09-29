@@ -45,11 +45,13 @@ vm.createContext(ctx);vm.runInContext(source("vault-sync-core.js"),ctx);vm.runIn
 for(const method of ["scan","validate","merge"]){const original=window.RolecraftSyncCore[method];window.RolecraftSyncCore[method]=async(...args)=>{stats[method]++;if(method==="scan")stats.scanRecords+=Object.keys(args[0]).length;if(method==="validate")stats.validateRecords+=Object.keys(args[0].entries).length;return original(...args);};}
 const canonical=window.RolecraftSyncCore.canonical;window.RolecraftSyncCore.canonical=value=>{const start=performance.now();stats.canonical++;try{return canonical(value);}finally{stats.canonicalMs+=performance.now()-start;}};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const nextPollMs=()=>Math.max(0,...[...timers.values()].filter(timer=>timer.ms>=100000).map(timer=>timer.ms));
 async function tick(label,first=false){
   reset();statuses.length=0;const start=performance.now();
-  if(first)engine.start();else{const scheduled=[...timers.entries()].find(([,timer])=>timer.ms===100000);assert(scheduled,"engine must schedule next poll");timers.delete(scheduled[0]);scheduled[1].fn();}
+  // 1.338 stretches an unchanged poll up to 4x the base interval.
+  if(first)engine.start();else{const scheduled=[...timers.entries()].find(([,timer])=>timer.ms>=100000);assert(scheduled,"engine must schedule next poll");timers.delete(scheduled[0]);scheduled[1].fn();}
   const deadline=Date.now()+15000;
-  while(![...timers.values()].some(timer=>timer.ms===100000)){if(Date.now()>deadline)throw Error("Timed out "+label+": "+JSON.stringify(statuses.slice(-3)));await pause(2);}
+  while(![...timers.values()].some(timer=>timer.ms>=100000)){if(Date.now()>deadline)throw Error("Timed out "+label+": "+JSON.stringify(statuses.slice(-3)));await pause(2);}
   const error=statuses.find(status=>status.phase==="error");assert(!error,error?.message);
   const result={label,elapsedMs:Math.round(performance.now()-start),...structuredClone(stats)};result.canonicalMs=Math.round(result.canonicalMs);summary.push(result);return result;
 }
@@ -68,8 +70,10 @@ async function tick(label,first=false){
   engine.subscribe(status=>statuses.push(status));
   await tick("warm",true);
   const idle=await tick("idle"),idleAgain=await tick("idle-again");
+  assert(nextPollMs()>100000&&nextPollMs()<=400000,"unchanged polls back off, capped at 4x: "+nextPollMs());
   const modified=JSON.parse(data.get("chars:all"));modified[0].name="Character changed";data.set("chars:all",JSON.stringify(modified));
   const edit=await tick("one-word-edit");
+  assert.equal(nextPollMs(),100000,"a pass that saved a change returns to the base interval");
   assert.equal(JSON.parse(data.get("chars:all"))[0].name,"Character changed");
   assert.equal(idle.imagesRead+idleAgain.imagesRead+edit.imagesRead,0,"unchanged original pictures must never be decrypted/restaged");
   assert.equal(idle.commits+idleAgain.commits,0,"idle polls must not write the causal snapshot");
