@@ -630,7 +630,7 @@
             // Chats saved on another device change nothing in the library. Chat
             // reloads them read-only; the library is not covered or redrawn.
             const chatsOnly=writing&&Object.keys(values).every(key=>key===STATE||key==="chats:all");
-            if(writing){report("applying",chatsOnly?"Updating conversations…":"Saving completed records. Remaining pictures will continue next…",{peers,preview:null,chatOnly:chatsOnly,reloadOnly:false});await sleep(50);check(run);if(!(chatsOnly?(options.canApplyStories||options.canApply):options.canApply)())return false;}
+            if(writing){report("applying",chatsOnly?"Updating conversations…":"Saving completed records. Remaining pictures will continue next…",{peers,preview:null,chatOnly:chatsOnly,reloadOnly:false});await sleep(50);check(run);if(!(chatsOnly?(options.canApplyStories||options.canApply):options.canApply)()){report("busy","Changes are ready. Finish editing to let sync save them safely.",{peers,chatOnly:false,reloadOnly:false});return false;}}
             await refreshPrimary(run);if(C.canonical(settings.primaryPreference||null)!==selection)throw Error("The chosen primary changed. Saved progress is safe; comparing again.");
             await storage.syncCommit(values,{...local.raw,[STATE]:latest.stateRaw});if(writing){if(chatsOnly)storiesNeedReload=true;else fullNeedReload=true;}check(run);committed=true;
             local={raw:{...local.raw,...Object.fromEntries(Object.entries(values).filter(([key])=>key!==STATE))},items,state:nextState,stateRaw:nextStateRaw};
@@ -675,6 +675,7 @@
       }catch(e){clearWorkCache();if(fullNeedReload||storiesNeedReload)reloadFailures++;if(run===epoch){if(suspended())report("paused",pauseMessage);else{storyPublication=null;report("error",e.message+(manualRefresh?" Local changes are retained; choose Refresh now to try again.":" Local changes are retained; sync retries automatically."));}}}
       finally{
         if(settings&&settings.enabled&&ready()&&!workspacePaused)firstCheck=false;busy=false;
+        if(current.phase==="applying"&&!stopped)report(manualRefresh?"manual":"checking",manualRefresh?"Sync stopped before it finished. Everything already saved is kept; choose Sync now to finish.":"Sync was interrupted. Everything already saved is kept; continuing…",{chatOnly:false,reloadOnly:false});
         // Nothing changed: stretch the next background poll (up to 4x). Wakes,
         // local saves and Sync now still run at once.
         if(!quietDeferred)idleStreak=run===epoch&&["synced","waiting","manual"].includes(current.phase)?idleStreak+1:0;

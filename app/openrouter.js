@@ -21,6 +21,10 @@ const VOICES = new Set("Zephyr Puck Charon Kore Fenrir Leda Orus Aoede Callirrho
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const MAX_ERROR_BYTES = 64 * 1024;
 const MAX_COORDINATOR_BYTES = 40 * 1024;
+// 24 kHz 16-bit mono PCM is 48,000 bytes a second. 8 MiB stopped at about three
+// minutes, short of the 4,000-character reply limit; 24 MiB is about 4m20s (1.340).
+const MAX_SPEECH_BYTES = 24 * 1024 * 1024;
+const SPEECH_TOO_LONG = "This reply is longer than about four minutes of Gemini audio. Voice a shorter reply, or give this character an ElevenLabs voice.";
 function speechAudioFormat(data, contentType) {
   const declared = String(contentType || "").split(";", 1)[0].trim().toLowerCase();
   if (declared !== "audio/pcm" && declared !== "audio/wav") throw new Error("OpenRouter did not return PCM audio");
@@ -429,8 +433,8 @@ function setupOpenRouterIpc({ ipcMain, safeStorage, app, isLocked = () => true }
     const req = https.request(options, res => {
       const chunks = []; let bytes = 0;
       const success = res.statusCode >= 200 && res.statusCode < 300;
-      const limit = success ? 8 * 1024 * 1024 : MAX_ERROR_BYTES;
-      res.on("data", chunk => { bytes += chunk.length; if (bytes <= limit) chunks.push(chunk); else req.destroy(new Error("Voice response is too large")); });
+      const limit = success ? MAX_SPEECH_BYTES : MAX_ERROR_BYTES;
+      res.on("data", chunk => { bytes += chunk.length; if (bytes <= limit) chunks.push(chunk); else req.destroy(new Error(success ? SPEECH_TOO_LONG : "Voice response is too large")); });
       res.on("end", () => {
         if (!voicing.delete(req) || isLocked()) { resolve({ ok: false, error: "Voice request stopped when the vault locked" }); return; }
         try {

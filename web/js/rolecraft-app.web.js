@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.339";
+const APP_VERSION = "1.340";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,45 +26,13 @@ const APP_VERSION = "1.339";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
-  heading: "1.339",
-  title: "ElevenLabs Voices",
-  notes: ["New: Give characters ElevenLabs voices. Pick ElevenLabs as the voice provider in the character editor and load your voice list.", "New: Choose Eleven v4 (most expressive) or Eleven v4 Turbo (fastest) in Chat settings > Connection.", "New: Read new replies aloud automatically, in order, or keep tapping a reply's voice button to play it.", "New: Allow ElevenLabs to keep voice requests so its voices can play in stories that require zero data retention.", "Note: Your ElevenLabs key stays protected on each device and is never backed up or synced.", "Note: Windows needs the full installer and Android the new APK for this update."]
+  heading: "1.340",
+  title: "Sync Fix and JPG Portraits",
+  notes: ["New: Save every character portrait, including each variant's, as JPG files or one zip from Settings.", "New: Photo info can now save pictures that are already JPG, exactly as stored.", "Fixed: Sync no longer gets stuck on \"Saving verified synced changes\" when you open Chat while it saves.", "Improved: If saving synced changes ever takes long, a small banner replaces the full-screen message so you can keep working.", "Fixed: Long replies with a Gemini voice no longer fail with \"Voice response is too large\". Replies up to about four minutes now play.", "Improved: Voice errors now say which service failed: ElevenLabs or Gemini through OpenRouter.", "Note: Windows needs the full installer and Android the new APK for this update."]
 }, {
-  heading: "1.338",
-  title: "Sync On Your Terms",
-  notes: ["New: Devices sync only when you tap Sync now. For automatic sync, turn off \"Refresh only when I choose\" in Settings > Sync.", "New: A Sync now button sits at the top of the library whenever sync is waiting for you.", "Fixed: The \"Saving verified synced changes\" screen no longer appears over and over.", "Fixed: Chats arriving from another device no longer cover the library or close your keyboard.", "Improved: Chat no longer does sync work while you type or a reply is streaming.", "Improved: Automatic sync checks less often when nothing has changed.", "Note: Windows needs the full installer and Android the new APK for this update."]
-}, {
-  heading: "1.337",
-  title: "Faster Saves",
-  notes: ["Improved: Saving a turn in a long story is much faster.", "Improved: Replies stream more smoothly on Windows while a chat saves.", "Improved: Version history now reads like patch notes, with older releases grouped by decade.", "Note: Windows needs the full installer for this update. Install over your current app."]
-}, {
-  heading: "1.336",
-  title: "Model Alias Fix",
-  notes: ["Fixed: OpenRouter \"latest\" model aliases such as ~deepseek/deepseek-pro-latest no longer fail with \"The chat request is invalid\"."]
-}, {
-  heading: "1.335",
-  title: "Bulk Conflict Cleanup",
-  notes: ["New: Move every sync conflict copy to Recently deleted in one confirmed step.", "Improved: Originals are never touched, and removed copies can still be restored."]
-}, {
-  heading: "1.334",
-  title: "Three-Device Chat Sync",
-  notes: ["Improved: Three devices can add turns to the same story without creating conflict copies.", "Improved: Timestamp-only differences no longer create a copy.", "Fixed: Conflict review on busy devices. It now loads eight copies at a time."]
-}, {
-  heading: "1.333",
-  title: "Sync Reconnect",
-  notes: ["New: Settings has its own Sync section with device status, QR pairing and a \"Can't see a device?\" checklist.", "Improved: Paired devices reconnect reliably after a lock, app switch or restart.", "Improved: Sync names the problem plainly: offline, locked, wrong group, clock off or blocked by a firewall.", "Fixed: Three sync faults in manual refresh, draft handoff and the chat picture cache."]
-}, {
-  heading: "1.332",
-  title: "Conflict Review",
-  notes: ["New: Review sync conflict copies from the story list, compare them with the original, and remove the ones you don't need."]
-}, {
-  heading: "1.331",
-  title: "Tidier Panels",
-  notes: ["Improved: Chat settings and the Scene panel are split into tabs instead of one long page.", "Improved: The group scene summary now lives in the chat header.", "Fixed: The docked Scene panel running off wide Windows screens.", "Fixed: A stray \"000\" in group chats."]
-}, {
-  heading: "1.330",
-  title: "Chat Safety",
-  notes: ["Improved: A late save can no longer overwrite a newer synced story. Conflicting edits are kept as copies.", "Improved: Group replies run at most four paid memory summaries per Send.", "Fixed: Chat failing to open during heavy Android sync.", "Fixed: A stalled provider reply now times out with a clear message."]
+  heading: "1.330–1.339",
+  title: "ElevenLabs and Sync on Demand",
+  notes: ["New: Give characters ElevenLabs voices. Pick ElevenLabs as the voice provider in the character editor and load your voice list.","New: Read new replies aloud automatically, in order, or keep tapping a reply's voice button to play it.","New: Devices sync only when you tap Sync now. For automatic sync, turn off \"Refresh only when I choose\" in Settings > Sync.","New: Settings has its own Sync section with device status, QR pairing and a \"Can't see a device?\" checklist.","New: Review sync conflict copies from the story list, compare them with the original, and remove the ones you don't need.","Improved: Saving a turn in a long story is much faster.","Improved: Three devices can add turns to the same story without creating conflict copies.","Improved: Paired devices reconnect reliably after a lock, app switch or restart.","Improved: A late save can no longer overwrite a newer synced story. Conflicting edits are kept as copies.","Fixed: OpenRouter \"latest\" model aliases such as ~deepseek/deepseek-pro-latest no longer fail with \"The chat request is invalid\"."]
 }, {
   heading: "1.320–1.329",
   title: "Memory and Private Asides",
@@ -3214,6 +3182,8 @@ const CSS = `
   .rcv .sync-progress .spin { width: 12px; height: 12px; flex-shrink: 0; }
   .rcv .sync-progress .sync-dot { margin-top: 0; }
   .rcv .sync-progress-alert .btn { color: var(--text); border-color: var(--brass-line); }
+  .rcv .sync-saving-banner { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 101; width: max-content; max-width: min(440px, calc(100vw - 32px)); background: var(--panel2); border: 1px solid var(--brass-line); color: var(--text); padding: 10px 16px; border-radius: 10px; font-size: 13px; line-height: 1.45; box-shadow: var(--shadow); }
+  .rcv.phone .sync-saving-banner { bottom: calc(74px + env(safe-area-inset-bottom)); }
   @media (forced-colors: active) {
     .rcv .settings-nav-item.active { outline: 2px solid Highlight; }
     .rcv .sync-dot { forced-color-adjust: none; border: 1px solid CanvasText; }
@@ -3686,7 +3656,7 @@ const GUIDE = [
         "A picture added while a version is open belongs to that version and shows only there.",
         "Grid view is where you move a picture to another version, or mark it shared so every version shows it.",
         "To change a character or persona's profile picture, open Grid view, tick one picture, then choose Set as profile picture. For characters with variants, choose Default or the variant you want from the profile selector. The previous portrait is kept in the gallery. You can also open a picture full screen and use Set as profile.",
-        "Tick one picture in Grid and choose Photo info, or use Photo info in the full-screen viewer, to see the original format, dimensions and file size. Save JPG copy exports a separate JPG at the same resolution with your chosen quality. Transparency becomes white, animations become still images, and camera/GPS metadata is not copied. Your original stays in the vault. Android uses the picture export location shown after saving; Windows uses Downloads.",
+        "Tick one picture in Grid and choose Photo info, or use Photo info in the full-screen viewer, to see the original format, dimensions and file size. Save JPG copy exports a separate JPG at the same resolution with your chosen quality, and a picture that is already JPG saves exactly as stored. To save every character portrait at once, including each variant's own portrait, use Character portraits as JPG in Settings. Transparency becomes white, animations become still images, and camera/GPS metadata is not copied. Your original stays in the vault. Android uses the picture export location shown after saving; Windows uses Downloads.",
         "Open a grid picture full screen and choose Hide controls to see only the picture. Tap the picture to show the controls again; Escape or Android Back still closes the viewer. This does not change or export the image.",
         "Pictures are kept in the order you put them in, and grid view is where you change it. With a mouse, drag a picture onto the one you want it to change places with. On a phone or tablet, one finger does the same thing.",
         "In grid view, Small, Medium and Large change how many pictures fit. A phone uses 3, 2 or 1 per row; a tablet uses 4, 3 or 2; Windows fits as many as its current width allows. The controls scroll away on Android so they do not cover the gallery.",
@@ -4262,6 +4232,14 @@ async function photoJpegCopy(photo, quality) {
     return blob;
   } finally { canvas.width = canvas.height = 0; }
 }
+/* A picture as JPG bytes (1.340). An original that is already JPG is saved
+   byte for byte; anything else is drawn over white at full resolution. */
+async function photoJpegBytes(raw, quality = .92) {
+  if (/^data:image\/jpe?g[;,]/i.test(raw || "")) return dataUrlBytes(raw);
+  const photo = await decodePhotoOriginal(raw);
+  try { return new Uint8Array(await (await photoJpegCopy(photo, quality)).arrayBuffer()); }
+  finally { photo.image.src = ""; }
+}
 function PhotoInfoModal({ item, onClose }) {
   const [photo, setPhoto] = useState(null), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [quality, setQuality] = useState(.92), [busy, setBusy] = useState(false);
@@ -4284,13 +4262,14 @@ function PhotoInfoModal({ item, onClose }) {
     return () => { current = false; alive.current = false; controller.abort(); if (decoded) decoded.image.src = ""; window.removeEventListener("rcv-locking", close); document.removeEventListener("visibilitychange", hidden); };
   }, [item.imgId]);
   const saveJpeg = async () => {
-    if (!photo || working.current || photo.mime === "image/jpeg") return;
+    if (!photo || working.current) return;
     working.current = true; setBusy(true); setError(""); setNotice("");
     try {
-      const blob = await photoJpegCopy(photo, quality);
+      const original = photo.mime === "image/jpeg";
+      const blob = original ? new Blob([dataUrlBytes(await sGet("img:" + item.imgId))], { type: "image/jpeg" }) : await photoJpegCopy(photo, quality);
       if (!alive.current || !document.querySelector('.rcv[data-rcv-state="ready"]')) return;
       const stem = safeFileName(String(item.caption || item.label || "picture").replace(/\.(png|jpe?g|webp|gif|bmp|avif)$/i, "")).slice(0, 100) || "picture";
-      const filename = stem + "-jpg-" + Date.now() + ".jpg";
+      const filename = stem + (original ? "-" : "-jpg-") + Date.now() + ".jpg";
       const where = await saveFile(blob, filename, { collection: "pictures", quiet: true });
       if (alive.current) {
         if (!where) throw new Error("The JPG could not be saved. Your original is unchanged. You can try again.");
@@ -4313,7 +4292,9 @@ function PhotoInfoModal({ item, onClose }) {
         h("label", { htmlFor: "photo-jpg-quality" }, "JPG quality"),
         h("select", { id: "photo-jpg-quality", value: quality, disabled: busy, onChange: e => setQuality(Number(e.target.value)), style: { width: "100%", margin: "6px 0 12px" } },
           h("option", { value: .85 }, "85% · smaller file"), h("option", { value: .92 }, "92% · high quality"), h("option", { value: 1 }, "100% · largest file")),
-        h("button", { className: "btn btn-brass", onClick: saveJpeg, disabled: busy }, busy ? "Saving JPG..." : "Save JPG copy")) : h("p", null, "This picture is already JPG.")),
+        h("button", { className: "btn btn-brass", onClick: saveJpeg, disabled: busy }, busy ? "Saving JPG..." : "Save JPG copy")) : h(React.Fragment, null,
+        h("p", null, "This picture is already JPG, so it is saved exactly as stored."),
+        h("button", { className: "btn btn-brass", onClick: saveJpeg, disabled: busy }, busy ? "Saving JPG..." : "Save JPG"))),
     error && h("p", { role: "alert", style: { color: "var(--danger)", overflowWrap: "anywhere" } }, error),
     notice && h("p", { role: "status", style: { overflowWrap: "anywhere" } }, notice));
 }
@@ -12992,6 +12973,7 @@ function SettingsModal({
   onExport,
   onImport,
   onDownloadImages,
+  onDownloadPortraits,
   toast,
   counts,
   theme,
@@ -13869,7 +13851,19 @@ function SettingsModal({
   }, /*#__PURE__*/React.createElement(Ic, {
     d: icons.img,
     size: 14
-  }), " Download all images")), /*#__PURE__*/React.createElement("input", {
+  }), " Download all images")), onDownloadPortraits && /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: onDownloadPortraits
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 7,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    d: icons.img,
+    size: 14
+  }), " Character portraits as JPG")), /*#__PURE__*/React.createElement("input", {
     ref: importRef,
     type: "file",
     accept: JSON_FILE_ACCEPT,
@@ -14422,6 +14416,28 @@ function waitForVaultSyncReload(reloadRef, requestReload, timeoutMs = 15000) {
     reloadRef.current = reload;
     try { requestReload(); } catch (error) { complete(error); }
   });
+}
+/* The saving overlay blocks edits while sync writes and reloads library records.
+   It must never be able to freeze the app: after 20 seconds with no new sync
+   status it becomes a small banner (1.340). Editing then pauses sync through
+   canApply, and stale writes are refused by sync's compare-and-swap. */
+function SyncSavingOverlay({ status }) {
+  const active = !!status && status.phase === "applying" && !status.chatOnly && !status.reloadOnly;
+  const key = active ? (status.message || "") + "|" + (status.done == null ? "" : status.done) : "";
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    setStale(false);
+    if (!key) return;
+    const timer = setTimeout(() => setStale(true), 20000);
+    return () => clearTimeout(timer);
+  }, [key]);
+  if (!active) return null;
+  const detail = String(status.message || "").slice(0, 200);
+  if (stale) return React.createElement("div", { className: "sync-saving-banner", role: "status" }, "Still saving synced changes in the background. You can keep using Rolecraft; sync waits while you edit.");
+  return React.createElement("div", { className: "modal-back sync-saving", style: { zIndex: 130 } },
+    React.createElement("div", { className: "card modal", role: "status", style: { maxWidth: 420 } },
+      React.createElement("div", null, "Saving verified synced changes…"),
+      detail && React.createElement("small", { className: "muted", style: { display: "block", marginTop: 6 } }, detail)));
 }
 function RolecraftVault() {
   const ON_PHONE = typeof window !== "undefined" && !!window.Capacitor;
@@ -17263,6 +17279,60 @@ function RolecraftVault() {
       type: match ? match[1] : "application/octet-stream"
     }), safeFileName(name) + "." + extOf(v), { collection: "pictures", quiet: true });
     toast(where ? "Picture saved in " + where : "Picture could not be saved");
+  };
+  /* Every character's portrait and each variant's own portrait (rule 2: a
+     variant carries its own profileImg), named after the character (1.340). */
+  const portraitPlan = () => {
+    const plan = [], seen = new Set(), used = new Set();
+    const nameFor = base => {
+      const stem = safeFileName(base) || "character";
+      let out = stem, i = 2;
+      while (used.has(out.toLowerCase())) out = stem + "-" + i++;
+      used.add(out.toLowerCase());
+      return out;
+    };
+    for (const c of chars) {
+      const name = String(c.name || "Character").trim() || "Character";
+      if (c.profileImg && !seen.has(c.profileImg)) { seen.add(c.profileImg); plan.push({ id: c.profileImg, name: nameFor(name) }); }
+      for (const v of c.variants || []) if (v && v.profileImg && !seen.has(v.profileImg)) {
+        seen.add(v.profileImg);
+        plan.push({ id: v.profileImg, name: nameFor(safeFileName(name) + "-" + safeFileName(String(v.name || "").trim() || "Variant")) });
+      }
+    }
+    return plan;
+  };
+  const exportPortraitJpegs = async asZip => {
+    const plan = portraitPlan();
+    if (!plan.length) { toast("No character portraits to download"); return; }
+    const z = asZip ? zipWriter() : null;
+    const track = zipTracker("Saving portraits as JPG", plan.length);
+    let saved = 0, failed = 0, location = "";
+    try {
+      for (const it of plan) {
+        try {
+          const raw = await sGet("img:" + it.id);
+          if (!raw) throw new Error("missing");
+          const bytes = await photoJpegBytes(raw);
+          if (z) z.add(it.name + ".jpg", bytes);
+          else {
+            const where = await saveFile(new Blob([bytes], { type: "image/jpeg" }), it.name + ".jpg", { collection: "pictures", quiet: true });
+            if (!where) throw new Error("not saved");
+            saved++; location = typeof where === "string" ? where : location;
+          }
+        } catch (_) { failed++; }
+        track.step();
+      }
+      const skipped = failed ? "; " + failed + (failed === 1 ? " could not be converted" : " could not be converted") : "";
+      if (z) {
+        if (!z.count) { toast("Portraits could not be converted to JPG"); return; }
+        track.packing();
+        await new Promise(r => setTimeout(r, 0));
+        const saved = await downloadBlob(z.finish(), "rolecraft-portraits-jpg.zip");
+        if (saved) toast(z.count + (z.count === 1 ? " portrait" : " portraits") + " saved as JPG" + skipped);
+      } else toast(saved ? saved + (saved === 1 ? " portrait" : " portraits") + " saved as JPG" + (location ? " in " + location : "") + skipped : "Portraits could not be saved");
+    } finally {
+      track.clear();
+    }
   };
   const imageDownloadPlan = (scopeChars, scopePersonas, extras) => {
     /* Which pictures to fetch is worked out first. It touches no storage, so
@@ -21423,6 +21493,7 @@ function RolecraftVault() {
     onExport: () => askExport("a full vault backup", exportAll),
     onImport: importAll,
     toast: toast,
+    onDownloadPortraits: () => askImageExport("every character portrait as JPG", () => exportPortraitJpegs(false), () => exportPortraitJpegs(true)),
     onDownloadImages: () => {
         /* This said "every image in the vault" while collecting only what hung
            off a character or a persona. Bucket covers, book covers and the
@@ -21539,7 +21610,7 @@ function RolecraftVault() {
       if (e.target.files[0]) handleJsonImportFile(e.target.files[0]);
       e.target.value = "";
     }
-  }), vaultSyncStatus && vaultSyncStatus.phase === "applying" && !vaultSyncStatus.chatOnly && !vaultSyncStatus.reloadOnly && React.createElement("div", {className:"modal-back sync-saving",style:{zIndex:130}},React.createElement("div",{className:"card modal",role:"status",style:{maxWidth:420}},"Saving verified synced changes…")), backupExportOpen && backupExport && React.createElement("div", {
+  }), React.createElement(SyncSavingOverlay, {status:vaultSyncStatus}), backupExportOpen && backupExport && React.createElement("div", {
     className: "modal-back", style: { zIndex: 125 }
   }, React.createElement("div", {
     className: "card modal", role: "dialog", "aria-modal": true, "aria-label": "Backup export",

@@ -47,9 +47,12 @@ for (const name of ["deleteEmptyBucket", "setBucketCover", "deleteEmptyPersonaBu
 
 const blobHelper = functionBlock("downloadBlob");
 check("downloadBlob returns the real save result", /return\s+saveFile\(/.test(blobHelper));
+// Every ZIP export (images, selections, and since 1.340 portraits as JPG)
+// awaits the save and only then reports success.
 check("ZIP success messages wait for the save result",
-  (app.match(/await downloadBlob\(/g) || []).length === 2 &&
-  (app.match(/if \(saved\) toast\(z\.count/g) || []).length === 2);
+  (app.match(/await downloadBlob\(/g) || []).length >= 2 &&
+  (app.match(/const saved = await downloadBlob\(/g) || []).length === (app.match(/await downloadBlob\(/g) || []).length &&
+  (app.match(/if \(saved\) toast\(z\.count/g) || []).length === (app.match(/await downloadBlob\(/g) || []).length);
 check("JSON success messages use the checked export helper",
   /const exportJSON = async/.test(app) && (app.match(/exportJSON\(/g) || []).length >= 12);
 

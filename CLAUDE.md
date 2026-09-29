@@ -9,6 +9,28 @@ existing GitHub history, installed data identities, encrypted user data and
 release signing identities intact. Public source and release artifacts must be
 reviewed so local vaults, exports, credentials and signing material stay local.
 
+## Unstuck sync overlay and longer Gemini voices (1.340)
+
+1.338's quiet deferral exposed an old gap: a pass interrupted mid-apply (epoch
+changed, e.g. Chat opened, while \`onApplied\` was pending) skipped its catch
+report, and the next tick deferred silently while the user typed, so the
+blocking "applying" overlay stayed forever. The tick's \`finally\` now replaces
+any leftover "applying" status, and \`commitPending\` reports "busy" when editing
+starts mid-pass. \`SyncSavingOverlay\` also turns into a non-blocking banner after
+20 s without a new status, so the app can never freeze behind it. Keep both.
+
+Gemini TTS returns 24 kHz 16-bit mono PCM (48,000 bytes/s). The old 8 MiB cap
+stopped at about 2m55s, short of the 4,000-character reply limit, and failed
+as "Voice response is too large". Windows, Android and Chat's player now share
+a 24 MiB cap (about 4m20s). Chat voice errors name the service that failed.
+
+Pictures as JPG: Photo info saves a JPG original byte for byte (it used to say
+"already JPG" and offer nothing) and converts other formats with photoJpegCopy.
+Settings > Character portraits as JPG exports every character portrait plus
+each variant's own profileImg (rule 2), named after the character and variant,
+as files or one zip, via photoJpegBytes. Originals are never rewritten.
+test-photo-info.js covers both.
+
 ## ElevenLabs character voices (1.339)
 
 Owner request (29 September 2026): ElevenLabs as a second voice provider,

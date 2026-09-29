@@ -432,10 +432,11 @@
       for (var k = 0; k < mpeg.length; k++) mp3[k] = mpeg.charCodeAt(k);
       return new Blob([mp3], { type: "audio/mpeg" });
     }
-    if (!result || !["audio/pcm", "audio/wav"].includes(result.mime) || typeof result.audio !== "string" || !result.audio || result.audio.length > 12 * 1024 * 1024) throw new Error("OpenRouter returned invalid voice audio");
+    // Up to 24 MiB of PCM (about 4m20s at 24 kHz) to match the native limit (1.340).
+    if (!result || !["audio/pcm", "audio/wav"].includes(result.mime) || typeof result.audio !== "string" || !result.audio || result.audio.length > 32 * 1024 * 1024) throw new Error("OpenRouter returned invalid voice audio");
     var binary;
     try { binary = atob(result.audio); } catch (_) { throw new Error("OpenRouter returned invalid voice audio"); }
-    if (binary.length < 16 || binary.length > 8 * 1024 * 1024) throw new Error("OpenRouter returned invalid voice audio");
+    if (binary.length < 16 || binary.length > 24 * 1024 * 1024) throw new Error("OpenRouter returned invalid voice audio");
     var bytes = new Uint8Array(binary.length);
     for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     var wav = bytes.length >= 44 && String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) === "RIFF" && String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]) === "WAVE";
@@ -2068,7 +2069,7 @@
       if (next) playVoice(next, true); else setSpeaking("");
     }
     async function playVoice(messageId, auto) {
-      var playback = voicePlayback.current, request = playback.request, session = epoch.current;
+      var playback = voicePlayback.current, request = playback.request, session = epoch.current, service = "";
       playback.busy = true; playback.id = messageId;
       var chat = chatsRef.current.find(function (row) { return row.id === activeIdRef.current; });
       var message = chat && chat.messages.find(function (m) { return m.id === messageId; });
@@ -2079,6 +2080,7 @@
         var speaker = messageSpeaker(chat, message, libraryRef.current);
         var character = speaker && participantCharacter(chat, speaker, libraryRef.current);
         var plan = voicePlan(chat, character, await readVoicePrefs());
+        service = plan.provider === "elevenlabs" ? "ElevenLabs" : "Gemini voice (OpenRouter)";
         if (request !== playback.request || session !== epoch.current) return;
         var api = plan.provider === "elevenlabs" ? elevenBridge() : bridge();
         if (!api || !api.speech) throw new Error("Character voices need the Windows or Android app.");
@@ -2091,7 +2093,11 @@
         var audio = new Audio(url); playback.audio = audio; playback.url = url;
         audio.onended = nextVoice; audio.onerror = function () { setError("The generated voice could not be played on this device."); stopVoice(); };
         await audio.play();
-      } catch (error) { if (request === playback.request) { stopVoice(); setError(error.message || "Voice generation failed"); } }
+      } catch (error) {
+        if (request !== playback.request) return;
+        var text = error.message || "Voice generation failed";
+        stopVoice(); setError(service && text.indexOf(service.split(" ")[0]) !== 0 && text.indexOf("OpenRouter") !== 0 ? service + ": " + text : text);
+      }
     }
     function speakMessage(message) {
       // Tapping the reply that is playing stops it; any tap clears the auto-read queue.
