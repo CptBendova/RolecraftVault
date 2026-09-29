@@ -57,7 +57,7 @@ function shellChangedSinceLastRelease() {
   if (!tag) return null;
   let diff;
   try {
-    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html", "app/vault-sync-core.js", "app/vault-sync-review.js", "app/vault-sync.js", "app/vault-sync-ui.js", "app/vault-sync-transport.js", "app/private-sync.js", "app/chat.js", "app/chat-sync-core.js", "app/chat-link-server.js", "app/chat.css", "app/image-generation.js", "app/credential-share.js", "app/provider-balances.js", "app/provider-balances-ui.js"]);
+    diff = git(["diff", "--unified=0", tag, "--", "app/main.js", "app/preload.js", "app/index.html", "app/vault-sync-core.js", "app/vault-sync-review.js", "app/vault-sync.js", "app/vault-sync-ui.js", "app/vault-sync-transport.js", "app/private-sync.js", "app/chat.js", "app/chat-sync-core.js", "app/chat-link-server.js", "app/chat.css", "app/image-generation.js", "app/elevenlabs.js", "app/credential-share.js", "app/provider-balances.js", "app/provider-balances-ui.js"]);
   } catch { return null; }
   const touched = diff.split("\n").filter(l => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
   const real = touched.filter(l => !/^[+-]const FACTORY_BUILD = /.test(l));

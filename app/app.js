@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.338";
+const APP_VERSION = "1.339";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,10 @@ const APP_VERSION = "1.338";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.339",
+  title: "ElevenLabs Voices",
+  notes: ["New: Give characters ElevenLabs voices. Pick ElevenLabs as the voice provider in the character editor and load your voice list.", "New: Choose Eleven v4 (most expressive) or Eleven v4 Turbo (fastest) in Chat settings > Connection.", "New: Read new replies aloud automatically, in order, or keep tapping a reply's voice button to play it.", "New: Allow ElevenLabs to keep voice requests so its voices can play in stories that require zero data retention.", "Note: Your ElevenLabs key stays protected on each device and is never backed up or synced.", "Note: Windows needs the full installer and Android the new APK for this update."]
+}, {
   heading: "1.338",
   title: "Sync On Your Terms",
   notes: ["New: Devices sync only when you tap Sync now. For automatic sync, turn off \"Refresh only when I choose\" in Settings > Sync.", "New: A Sync now button sits at the top of the library whenever sync is waiting for you.", "Fixed: The \"Saving verified synced changes\" screen no longer appears over and over.", "Fixed: Chats arriving from another device no longer cover the library or close your keyboard.", "Improved: Chat no longer does sync work while you type or a reply is streaming.", "Improved: Automatic sync checks less often when nothing has changed.", "Note: Windows needs the full installer and Android the new APK for this update."]
@@ -9982,7 +9986,7 @@ function HistoryModal({
    field the app then dropped on the floor. They are variant fields now, with the
    same rule as the rest: empty falls back to the Default. Tags, bucket, sections
    and the gallery stay shared. */
-const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt", "age", "gender", "pronouns", "ttsVoice", "ttsStyle"];
+const VARIANT_FIELDS = ["tagline", "story", "personality", "scenario", "firstMessage", "exampleMessage", "creatorMemo", "systemPrompt", "alwaysActiveSystemPrompt", "age", "gender", "pronouns", "ttsVoice", "ttsStyle", "ttsProvider", "elevenVoiceId", "elevenVoiceName"];
 const DEFAULT_VID = "__default__"; // image belongs to the Default variant only
 /* version history: text only — images (profileImg/banner/gallery) are never captured or restored,
    so photos always survive an update or a rollback */
@@ -10204,9 +10208,24 @@ function DraftRecoveryBanner({ draft, onRestore, onDiscard }) {
   }, /*#__PURE__*/React.createElement("button", { className: "btn btn-primary", onClick: onRestore }, "Restore draft"), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", onClick: onDiscard }, "Discard draft")));
 }
 const CHARACTER_TTS_VOICES = "Zephyr Puck Charon Kore Fenrir Leda Orus Aoede Callirrhoe Autonoe Enceladus Iapetus Umbriel Algieba Despina Erinome Algenib Rasalgethi Laomedeia Achernar Alnilam Schedar Gacrux Pulcherrima Achird Zubenelgenubi Vindemiatrix Sadachbia Sadaltager Sulafat".split(" ");
-function CharacterVoiceEditor({ voice, style, name, description, onVoice, onStyle }) {
+/* ElevenLabs requests go through the privileged shell, never the renderer (1.339). */
+function elevenLabsBridge() {
+  if (window.elevenLabs) return window.elevenLabs;
+  if (!window.RolecraftChatSync || !window.Capacitor?.nativePromise) return null;
+  const call = (method, args) => window.Capacitor.nativePromise("ElevenLabs", method, args || {});
+  return { status: () => call("status"), setKey: args => call("setKey", args), clearKey: () => call("clearKey"), voices: args => call("voices", args),
+    speech: request => call("speech", { request }), cancel: () => call("cancel"), setUnlocked: args => call("setUnlocked", args) };
+}
+if (typeof window !== "undefined") window.rolecraftElevenLabsBridge = elevenLabsBridge;
+const ELEVEN_VOICE_ID = /^[A-Za-z0-9]{8,64}$/;
+function CharacterVoiceEditor({ voice, style, provider, elevenVoiceId, elevenVoiceName, name, description, onVoice, onStyle, onProvider, onElevenVoice }) {
   const [suggesting, setSuggesting] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [elevenVoices, setElevenVoices] = useState(null);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [voiceSearch, setVoiceSearch] = useState("");
+  const [manualId, setManualId] = useState("");
+  const eleven = provider === "elevenlabs";
   async function suggest() {
     const native = window.openRouter || window.Capacitor && typeof window.Capacitor.nativePromise === "function" && {
       voiceSuggest: request => window.Capacitor.nativePromise("OpenRouter", "voiceSuggest", { request })
@@ -10221,15 +10240,57 @@ function CharacterVoiceEditor({ voice, style, name, description, onVoice, onStyl
     } catch (error) { setVoiceError(error.message || "Could not suggest a voice"); }
     finally { setSuggesting(false); }
   }
+  // Loading the list is an explicit request to ElevenLabs; nothing loads by itself.
+  async function loadVoices(more) {
+    const native = elevenLabsBridge();
+    if (!native || !native.voices) { setVoiceError("ElevenLabs voices need the Windows or Android app."); return; }
+    setLoadingVoices(true); setVoiceError("");
+    try {
+      const result = await native.voices({ search: voiceSearch.trim().slice(0, 100), pageToken: more && elevenVoices ? elevenVoices.next : "" });
+      if (!result || !result.ok) throw new Error(result && result.error || "Could not load ElevenLabs voices");
+      const rows = (Array.isArray(result.voices) ? result.voices : []).filter(v => v && typeof v.id === "string" && ELEVEN_VOICE_ID.test(v.id) && typeof v.name === "string" && v.name);
+      setElevenVoices(previous => ({
+        rows: more && previous ? previous.rows.concat(rows.filter(row => !previous.rows.some(old => old.id === row.id))) : rows,
+        next: result.hasMore && typeof result.nextPageToken === "string" ? result.nextPageToken : ""
+      }));
+    } catch (error) { setVoiceError(error.message || "Could not load ElevenLabs voices"); }
+    finally { setLoadingVoices(false); }
+  }
+  const voiceLabel = row => [row.name, row.category, ...(Array.isArray(row.labels) ? row.labels.slice(0, 2) : [])].filter(Boolean).join(" · ");
+  const chosen = elevenVoices && elevenVoices.rows.find(row => row.id === elevenVoiceId);
   return /*#__PURE__*/React.createElement("div", { className: "card", style: { padding: 20, marginTop: 20 } },
     /*#__PURE__*/React.createElement("h3", { style: { marginTop: 0 } }, "Character voice"),
-    /*#__PURE__*/React.createElement("p", { className: "muted" }, "Play saved Chat replies with Gemini 3.8 Flash TTS through your protected OpenRouter key. Playback and AI suggestions are separate paid requests. Nothing is generated automatically."),
-    /*#__PURE__*/React.createElement("label", { className: "lbl" }, "Voice"),
-    /*#__PURE__*/React.createElement("select", { className: "input", value: CHARACTER_TTS_VOICES.includes(voice) ? voice : "Kore", onChange: e => onVoice(e.target.value), style: { width: "100%", maxWidth: 400 } }, CHARACTER_TTS_VOICES.map(item => /*#__PURE__*/React.createElement("option", { key: item, value: item }, item))),
-    /*#__PURE__*/React.createElement("label", { className: "lbl", style: { display: "block", marginTop: 12 } }, "Voice direction"),
-    /*#__PURE__*/React.createElement("textarea", { className: "input", rows: 2, maxLength: 300, value: style || "", onChange: e => onStyle(e.target.value), placeholder: "Warm, hushed, unhurried; soften on vulnerable lines.", style: { width: "100%", boxSizing: "border-box" } }),
-    /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", type: "button", disabled: suggesting, onClick: suggest }, suggesting ? "Suggesting…" : "Suggest from character details"),
-    voiceError && /*#__PURE__*/React.createElement("p", { role: "alert", style: { color: "var(--danger)" } }, voiceError));
+    /*#__PURE__*/React.createElement("label", { className: "lbl", htmlFor: "character-voice-provider" }, "Voice provider"),
+    /*#__PURE__*/React.createElement("select", { id: "character-voice-provider", className: "input", value: eleven ? "elevenlabs" : "openrouter", onChange: e => { setVoiceError(""); onProvider(e.target.value); }, style: { width: "100%", maxWidth: 400 } },
+      /*#__PURE__*/React.createElement("option", { value: "openrouter" }, "OpenRouter · Gemini 3.8 Flash TTS"),
+      /*#__PURE__*/React.createElement("option", { value: "elevenlabs" }, "ElevenLabs · Eleven v4")),
+    !eleven && /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("p", { className: "muted" }, "Play saved Chat replies with Gemini 3.8 Flash TTS through your protected OpenRouter key. Playback and AI suggestions are separate paid requests. Nothing is generated automatically unless you turn on auto-read in Chat."),
+      /*#__PURE__*/React.createElement("label", { className: "lbl" }, "Voice"),
+      /*#__PURE__*/React.createElement("select", { className: "input", value: CHARACTER_TTS_VOICES.includes(voice) ? voice : "Kore", onChange: e => onVoice(e.target.value), style: { width: "100%", maxWidth: 400 } }, CHARACTER_TTS_VOICES.map(item => /*#__PURE__*/React.createElement("option", { key: item, value: item }, item))),
+      /*#__PURE__*/React.createElement("label", { className: "lbl", style: { display: "block", marginTop: 12 } }, "Voice direction"),
+      /*#__PURE__*/React.createElement("textarea", { className: "input", rows: 2, maxLength: 300, value: style || "", onChange: e => onStyle(e.target.value), placeholder: "Warm, hushed, unhurried; soften on vulnerable lines.", style: { width: "100%", boxSizing: "border-box" } }),
+      /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", type: "button", disabled: suggesting, onClick: suggest }, suggesting ? "Suggesting…" : "Suggest from character details")),
+    eleven && /*#__PURE__*/React.createElement("div", { className: "eleven-voice" },
+      /*#__PURE__*/React.createElement("p", { className: "muted" }, "Play saved Chat replies with one of your ElevenLabs voices through your protected ElevenLabs key. Choose Eleven v4 or v4 Turbo, and tap to play or auto-read, in Chat > Settings > Connection. Each playback is a paid ElevenLabs request."),
+      /*#__PURE__*/React.createElement("p", { className: "eleven-voice-current", role: "status" }, elevenVoiceId && ELEVEN_VOICE_ID.test(elevenVoiceId) ? "Voice: " + (chosen ? chosen.name : elevenVoiceName || "Custom voice") : "No ElevenLabs voice chosen yet."),
+      /*#__PURE__*/React.createElement("div", { className: "eleven-voice-search", style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+        /*#__PURE__*/React.createElement("input", { className: "input", type: "search", maxLength: 100, value: voiceSearch, placeholder: "Search your voices", "aria-label": "Search ElevenLabs voices", onChange: e => setVoiceSearch(e.target.value), onKeyDown: e => { if (e.key === "Enter") { e.preventDefault(); if (!loadingVoices) loadVoices(false); } }, style: { flex: "1 1 200px", minWidth: 0, maxWidth: 400 } }),
+        /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", type: "button", disabled: loadingVoices, onClick: () => loadVoices(false) }, loadingVoices ? "Loading…" : elevenVoices ? "Search again" : "Load my voices")),
+      elevenVoices && (elevenVoices.rows.length ? /*#__PURE__*/React.createElement(React.Fragment, null,
+        /*#__PURE__*/React.createElement("label", { className: "lbl", htmlFor: "character-eleven-voice", style: { display: "block", marginTop: 12 } }, "ElevenLabs voice"),
+        /*#__PURE__*/React.createElement("select", { id: "character-eleven-voice", className: "input", value: chosen ? chosen.id : "", onChange: e => { const row = elevenVoices.rows.find(item => item.id === e.target.value); if (row) onElevenVoice(row.id, row.name); }, style: { width: "100%", maxWidth: 400 } },
+          !chosen && /*#__PURE__*/React.createElement("option", { value: "" }, "Choose a voice"),
+          elevenVoices.rows.map(row => /*#__PURE__*/React.createElement("option", { key: row.id, value: row.id }, voiceLabel(row)))),
+        chosen && chosen.description && /*#__PURE__*/React.createElement("p", { className: "muted", style: { marginTop: 6 } }, chosen.description),
+        elevenVoices.next && /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", type: "button", disabled: loadingVoices, onClick: () => loadVoices(true) }, "Load more voices"))
+        : /*#__PURE__*/React.createElement("p", { className: "muted" }, "No voices matched. Add voices in your ElevenLabs library, or search again.")),
+      /*#__PURE__*/React.createElement("details", { style: { marginTop: 12 } },
+        /*#__PURE__*/React.createElement("summary", null, "Enter a voice ID instead"),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 } },
+          /*#__PURE__*/React.createElement("input", { className: "input", maxLength: 64, value: manualId, placeholder: "ElevenLabs voice ID", "aria-label": "ElevenLabs voice ID", onChange: e => setManualId(e.target.value.trim()), style: { flex: "1 1 200px", minWidth: 0, maxWidth: 400 } }),
+          /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", type: "button", disabled: !ELEVEN_VOICE_ID.test(manualId), onClick: () => { onElevenVoice(manualId, "Custom voice"); setManualId(""); } }, "Use this voice ID")))),
+    voiceError && /*#__PURE__*/React.createElement("p", { role: "alert", style: { color: "var(--danger)", whiteSpace: "pre-wrap" } }, voiceError));
 }
 function CharacterEditor({
   initial,
@@ -11234,6 +11295,11 @@ function CharacterEditor({
   }))), /*#__PURE__*/React.createElement(CharacterVoiceEditor, {
     voice: effF("ttsVoice"),
     style: effF("ttsStyle"),
+    provider: effF("ttsProvider"),
+    elevenVoiceId: effF("elevenVoiceId"),
+    elevenVoiceName: effF("elevenVoiceName"),
+    onProvider: value => setF("ttsProvider", value === "elevenlabs" ? "elevenlabs" : "openrouter"),
+    onElevenVoice: (id, label) => { setF("elevenVoiceId", id); setF("elevenVoiceName", String(label || "").slice(0, 100)); },
     name: c.name,
     description: [effF("tagline"), effF("personality"), effF("story")].filter(Boolean).join("\n").slice(0, 1200),
     onVoice: value => setF("ttsVoice", value),
@@ -14379,6 +14445,16 @@ function RolecraftVault() {
   useEffect(() => {
     const native = typeof window.rolecraftProviderBalancesBridge === "function" ? window.rolecraftProviderBalancesBridge() : null;
     if (!native) return;
+    const update = () => native.setUnlocked({ unlocked: ready && !document.hidden }).catch(() => {});
+    const lock = () => native.setUnlocked({ unlocked: false }).catch(() => {});
+    const visibility = () => { if (document.hidden) lock(); else update(); };
+    update(); window.addEventListener("rcv-locking", lock); document.addEventListener("visibilitychange", visibility);
+    return () => { lock(); window.removeEventListener("rcv-locking", lock); document.removeEventListener("visibilitychange", visibility); };
+  }, [ready]);
+  // ElevenLabs voices share the same Android foreground/unlock gate (1.339).
+  useEffect(() => {
+    const native = elevenLabsBridge();
+    if (!native || !native.setUnlocked) return;
     const update = () => native.setUnlocked({ unlocked: ready && !document.hidden }).catch(() => {});
     const lock = () => native.setUnlocked({ unlocked: false }).catch(() => {});
     const visibility = () => { if (document.hidden) lock(); else update(); };

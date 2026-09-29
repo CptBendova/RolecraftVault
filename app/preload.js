@@ -147,6 +147,16 @@ contextBridge.exposeInMainWorld("imageGeneration", {
   cancel: request => ipcRenderer.invoke("image-generation-cancel", request),
   setUnlocked: state => ipcRenderer.invoke("image-generation-set-unlocked", state),
 });
+/* ElevenLabs character voices (1.339). The key never leaves the main process. */
+contextBridge.exposeInMainWorld("elevenLabs", {
+  status: () => ipcRenderer.invoke("elevenlabs-status"),
+  setKey: options => ipcRenderer.invoke("elevenlabs-set-key", options),
+  clearKey: () => ipcRenderer.invoke("elevenlabs-clear-key"),
+  voices: options => ipcRenderer.invoke("elevenlabs-voices", options),
+  speech: request => ipcRenderer.invoke("elevenlabs-speech", request),
+  cancel: () => ipcRenderer.invoke("elevenlabs-cancel"),
+  setUnlocked: state => ipcRenderer.invoke("elevenlabs-set-unlocked", state),
+});
 contextBridge.exposeInMainWorld("providerBalances", {
   status: () => ipcRenderer.invoke("provider-balances-status"),
   refresh: options => ipcRenderer.invoke("provider-balances-refresh", options),

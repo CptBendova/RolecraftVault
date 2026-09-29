@@ -9,6 +9,36 @@ existing GitHub history, installed data identities, encrypted user data and
 release signing identities intact. Public source and release artifacts must be
 reviewed so local vaults, exports, credentials and signing material stay local.
 
+## ElevenLabs character voices (1.339)
+
+Owner request (29 September 2026): ElevenLabs as a second voice provider,
+chosen per character, with a model setting and both tap-to-play and auto-read.
+Characters and variants carry text-only `ttsProvider` ("" inherits,
+"openrouter" or "elevenlabs"), `elevenVoiceId` and `elevenVoiceName` in
+VARIANT_FIELDS and `resolveCharacter`. The per-device `ui:chat-voice` pref
+(encrypted, never synced) holds model (`eleven_v4` / `eleven_v4_turbo`),
+playback ("tap" / "auto"), `zeroRetention` and `allowRetention`.
+
+Native only: app/elevenlabs.js (safeStorage key file `elevenlabs-key.bin`) and
+Android ElevenLabsPlugin + ElevenLabsCodec (Keystore). Requests are
+POST /v1/text-to-speech/{voice}?output_format=mp3_44100_128 and GET /v2/voices,
+header `xi-api-key`, no redirects, MP3 validated, 16 MiB/4,000-character caps.
+The newest speech request abandons an older one; lock, background, Stop and
+closing Chat cancel. The voice list and remote preview URLs never load by
+themselves. ElevenLabs zero retention (`enable_logging=false`) is Enterprise
+only, so the owner chose an explicit per-device "Allow ElevenLabs to keep voice
+requests" switch: `voicePlan` refuses ElevenLabs in a story that requires ZDR
+unless that switch or Enterprise zero retention is on. Never relax it silently.
+
+Auto-read starts from `finishRoleplayReply` after the reply's save commits,
+only for replies generated on this device while that story is on screen, and
+queues them in order. Tapping any voice button stops playback and clears the
+queue. The playback code uses only refs and setters and adds no ChatApp hooks
+(the lock/visibility handlers keep the first render's `stopVoice`).
+`VoiceSettings` is its own component for the same reason. ElevenLabs keys are
+not part of credential sharing. Tests: test-elevenlabs-native.js,
+test-elevenlabs-java.js, test-chat-voice-plan.js and test-chat-elevenlabs-ui.js.
+
 ## Sync on demand by default (1.338)
 
 Owner request (28 September 2026): sync must run only when the user asks and
@@ -998,7 +1028,7 @@ Editing it by script is normal here. Two things bite repeatedly:
    `npm run check` enforces this. Networking lives *only* in the privileged
    shell: `main.js` and the sync/transfer modules for the local network, and
    the fixed-endpoint provider bridges (`openrouter.js`, `image-generation.js`,
-   `provider-balances.js` and their Android plugins) for explicit user actions.
+   `provider-balances.js`, `elevenlabs.js` and their Android plugins) for explicit user actions.
    AGENTS.md lists exactly what each bridge may contact.
 2. **Images are sacred.** Version history, JSON updates and restores capture text
    only — never `profileImg`, `banner`, `gallery`, or variant portraits. A restore

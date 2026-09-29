@@ -393,7 +393,45 @@
       }
     };
   }
+  // ElevenLabs character voices (1.339): native shell only, like OpenRouter.
+  function elevenBridge() {
+    if (window.elevenLabs) return window.elevenLabs;
+    var C = window.Capacitor;
+    if (!C || typeof C.nativePromise !== "function") return null;
+    function call(method, args) { return C.nativePromise("ElevenLabs", method, args || {}); }
+    return { status: function () { return call("status"); }, setKey: function (args) { return call("setKey", args); }, clearKey: function () { return call("clearKey"); },
+      voices: function (args) { return call("voices", args); }, speech: function (request) { return call("speech", { request: request }); }, cancel: function () { return call("cancel"); } };
+  }
+  // Per-device playback choices. Encrypted with the vault but never synced.
+  var VOICE_PREFS_KEY = "ui:chat-voice";
+  var ELEVEN_MODELS = ["eleven_v4", "eleven_v4_turbo"];
+  function voicePrefs(raw) {
+    var value = {};
+    try { value = JSON.parse(raw || "{}") || {}; } catch (_) { value = {}; }
+    return { model: ELEVEN_MODELS.indexOf(value.model) >= 0 ? value.model : "eleven_v4", playback: value.playback === "auto" ? "auto" : "tap",
+      zeroRetention: value.zeroRetention === true, allowRetention: value.allowRetention === true };
+  }
+  function readVoicePrefs() { return read(VOICE_PREFS_KEY, "{}").then(voicePrefs); }
+  // Which provider and request a reply needs, or why it cannot be voiced.
+  function voicePlan(chat, character, prefs) {
+    if (!character) throw new Error("This reply has no character voice to play.");
+    if (character.ttsProvider !== "elevenlabs") return { provider: "openrouter", request: { voice: character.ttsVoice || "Kore", style: character.ttsStyle || "", requireZdr: chat.requireZdr !== false } };
+    if (!/^[A-Za-z0-9]{8,64}$/.test(character.elevenVoiceId || "")) throw new Error("Choose an ElevenLabs voice for " + (character.name || "this character") + " in the character editor.");
+    // Never silently relax a story's zero-retention requirement (1.276).
+    if (chat.requireZdr !== false && !prefs.zeroRetention && !prefs.allowRetention) throw new Error("This story requires zero data retention, which ElevenLabs offers only on Enterprise plans. In Chat settings > Connection, allow ElevenLabs to keep voice requests, or turn on ElevenLabs zero retention if your plan includes it.");
+    return { provider: "elevenlabs", request: { voiceId: character.elevenVoiceId, model: prefs.model, zeroRetention: prefs.zeroRetention } };
+  }
   function voiceAudioBlob(result) {
+    if (result && result.mime === "audio/mpeg") {
+      if (typeof result.audio !== "string" || !result.audio || result.audio.length > 22 * 1024 * 1024) throw new Error("ElevenLabs returned invalid voice audio");
+      var mpeg;
+      try { mpeg = atob(result.audio); } catch (_) { throw new Error("ElevenLabs returned invalid voice audio"); }
+      var id3 = mpeg.slice(0, 3) === "ID3", frame = mpeg.charCodeAt(0) === 255 && (mpeg.charCodeAt(1) & 224) === 224;
+      if (mpeg.length < 128 || mpeg.length > 16 * 1024 * 1024 || !(id3 || frame)) throw new Error("ElevenLabs returned invalid voice audio");
+      var mp3 = new Uint8Array(mpeg.length);
+      for (var k = 0; k < mpeg.length; k++) mp3[k] = mpeg.charCodeAt(k);
+      return new Blob([mp3], { type: "audio/mpeg" });
+    }
     if (!result || !["audio/pcm", "audio/wav"].includes(result.mime) || typeof result.audio !== "string" || !result.audio || result.audio.length > 12 * 1024 * 1024) throw new Error("OpenRouter returned invalid voice audio");
     var binary;
     try { binary = atob(result.audio); } catch (_) { throw new Error("OpenRouter returned invalid voice audio"); }
@@ -417,7 +455,7 @@
     if (!variant) return base;
     var out = Object.assign({}, base, { activeVariantName: variant.name || "Variant" });
     ["tagline","story","personality","scenario","firstMessage","exampleMessage","creatorMemo","systemPrompt","alwaysActiveSystemPrompt","age","gender","pronouns","profileImg"].forEach(function (key) { if (typeof variant[key] === "string") out[key] = variant[key]; });
-    ["ttsVoice","ttsStyle"].forEach(function (key) { if (typeof variant[key] === "string" && variant[key]) out[key] = variant[key]; });
+    ["ttsVoice","ttsStyle","ttsProvider","elevenVoiceId","elevenVoiceName"].forEach(function (key) { if (typeof variant[key] === "string" && variant[key]) out[key] = variant[key]; });
     if (Array.isArray(variant.sections)) out.sections = variant.sections;
     out.chatPortraitCrop = variant.profileImg ? variant.chatPortraitCrop || null : base.chatPortraitCrop || null;
     return out;
@@ -1864,7 +1902,7 @@
       requestRef.current = null; operationRef.current = null; busyRef.current = false; setBusy(false); setPhase("");
       if (type === "done") {
         var round = groupRoundRef.current, inRound = !!round && round.chatId === req.chatId && round.expectMessageId === req.messageId, lastInRound = !inRound || round.stopAfterCurrent || !round.remaining.length;
-        committed.then(function () { if (session !== epoch.current) return; if (lastInRound) evaluateDirector(req.chatId, req.messageId); if (roundAdvanceRef.current) roundAdvanceRef.current(req); if (lastInRound) evaluateCoordinator(req.chatId, req.messageId, { queued: inRound }); }, function () { clearGroupRound(); });
+        committed.then(function () { if (session !== epoch.current) return; autoSpeak(req.chatId, req.messageId); if (lastInRound) evaluateDirector(req.chatId, req.messageId); if (roundAdvanceRef.current) roundAdvanceRef.current(req); if (lastInRound) evaluateCoordinator(req.chatId, req.messageId, { queued: inRound }); }, function () { clearGroupRound(); });
       } else { clearGroupRound(); setError(message || "The reply stopped before completion."); }
     }
     function armReplyIdleTimer(req) {
@@ -2011,33 +2049,63 @@
       }).catch(function (error) { setDraftHandoffError(error.message || "Could not receive this draft"); })
         .finally(function () { setDraftHandoffBusy(false); });
     }
-    var voicePlayback = useRef({ audio: null, url: null, request: 0 });
-    function stopVoice() {
-      var playback = voicePlayback.current; playback.request++;
-      if (playback.audio) { playback.audio.pause(); playback.audio.src = ""; playback.audio = null; }
+    // Only refs and state setters here: lock/visibility handlers keep the first
+    // render's stopVoice, and auto-read runs from a reply's completion closure.
+    var voicePlayback = useRef({ audio: null, url: null, request: 0, queue: [], busy: false, id: "", eleven: false });
+    function releaseVoice() {
+      var playback = voicePlayback.current;
+      if (playback.audio) { playback.audio.onended = null; playback.audio.onerror = null; playback.audio.pause(); playback.audio.src = ""; playback.audio = null; }
       if (playback.url) { URL.revokeObjectURL(playback.url); playback.url = null; }
-      setSpeaking("");
     }
-    async function speakMessage(message) {
-      if (speaking === message.id) { stopVoice(); return; }
-      stopVoice();
+    function stopVoice() {
+      var playback = voicePlayback.current; playback.request++; playback.queue = []; playback.busy = false; playback.id = "";
+      if (playback.eleven) { playback.eleven = false; var eleven = elevenBridge(); if (eleven && eleven.cancel) eleven.cancel().catch(function () {}); }
+      releaseVoice(); setSpeaking("");
+    }
+    function nextVoice() {
+      var playback = voicePlayback.current; releaseVoice(); playback.busy = false; playback.id = "";
+      var next = playback.queue.shift();
+      if (next) playVoice(next, true); else setSpeaking("");
+    }
+    async function playVoice(messageId, auto) {
+      var playback = voicePlayback.current, request = playback.request, session = epoch.current;
+      playback.busy = true; playback.id = messageId;
       var chat = chatsRef.current.find(function (row) { return row.id === activeIdRef.current; });
-      var speaker = chat && messageSpeaker(chat, message, libraryRef.current);
-      var character = speaker && chat && participantCharacter(chat, speaker, libraryRef.current);
-      var api = bridge();
-      if (!character || !api || !api.speech || !status.configured) { setError("Add your OpenRouter key in Chat connection settings to play character voices."); return; }
-      if (!message.content || message.content.length > 4000) { setError("Choose a reply under 4,000 characters to voice."); return; }
-      var request = voicePlayback.current.request, session = epoch.current;
-      setSpeaking(message.id); setError("");
+      var message = chat && chat.messages.find(function (m) { return m.id === messageId; });
+      if (!message || message.role !== "assistant" || message.pending || !message.content) { nextVoice(); return; }
+      setSpeaking(messageId); if (!auto) setError("");
       try {
-        var result = await api.speech({ text: message.content, voice: character.ttsVoice || "Kore", style: character.ttsStyle || "", requireZdr: chat.requireZdr !== false });
-        if (request !== voicePlayback.current.request || session !== epoch.current || document.hidden) return;
+        if (message.content.length > 4000) throw new Error(auto ? "Auto-read skipped a reply over 4,000 characters. Tap its voice button to try a shorter reply." : "Choose a reply under 4,000 characters to voice.");
+        var speaker = messageSpeaker(chat, message, libraryRef.current);
+        var character = speaker && participantCharacter(chat, speaker, libraryRef.current);
+        var plan = voicePlan(chat, character, await readVoicePrefs());
+        if (request !== playback.request || session !== epoch.current) return;
+        var api = plan.provider === "elevenlabs" ? elevenBridge() : bridge();
+        if (!api || !api.speech) throw new Error("Character voices need the Windows or Android app.");
+        playback.eleven = plan.provider === "elevenlabs";
+        var result = await api.speech(Object.assign({ text: message.content }, plan.request));
+        playback.eleven = false;
+        if (request !== playback.request || session !== epoch.current || document.hidden) return;
         if (!result || !result.ok) throw new Error(result && result.error || "Voice generation failed");
         var url = URL.createObjectURL(voiceAudioBlob(result));
-        var audio = new Audio(url); voicePlayback.current.audio = audio; voicePlayback.current.url = url;
-        audio.onended = stopVoice; audio.onerror = function () { setError("The generated voice could not be played on this device."); stopVoice(); };
+        var audio = new Audio(url); playback.audio = audio; playback.url = url;
+        audio.onended = nextVoice; audio.onerror = function () { setError("The generated voice could not be played on this device."); stopVoice(); };
         await audio.play();
-      } catch (error) { if (request === voicePlayback.current.request) { stopVoice(); setError(error.message || "Voice generation failed"); } }
+      } catch (error) { if (request === playback.request) { stopVoice(); setError(error.message || "Voice generation failed"); } }
+    }
+    function speakMessage(message) {
+      // Tapping the reply that is playing stops it; any tap clears the auto-read queue.
+      if (voicePlayback.current.id === message.id) { stopVoice(); return; }
+      stopVoice(); playVoice(message.id, false);
+    }
+    // Auto-read only replies generated on this device, while this story is on screen.
+    function autoSpeak(chatId, messageId) {
+      readVoicePrefs().then(function (prefs) {
+        if (prefs.playback !== "auto" || chatId !== activeIdRef.current || document.hidden || !window.RolecraftChatOpen) return;
+        var playback = voicePlayback.current;
+        if (playback.id === messageId || playback.queue.indexOf(messageId) >= 0) return;
+        if (playback.busy) playback.queue.push(messageId); else playVoice(messageId, true);
+      });
     }
     useEffect(function () {
       function hidden() { if (document.hidden) stopVoice(); }
@@ -2567,7 +2635,7 @@ scene && active && h(ScenePanel, { active: active, cast: activeCast, character: 
           props.group && !message.pending && !message.error && h("button", { className: "rcchat-tool", "data-tool": "scene-fact", disabled: props.busy, onClick: run("fact") }, "Add scene fact"),
           props.group && Ledger && !message.pending && !message.error && !!String(message.content || "").trim() && h("button", { className: "rcchat-tool", "data-tool": "story-ledger", disabled: props.busy, onClick: run("ledger") }, "Add to story ledger"),
           !user && !message.pending && h("button", { className: "rcchat-tool", "data-tool": "regenerate", disabled: props.busy, "aria-label": "Regenerate as " + props.regenerateName, title: "Regenerate this branch as " + props.regenerateName, onClick: run("regenerate") }, "Regenerate as " + props.regenerateName),
-          !user && !message.pending && !message.error && h("button", { className: "rcchat-tool", "data-tool": "voice", disabled: !props.speaking && props.busy, title: "Generate and play this reply with Gemini 3.8 Flash TTS through your saved OpenRouter key. This is a paid request.", onClick: run("speak") }, props.speaking ? "Stop voice" : "Play voice"),
+          !user && !message.pending && !message.error && h("button", { className: "rcchat-tool", "data-tool": "voice", disabled: !props.speaking && props.busy, title: "Generate and play this reply in the character's voice (OpenRouter or ElevenLabs, set in the character editor). This is a paid request.", onClick: run("speak") }, props.speaking ? "Stop voice" : "Play voice"),
           h("button", { className: "rcchat-tool", "data-tool": "delete", disabled: props.busy, onClick: run("remove") }, "Delete"))),
       editing ? h("div", { className: "rcchat-bubble" }, h("textarea", { className: "rcchat-edit", "aria-label": "Edit message", value: props.editText, onChange: function (e) { var actions = props.actions.current; if (actions) actions.editText(message, e.target.value); } }), h("div", { className: "rcchat-row rcchat-edit-actions" }, h("button", { className: "rcchat-btn", disabled: props.busy || !props.editText.trim(), onClick: run("save", false) }, "Save and branch here"), user && h("button", { className: "rcchat-btn primary", disabled: props.busy || !props.editText.trim(), onClick: run("save", true) }, "Save and regenerate reply"), h("button", { className: "rcchat-btn", onClick: run("cancel") }, "Cancel")))
         : h("div", { className: "rcchat-bubble" }, h(MemoStoryText, { text: message.content || "", pending: message.pending }), message.error && h("div", { className: "rcchat-error" }, message.error)),
@@ -3645,13 +3713,67 @@ h("p", { className: "rcchat-hint" }, "The first group reply and the end of a que
           h("button", { className: "rcchat-btn", disabled: loading || !props.status.configured, onClick: loadModels }, loading ? "Working…" : "Verify and load models"),
           props.status.configured && h("button", { className: "rcchat-btn danger", disabled: loading || props.busy, onClick: function () { run(function () { return props.native.clearKey().then(function (r) { if (r && r.ok === false) throw new Error(r.error || "Could not remove the key"); props.onStatus({ configured: false, secure: true }); props.onModels([]); }); }); } }, "Forget key")),
         h("p", null, "Loading models contacts OpenRouter. Sending or regenerating a reply sends the context shown in Inspect context. Larger contexts can increase cost and latency.")),
-        window.RolecraftProviderBalances && h(window.RolecraftProviderBalances, { providers: ["openrouter"], disabled: loading })),
+        window.RolecraftProviderBalances && h(window.RolecraftProviderBalances, { providers: ["openrouter"], disabled: loading }),
+        h(VoiceSettings, { busy: props.busy })),
       error && h("p", { className: "rcchat-error", role: "alert" }, error),
       h("div", { className: "rcchat-wizard-footer" }, h("button", { className: "rcchat-btn primary", onClick: props.onClose }, "Done")));
   }
 
+  // ElevenLabs key and per-device playback choices (1.339). Self-contained so
+  // ChatApp's hook order is untouched.
+  function VoiceSettings(props) {
+    var eleven = useMemo(elevenBridge, []);
+    var _state = useState({ configured: false, loaded: false }), state = _state[0], setState = _state[1];
+    var _prefs = useState(null), prefs = _prefs[0], setPrefs = _prefs[1];
+    var _key = useState(""), key = _key[0], setKey = _key[1];
+    var _working = useState(false), working = _working[0], setWorking = _working[1];
+    var _error = useState(""), error = _error[0], setError = _error[1];
+    var _notice = useState(""), notice = _notice[0], setNotice = _notice[1];
+    useEffect(function () {
+      var live = true;
+      readVoicePrefs().then(function (value) { if (live) setPrefs(value); });
+      if (eleven) eleven.status().then(function (r) { if (live) setState({ configured: !!(r && r.ok && r.configured), loaded: true, error: r && !r.ok ? r.error : "" }); }).catch(function () { if (live) setState({ configured: false, loaded: true }); });
+      return function () { live = false; };
+    }, [eleven]);
+    function savePrefs(patch) {
+      var next = Object.assign({}, prefs || voicePrefs("{}"), patch);
+      setPrefs(next); setError("");
+      window.storage.set(VOICE_PREFS_KEY, JSON.stringify(next)).catch(function () { setError("Voice settings could not be saved. Keep Chat open and try again."); });
+    }
+    function run(action, done) {
+      setWorking(true); setError(""); setNotice("");
+      Promise.resolve().then(action).then(function (r) { if (r && r.ok === false) throw new Error(r.error || "The operation failed."); if (done) done(); })
+        .catch(function (e) { setError(e.message || "The operation failed."); }).finally(function () { setWorking(false); });
+    }
+    if (!prefs) return null;
+    var auto = prefs.playback === "auto";
+    return h("fieldset", { className: "rcchat-story-settings rcchat-voice-settings" }, h("legend", null, "Character voices"),
+      h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-voice-playback" }, "Playback"),
+        h("select", { id: "rcchat-voice-playback", value: prefs.playback, onChange: function (e) { savePrefs({ playback: e.target.value === "auto" ? "auto" : "tap" }); } },
+          h("option", { value: "tap" }, "Tap a reply's voice button to play it"), h("option", { value: "auto" }, "Read new replies aloud automatically"))),
+      h("p", { className: "rcchat-hint" }, auto ? "Each new reply written on this device plays once it is saved, in order. Every reply read aloud is a paid voice request. Tapping a voice button, locking, leaving Chat or switching stories stops playback." : "Nothing plays until you tap a reply's voice button. Each playback is a paid voice request."),
+      !eleven ? h("p", { className: "rcchat-hint" }, "ElevenLabs voices are available in the installed Windows and Android apps.") : h(React.Fragment, null,
+        h("div", { className: "rcchat-notice" }, state.configured ? "Your ElevenLabs key is protected on this device. The interface cannot read it back." : "Add your own ElevenLabs key to give characters ElevenLabs voices. It is protected on this device and excluded from backups and sync."),
+        h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-eleven-key" }, "ElevenLabs API key"), h("input", { id: "rcchat-eleven-key", type: "password", value: key, autoComplete: "off", placeholder: state.configured ? "Replace saved key" : "sk_…", onChange: function (e) { setKey(e.target.value); } })),
+        h("div", { className: "rcchat-row rcchat-wrap" },
+          h("button", { className: "rcchat-btn primary", disabled: working || props.busy || key.trim().length < 16, onClick: function () { run(function () { return eleven.setKey({ key: key }); }, function () { setKey(""); setState({ configured: true, loaded: true }); setNotice("ElevenLabs key saved."); }); } }, "Save securely"),
+          state.configured && h("button", { className: "rcchat-btn danger", disabled: working || props.busy, onClick: function () { run(function () { return eleven.clearKey(); }, function () { setState({ configured: false, loaded: true }); setNotice("ElevenLabs key removed from this device."); }); } }, "Forget key")),
+        h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-eleven-model" }, "ElevenLabs model"),
+          h("select", { id: "rcchat-eleven-model", value: prefs.model, onChange: function (e) { savePrefs({ model: ELEVEN_MODELS.indexOf(e.target.value) >= 0 ? e.target.value : "eleven_v4" }); } },
+            h("option", { value: "eleven_v4" }, "Eleven v4 · most expressive"), h("option", { value: "eleven_v4_turbo" }, "Eleven v4 Turbo · fastest"))),
+        h("label", { className: "rcchat-check" }, h("input", { type: "checkbox", checked: prefs.allowRetention, onChange: function (e) { savePrefs({ allowRetention: e.target.checked }); } }),
+          h("span", null, "Allow ElevenLabs to keep voice requests", h("small", null, " Lets ElevenLabs voices play in stories that require zero data retention. ElevenLabs may keep the reply text and audio under its own policy. Story replies from OpenRouter keep their own privacy setting."))),
+        h("label", { className: "rcchat-check" }, h("input", { type: "checkbox", checked: prefs.zeroRetention, onChange: function (e) { savePrefs({ zeroRetention: e.target.checked }); } }),
+          h("span", null, "Use ElevenLabs zero retention (Enterprise plans)", h("small", null, " Asks ElevenLabs not to keep voice requests. Other plans refuse these requests, so leave this off unless your plan includes it."))),
+        h("p", { className: "rcchat-hint" }, "Choose each character's ElevenLabs voice in the character editor. Playing a voice sends that reply's text to ElevenLabs; loading your voice list contacts ElevenLabs only when you ask.")),
+      notice && h("p", { className: "rcchat-hint", role: "status" }, notice),
+      (error || state.error) && h("p", { className: "rcchat-error", role: "alert" }, error || state.error));
+  }
+
   window.__rcvChatInternals = { chatTitle: chatTitle, lastChatAt: lastChatAt, participantKey: participantKey, participantsOf: participantsOf, selectedParticipant: selectedParticipant, participantCharacter: participantCharacter, messageSpeaker: messageSpeaker, changeParticipants: changeParticipants, sceneSnapshot: sceneSnapshot, sceneOnPath: sceneOnPath, navigateScene: navigateScene, patchScene: patchScene, manualSceneDraft: manualSceneDraft, manualSceneChanges: manualSceneChanges, patchManualScene: patchManualScene, mentionAt: mentionAt, participantChoices: participantChoices, autoPairKeys: autoPairKeys, directorState: directorState, directorNudge: directorNudge, groupCoordinatorState: groupCoordinatorState, coordinatorDue: coordinatorDue, coordinatorFingerprint: coordinatorFingerprint, coordinatorReviewFields: coordinatorReviewFields, selectedCoordinatorProposal: selectedCoordinatorProposal, chatReviewBundle: chatReviewBundle, portraitCropStyle: portraitCropStyle, contextLimits: contextLimits, modelTokenPricing: modelTokenPricing, estimateReplyCost: estimateReplyCost, estimateQueueCost: estimateQueueCost, formatEstimatedUsd: formatEstimatedUsd, tokenEstimate: tokenEstimate, parseChats: parseChats, resolveCharacter: resolveCharacter, activePath: activePath, storySearchResults: storySearchResults, storySearchLeaf: storySearchLeaf, storySearchJumpPlan: storySearchJumpPlan, loreFor: loreFor, assemble: assemble, memoryFor: memoryFor, memoryPlan: memoryPlan, sharedLaneReplyContext: sharedLaneReplyContext, memoryHistory: memoryHistory, memoryProfiles: memoryProfiles, memoryUsageText: memoryUsageText, replyUsage: replyUsage, chatCacheReport: chatCacheReport, chatCostBreakdown: chatCostBreakdown, groupSpendGate: groupSpendGate, completedMemory: completedMemory, extendMemory: extendMemory, withMemory: withMemory, recentStart: recentStart, forkConversation: forkConversation, captureCast: captureCast, roleplayText: roleplayText };
   window.__rcvChatInternals.voiceAudioBlob = voiceAudioBlob;
+  window.__rcvChatInternals.voicePrefs = voicePrefs;
+  window.__rcvChatInternals.voicePlan = voicePlan;
   window.__rcvChatInternals.memoryTextFor = memoryTextFor;
   window.__rcvChatInternals.replaceMemoryText = replaceMemoryText;
   var host = document.createElement("div"); host.id = "rcv-chat-root"; document.body.appendChild(host); ReactDOM.createRoot(host).render(h(ChatApp));

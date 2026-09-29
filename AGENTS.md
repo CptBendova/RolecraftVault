@@ -107,6 +107,17 @@ persistence. Stop after a failed generation or save; retain earlier successes
 and allow retrying an unsaved preview without another paid call. Never replace
 originals or automatically retry provider requests.
 
+Owner-requested ElevenLabs character voices (1.339) permit explicit voice
+actions through app/elevenlabs.js and Android ElevenLabsPlugin to the fixed
+api.elevenlabs.io HTTPS endpoints /v1/text-to-speech/{voice} and /v2/voices
+only: tapping a reply's voice button, the auto-read setting the user chose, or
+loading the voice list in the character editor. Only the reply text, voice ID
+and model are sent. The key is OS-protected outside vault records, exports,
+sync and credential sharing. Never follow redirects or preview URLs; require a
+bounded MP3 and sanitised voice rows. Lock/background cancels. A story that
+requires zero data retention may use ElevenLabs only after the user enables
+"Allow ElevenLabs to keep voice requests" or Enterprise zero retention.
+
 Private provider allowance checks (1.288) permit an explicit Refresh through
 app/provider-balances.js and Android ProviderBalancesPlugin to the fixed
 OpenRouter /api/v1/key endpoint. Use only the protected normal inference key;
