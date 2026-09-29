@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.340";
+const APP_VERSION = "1.341";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,10 @@ const APP_VERSION = "1.340";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.341",
+  title: "Gallery Polish",
+  notes: ["New: On phones, selected pictures get a floating bar with Photo info, Download and Delete.", "Improved: Gallery pictures sit in even, framed tiles on the character page and in the grid. Nothing is cropped.", "Improved: On phones the picture grid opens straight to your pictures; editing tools appear when you select one.", "Improved: Character details such as age, gender and bucket show as tidy labelled cards.", "Improved: Character page buttons line up neatly on phones.", "Fixed: Grid captions stay readable in the Light theme, and the close button shows clearly in every theme.", "Note: Windows can update with the .rcvup file or the installer. Android needs the new APK."]
+}, {
   heading: "1.340",
   title: "Sync Fix and JPG Portraits",
   notes: ["New: Save every character portrait, including each variant's, as JPG files or one zip from Settings.", "New: Photo info can now save pictures that are already JPG, exactly as stored.", "Fixed: Sync no longer gets stuck on \"Saving verified synced changes\" when you open Chat while it saves.", "Improved: If saving synced changes ever takes long, a small banner replaces the full-screen message so you can keep working.", "Fixed: Long replies with a Gemini voice no longer fail with \"Voice response is too large\". Replies up to about four minutes now play.", "Improved: Voice errors now say which service failed: ElevenLabs or Gemini through OpenRouter.", "Note: Windows needs the full installer and Android the new APK for this update."]
@@ -2410,10 +2414,44 @@ const CSS = `
   .rcv .cpage-grid.nogal { grid-template-columns: minmax(0, 1100px) 200px; }
   .rcv .cpage-grid.nogal .cpage-aside { grid-template-columns: 1fr; }
   .rcv .cpage-aside { position: sticky; top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
-  .rcv .cpage-aside .tile { aspect-ratio: 1; background: transparent; border-color: transparent; }
+  /* 1.341: every gallery and grid picture sits in a visible matte frame of the
+     same size. Pictures still keep their whole shape (object-fit: contain), but
+     the tiles no longer look like a scatter of differently sized images. */
+  .rcv .cpage-aside .tile { aspect-ratio: 1; background: var(--panel); border-color: var(--line); }
   .rcv .cpage-aside .tile.full { grid-column: 1 / -1; aspect-ratio: 1; }
   .rcv .cpage-aside .tile img { width: 100%; height: 100%; object-fit: contain; }
-  .rcv .imggrid .tile { aspect-ratio: 1; background: transparent; border-color: transparent; }
+  .rcv .imggrid .tile { aspect-ratio: 1; background: var(--panel); border-color: var(--line); }
+  .rcv .cpage-aside .tile:hover, .rcv .imggrid .tile:hover { border-color: var(--brass-line); }
+  /* A fade from clear to dark read as a grey smudge over the light theme's pale
+     frame. Grid captions are a solid dark strip instead, legible in every theme. */
+  .rcv .imggrid .tile .tlab { padding: 7px 10px; background: rgba(5,8,17,.8); }
+  .rcv .cpage-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+  .rcv .cpage-fact { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 6px 12px 7px; min-width: 0; }
+  .rcv .cpage-fact dt { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 2px; }
+  .rcv .cpage-fact dd { margin: 0; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+  .rcv.phone .cpage-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rcv.phone .cpage-actions > .btn { width: 100%; min-width: 0; justify-content: center; }
+  .rcv.phone .cpage-actions > .btn-primary { grid-column: 1 / -1; }
+  .rcv.phone .cpage-actions > .btn:last-child:nth-child(even) { grid-column: 1 / -1; }
+  /* 1.341: on a phone the grid's editing toolbar filled the whole first screen
+     before a single picture. With nothing ticked, only browsing controls show and
+     each filter is one swipeable row; ticking a picture brings the tools back.
+     Controls stay in the DOM (and keep their disabled rules), only hidden. */
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-bulk-actions > .btn:not(:first-child),
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-row-actions,
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-profile-row { display: none !important; }
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-bulk-actions { grid-template-columns: 1fr; }
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-filter-row { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; margin-right: -14px !important; padding-right: 14px; }
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-filter-row::-webkit-scrollbar { display: none; }
+  .rcv.phone .image-grid-view:not(.has-selection) .image-grid-filter-row > * { flex: 0 0 auto; }
+  /* The phone header scrolls away, so a picture ticked further down left its
+     actions off screen. While anything is selected, the main actions float just
+     above the bottom navigation. */
+  .rcv.phone .image-grid-view.has-selection .image-grid-bulk-actions {
+    position: fixed; left: 12px; right: 12px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 6;
+    width: auto !important; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px;
+    background: var(--panel2); border: 1px solid var(--brass-line); border-radius: 16px; box-shadow: var(--shadow); }
+  .rcv.phone .image-grid-view.has-selection .image-grid-content { padding-bottom: calc(190px + env(safe-area-inset-bottom)) !important; }
   .rcv .imggrid .tile img { width: 100%; height: 100%; object-fit: contain; }
   .rcv .imggrid .tile:hover img, .rcv .cpage-aside .tile:hover img { transform: none; }
   /* The image grid's desktop header can hold several editing toolbars. Keeping
@@ -4753,7 +4791,7 @@ function CloseX({ onClose, label, fixed }) {
       justifyContent: "center",
       background: "rgba(8,12,26,.62)",
       border: "1px solid var(--line2)",
-      color: "var(--text)",
+      color: "#eef1fb",
       cursor: "pointer"
     }
   }, /*#__PURE__*/React.createElement(Ic, {
@@ -6445,7 +6483,7 @@ function ImageGridView({
       zIndex: 70,
       overflowY: "auto"
     },
-    className: "scrollbody sheet image-grid-view grid-size-" + tileSize,
+    className: "scrollbody sheet image-grid-view grid-size-" + tileSize + (selCount ? " has-selection" : ""),
     "aria-label": "Image grid"
   }, /*#__PURE__*/React.createElement("div", {
     className: "image-grid-header",
@@ -8510,22 +8548,12 @@ function CharacterPage({
       cursor: "pointer"
     },
     onClick: () => setActiveVar(activeVar === v.id ? null : v.id)
-  }, v.name || "Variant " + (i + 2))))), details.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 16,
-      flexWrap: "wrap",
-      marginBottom: 10,
-      fontSize: 14,
-      color: "var(--mut)"
-    }
-  }, details.map(([k, v]) => /*#__PURE__*/React.createElement("span", {
-    key: k
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--dim)"
-    }
-  }, k, ":"), " ", v))), memo && /*#__PURE__*/React.createElement("div", {
+  }, v.name || "Variant " + (i + 2))))), details.length > 0 && /*#__PURE__*/React.createElement("dl", {
+    className: "cpage-facts"
+  }, details.map(([k, v]) => /*#__PURE__*/React.createElement("div", {
+    key: k,
+    className: "cpage-fact"
+  }, /*#__PURE__*/React.createElement("dt", null, k), /*#__PURE__*/React.createElement("dd", null, v)))), memo && /*#__PURE__*/React.createElement("div", {
     style: {
       border: "1px solid var(--line)",
       background: "var(--panel)",
@@ -8634,6 +8662,7 @@ function CharacterPage({
     d: icons.lore,
     size: 12
   }), w))), /*#__PURE__*/React.createElement("div", {
+    className: "cpage-actions",
     style: {
       display: "flex",
       gap: 10,
