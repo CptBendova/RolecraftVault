@@ -1562,6 +1562,12 @@ places that had drifted to three different values, so it now has one owner:
 npm run set-version 1.224    # rewrites all six display sites at once
 ```
 
+When the release changes anything the signer counts as shell (main.js,
+preload.js, index.html, vendor, or the Chat/sync/provider scripts it lists),
+also advance `UPDATE_COMPAT_BUILD` with `node scripts/set-version.js 1.224
+--shell`. `npm run set-version 1.224 --shell` silently drops the flag (npm
+consumes it), and `npm run sign` then refuses the release.
+
 That rewrites `APP_VERSION` in `app/app.js`, `FACTORY_BUILD` in `app/main.js`,
 `app/package.json`, `installer/package.json`, `!define VERSION` in `build/installer.nsi`, and both
 `versionName` and `versionCode` in `mobile/android/app/build.gradle`. Never edit

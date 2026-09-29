@@ -75,7 +75,7 @@ const CHAT_EDITION = true;
    current renderer. Unlike FACTORY_BUILD, this changes only when the shell or
    bundled vendor files genuinely change. It is signed into every update so a
    cumulative renderer package cannot jump over a required shell release. */
-const UPDATE_COMPAT_BUILD = "1.337";
+const UPDATE_COMPAT_BUILD = "1.338";
 const UPDATE_PUBKEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAOGlUi0PAX40xdBvu/0koKWlHr+bFCB2MdbA7OEbNQO4=
 -----END PUBLIC KEY-----`;
