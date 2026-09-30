@@ -36,8 +36,8 @@
     function deferredPeer(peer){const retry=peerRetries.get(peer.id);return retry&&Date.now()<retry.at?{id:peer.id,label:retry.label,online:false,error:retry.error,retryAt:retry.at}:null;}
     /* Named once, reused by both lanes: a device that can reach us but not the
        reverse (or the reverse) is almost always a firewall on one side. */
-    const INBOUND_BLOCKED="It reached this device a moment ago, but this device cannot connect back to it. Its firewall is blocking incoming connections: on a Windows PC, set that Wi-Fi network to Private or allow Rolecraft Vault through Windows Defender Firewall.";
-    const reachWarning=(r,label)=>r&&r.cannotReachMe===true?(label||"A paired device")+" cannot connect back to this device, so it cannot fetch changes from here. On a Windows PC, set this Wi-Fi network to Private or allow Rolecraft Vault through Windows Defender Firewall.":null;
+    const INBOUND_BLOCKED="It reached this device a moment ago, but this device cannot connect back to it. Its firewall is blocking incoming connections: on a Windows PC, set that Wi-Fi network to Private or allow Rolecraft through Windows Defender Firewall.";
+    const reachWarning=(r,label)=>r&&r.cannotReachMe===true?(label||"A paired device")+" cannot connect back to this device, so it cannot fetch changes from here. On a Windows PC, set this Wi-Fi network to Private or allow Rolecraft through Windows Defender Firewall.":null;
     function failedPeer(peer,error){
       const blocked=peer.inboundAt&&Date.now()-peer.inboundAt<180000&&/offline|not accepting|interrupted/i.test(error.message||"");
       const previous=peerRetries.get(peer.id),attempt=Math.min(4,(previous?.attempt||0)+1),retry={endpoint:endpoint(peer),attempt,at:Date.now()+[2000,5000,10000,30000][attempt-1],label:peer.label||"Paired device",error:blocked?INBOUND_BLOCKED:error.message};

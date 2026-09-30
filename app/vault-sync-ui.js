@@ -121,7 +121,7 @@
       h("ol",null,
         h("li",null,"Put both devices on the same Wi-Fi. Guest networks and mobile data keep them apart."),
         h("li",null,"Open and unlock Rolecraft on both. Android pauses sync in the background unless Sync with screen off is on."),
-        h("li",null,"On Windows, allow Rolecraft Vault through Windows Defender Firewall and set this Wi-Fi to a Private network."),
+        h("li",null,"On Windows, allow Rolecraft through Windows Defender Firewall and set this Wi-Fi to a Private network."),
         h("li",null,"Turn on automatic date and time on every device. Clocks more than two minutes apart are refused."),
         h("li",null,"Some routers isolate devices from each other (AP or client isolation). Turn that off, or use a different network."),
         h("li",null,"Update every device to the same Rolecraft version.")),

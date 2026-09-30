@@ -9,6 +9,49 @@ existing GitHub history, installed data identities, encrypted user data and
 release signing identities intact. Public source and release artifacts must be
 reviewed so local vaults, exports, credentials and signing material stay local.
 
+## Audit fixes (1.342)
+
+Owner request: fix everything the full-app sweep found (AUDIT-REPORT-1.341.md
+is not kept; these are the promises it produced).
+
+- **Escape.** `useEscapeClose(onClose, active, backRef)` (next to SimpleModal)
+  is the capture-phase route for dialogs drawn inline. A dialog that passes its
+  backdrop ref steps aside while another overlay (`.modal-back`, `.lb-root`,
+  `.ss-root`, `.image-studio`) is on top, which keeps "Escape closes only what
+  is on top": Settings uses it, and its own scan overlay closes first. The
+  backup warning and the New lorebook / prompt-collection dialogs use it from
+  the root. The character editor has its own handler that goes through the same
+  unsaved-changes guard as Cancel and yields to any overlay.
+- **Phone reachability.** Library stats is an action in the search palette and a
+  row in Settings > Help, because the phone sidebar hides Stats. Do not rely on
+  `.side-tools` for anything a phone needs.
+- **First focus.** `[data-initial-focus]` picks a sheet's first focus; the
+  character editor puts it on its heading (tabIndex -1, no outline) so Delete is
+  never the focused control.
+- **Chat dialogs.** `chatConfirm({title, message, confirmLabel, danger})` in
+  chat.js replaces every `window.confirm`. It is a DOM dialog (no hooks), Cancel
+  is focused, Escape and the phone Back gesture cancel it through the
+  workspace `back()` handler (`.rcchat-confirm-back`), locking cancels it, and
+  only one can be open. The group spending prompts re-enter
+  `startGroupRound(keys, true)` / `resumeInterruptedRound(true)` after approval
+  so every guard is rechecked; never pass a click event as `approved`.
+- **Theme colours.** Editor placeholders use `var(--field)`, never a hard-coded
+  dark rgba (invisible in Light). `customThemeVars` checks the accent against
+  its own 14% tint as well as the plain surfaces (ghost brass buttons).
+- **Touch sizes.** chat.css 1.342 blocks: 44px on wide coarse-pointer screens
+  (Android tablets), 48px on phones for summaries, inputs and the jump button.
+  The tablet block must stay `(min-width:761px) and (pointer:coarse)`; an
+  unconditional `#rcv-chat-root .rcchat-btn{min-height:44px}` overrides the
+  phone 48px rules by specificity (test-chat-layout caught it).
+- **Left as designed.** The character hero stays a dark stage in Light theme;
+  tag-remove crosses stay at the WCAG 24px minimum; cleanName's 40-character cap
+  only shortens file names.
+
+`test-audit-fixes-1-342.js` covers Escape, the stats route, first focus, the
+Light placeholder, the 360px lore entry and character page, and the static
+promises (no window.confirm in Chat, firewall wording). Watch for template
+literals in test helpers: `\s` inside a template becomes `s`.
+
 ## Character page and gallery grid polish (1.341)
 
 Owner request: make the character page and gallery grid modern and easy to use.

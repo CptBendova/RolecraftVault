@@ -1427,7 +1427,7 @@
         var spend = groupSpendGate(chat, ledger, 0);
         if (spend.enabled && (spend.reached || spend.unknown)) {
           if (!options.manual) { if (activeIdRef.current === chatId) setCoordinatorStatus("Group spending warning reached or a charge is unknown. Automatic scene checks are paused."); return null; }
-          if (!window.confirm("This group has at least $" + spend.known.toFixed(4) + " in reported charges" + (spend.unknown ? " plus " + spend.unknown + " request(s) with unknown cost" : "") + ". Run one more paid scene check anyway?")) return null;
+          if (!(await chatConfirm({ title: "Group spending warning", message: "This group has at least $" + spend.known.toFixed(4) + " in reported charges" + (spend.unknown ? " plus " + spend.unknown + " request(s) with unknown cost" : "") + ". Run one more paid scene check anyway?", confirmLabel: "Run paid check" }))) return null;
         }
         var fingerprint = await coordinatorFingerprint(chat, state);
         var earlier = Object.prototype.hasOwnProperty.call(ledger, messageId) && ledger[messageId] || {};
@@ -1868,6 +1868,8 @@
     useEffect(function () {
       if (!open) { clearGroupRound(); return; }
       function back() {
+        var pendingConfirm = document.querySelector('.rcchat-confirm-back');
+        if (pendingConfirm) { pendingConfirm.dispatchEvent(new CustomEvent('rcchat-confirm-cancel')); return true; }
         var options = document.querySelector('.rcchat-header-options[open]'), turnMenu = document.querySelector('.rcchat-message-actions[open]');
         if (turnMenu) { turnMenu.open = false; var trigger = turnMenu.querySelector('summary'); if (trigger) trigger.focus(); return true; }
         if (factMessage) { setFactMessage(null); return true; }
@@ -2181,7 +2183,8 @@
       fact: function (message) { if (active && activeCast.length > 1 && !busyRef.current && !message.pending && !message.error) setFactMessage({ message: message, chatId: active.id, leafId: active.leafId }); },
       ledger: function (message) { if (Ledger && active && activeCast.length > 1 && !busyRef.current && !message.pending && !message.error && String(message.content || "").trim()) setFactMessage({ ledger: true, message: message, chatId: active.id, leafId: active.leafId }); },
       speak: speakMessage,
-      remove: function (message) { if (window.confirm("Delete this message and its replies? Branch first to keep a copy.")) deleteMessage(message); }
+      remove: function (message) { chatConfirm({ title: "Delete message", message: "Delete this message and its replies? Branch first to keep a copy.", confirmLabel: "Delete", danger: true }).then(function (yes) { if (yes && rowActions.current) rowActions.current.removeNow(message); }); },
+      removeNow: function (message) { deleteMessage(message); }
     };
     function create(form) {
       var character = library.chars.find(function (c) { return c.id === form.characterId; }); if (!character) return;
@@ -2421,7 +2424,7 @@
         });
       }).catch(function (error) { if (groupRoundRef.current === round) { clearGroupRound(); if (round.preparing) { busyRef.current = false; setBusy(false); setPhase(""); } if (session === epoch.current && !document.hidden) setError(error.message || "The group round stopped. Completed writing remains saved."); } });
     };
-    function startGroupRound(keys) {
+    function startGroupRound(keys, approved) {
       var current = chatsRef.current.find(function (c) { return c.id === activeId; });
       if (!current || !native || !open || document.hidden || busyRef.current || window.RolecraftChatSyncApplying || groupRoundRef.current) return false;
       var cast = participantsOf(current), selected = Array.isArray(keys) ? keys.slice() : [];
@@ -2431,8 +2434,14 @@
       var spend = groupSpendGate(current, extraCostRef.current[current.id] || {}, estimate && estimate.expectedUsd);
       var budgetOverride = false;
       if (spend.needsApproval) {
-        budgetOverride = window.confirm("Group spending warning: at least $" + spend.known.toFixed(4) + " reported so far" + (spend.unknown ? ", with " + spend.unknown + " unknown-cost request(s)" : "") + (estimate ? ". This round is estimated around $" + estimate.expectedUsd.toFixed(4) : ". The model's price is unavailable") + ". These are estimates, not a provider-side cap. Start " + selected.length + " paid replies anyway?");
-        if (!budgetOverride) { setError("The group reply queue was not started. Adjust its spending warning in Scene if needed."); return false; }
+        if (!approved) {
+          // Ask in the app's own dialog, then start again; every guard above is rechecked.
+          chatConfirm({ title: "Group spending warning", message: "At least $" + spend.known.toFixed(4) + " reported so far" + (spend.unknown ? ", with " + spend.unknown + " unknown-cost request(s)" : "") + (estimate ? ". This round is estimated around $" + estimate.expectedUsd.toFixed(4) : ". The model's price is unavailable") + ". These are estimates, not a provider-side cap. Start " + selected.length + " paid replies anyway?", confirmLabel: "Start replies" }).then(function (yes) {
+            if (yes) startGroupRound(keys, true); else setError("The group reply queue was not started. Adjust its spending warning in Scene if needed.");
+          });
+          return true;
+        }
+        budgetOverride = true;
       }
       var first = cast.find(function (p) { return participantKey(p) === selected[0]; });
       var round = { chatId: current.id, keys: selected, remaining: selected.slice(1), total: selected.length, currentIndex: 1, anchorLeafId: current.leafId || null, expectMessageId: null, stopAfterCurrent: false, preparing: true, budgetOverride: budgetOverride };
@@ -2470,15 +2479,18 @@
       round.stopAfterCurrent = true;
       setQueueStatus({ current: round.currentIndex, total: round.total, speaker: queueStatus && queueStatus.speaker || "character", stopping: true });
     }
-    function resumeInterruptedRound() {
+    function resumeInterruptedRound(approved) {
       var current = chatsRef.current.find(function (c) { return c.id === activeId; });
       var plan = current && roundPlansRef.current[current.id];
       var state = plan && inspectRoundPlan(plan, current);
       if (!roundReview || !state || state.state !== "ready" || !native || !status.configured || !open || document.hidden || busyRef.current || saveFailed.current || window.RolecraftChatSyncApplying || groupRoundRef.current) return;
       var spend = groupSpendGate(current, extraCostRef.current[current.id] || {}, null), budgetOverride = false;
       if (spend.needsApproval) {
-        budgetOverride = window.confirm("Group spending warning: at least $" + spend.known.toFixed(4) + " reported so far" + (spend.unknown ? " plus unknown charges" : "") + ". Resume the remaining paid replies anyway?");
-        if (!budgetOverride) return;
+        if (!approved) {
+          chatConfirm({ title: "Group spending warning", message: "At least $" + spend.known.toFixed(4) + " reported so far" + (spend.unknown ? " plus unknown charges" : "") + ". Resume the remaining paid replies anyway?", confirmLabel: "Resume replies" }).then(function (yes) { if (yes) resumeInterruptedRound(true); });
+          return;
+        }
+        budgetOverride = true;
       }
       var next = participantsOf(current).find(function (p) { return participantKey(p) === state.keys[0]; });
       if (!next) return;
@@ -2568,7 +2580,7 @@
 interruptedRound && h("div", { className: "rcchat-queue-resume", role: "status" },
             h("span", null, interruptedState.state === "ready" ? (interruptedState.keys.length + " group " + (interruptedState.keys.length === 1 ? "reply remains" : "replies remain") + " · paused") : interruptedState.state === "blocked" ? "Group queue stopped at an unfinished reply. Review that reply manually." : "Earlier group queue is no longer resumable on this branch."),
             interruptedState.state === "ready" && !roundReview && h("button", { type: "button", className: "rcchat-btn", disabled: busy, onClick: function () { setRoundReview(true); } }, "Review remaining replies"),
-            interruptedState.state === "ready" && roundReview && h("div", { className: "rcchat-notice" }, h("p", null, "This will send " + interruptedState.keys.length + " new paid roleplay " + (interruptedState.keys.length === 1 ? "request" : "requests") + " in order. Completed replies are not repeated. " + (interruptedEstimate ? "Estimated remaining cost: " + formatEstimatedUsd(interruptedEstimate.expectedUsd) + "; up to about " + formatEstimatedUsd(interruptedEstimate.fullCapUsd) + " at the reply cap. " : "Catalog pricing is unavailable for this model. ") + "Automatic memory and optional scoring may add provider costs. No request starts until you confirm."), !interruptedEstimate && native && status.configured && h("button", { type: "button", className: "rcchat-btn", disabled: busy || priceLoading, onClick: loadModelPrices }, priceLoading ? "Loading prices…" : "Load model prices"), h("button", { type: "button", className: "rcchat-btn primary", disabled: busy || !status.configured, onClick: resumeInterruptedRound }, "Confirm remaining replies"), h("button", { type: "button", className: "rcchat-btn", onClick: function () { setRoundReview(false); } }, "Cancel")),
+            interruptedState.state === "ready" && roundReview && h("div", { className: "rcchat-notice" }, h("p", null, "This will send " + interruptedState.keys.length + " new paid roleplay " + (interruptedState.keys.length === 1 ? "request" : "requests") + " in order. Completed replies are not repeated. " + (interruptedEstimate ? "Estimated remaining cost: " + formatEstimatedUsd(interruptedEstimate.expectedUsd) + "; up to about " + formatEstimatedUsd(interruptedEstimate.fullCapUsd) + " at the reply cap. " : "Catalog pricing is unavailable for this model. ") + "Automatic memory and optional scoring may add provider costs. No request starts until you confirm."), !interruptedEstimate && native && status.configured && h("button", { type: "button", className: "rcchat-btn", disabled: busy || priceLoading, onClick: loadModelPrices }, priceLoading ? "Loading prices…" : "Load model prices"), h("button", { type: "button", className: "rcchat-btn primary", disabled: busy || !status.configured, onClick: function () { resumeInterruptedRound(); } }, "Confirm remaining replies"), h("button", { type: "button", className: "rcchat-btn", onClick: function () { setRoundReview(false); } }, "Cancel")),
             h("button", { type: "button", className: "rcchat-btn", disabled: busy, onClick: discardInterruptedRound }, "Dismiss queue")),
         active && h(ChatComposer, { key: activeId, control: composerRef, value: draftRef.current[activeId] || "", chat: active, library: library, models: models, priceLoading: priceLoading, canLoadPrices: !!native && status.configured, onLoadPrices: loadModelPrices, busy: busy, characters: library.chars, cast: activeCast, speaker: activeCharacter, speakerKey: selectedParticipant(active) && participantKey(selectedParticipant(active)), speakerName: activeCharacter && speakerName(activeCharacter), onParticipant: updateParticipants, onOpenCast: function () { var options = document.querySelector('.rcchat-header-options[open]'); if (options) options.open = false; setCastOpen(true); }, onPreviewContext: function () { var text = (draftRef.current[activeId] || "").trim(); setPreview(assemble(active, library, text ? { role: "user", content: text } : null, models, directorScores)); }, onChange: noteDraft, onSend: sendWithAutoPair, onContinue: function () { var current = chatsRef.current.find(function (c) { return c.id === activeId; }); if (current) send(current.leafId || null); }, onStop: cancel, saveFailed: saved.indexOf("Not saved") === 0, onRetry: function () { retrySave().catch(function () {}); }, statusDetails: h(ComposerStatus, { busy: busy, phase: phase, active: active, budget: budget, status: saved.indexOf("Not saved") === 0 ? saved : linkStatus }) })
         ),
@@ -3365,6 +3377,74 @@ h("p", { className: "rcchat-hint" }, "The first group reply and the end of a que
         props.children));
   }
 
+  /* In-app replacement for window.confirm, which is unstyled, ignores the theme,
+     blocks the renderer and can be suppressed in the Android WebView. Built
+     with DOM calls (no hooks) so it can be awaited from any request flow. The
+     Cancel button is the default; Escape and the phone Back gesture reach it
+     through the workspace back handler, and locking the vault cancels it. */
+  function chatConfirm(options) {
+    options = options || {};
+    return new Promise(function (resolve) {
+      if (document.querySelector(".rcchat-confirm-back")) { resolve(false); return; }
+      var host = document.getElementById("rcv-chat-root") || document.body;
+      var previous = document.activeElement;
+      var back = document.createElement("div");
+      back.className = "rcchat-modalback rcchat-confirm-back";
+      back.style.zIndex = "400";
+      var box = document.createElement("section");
+      box.className = "rcchat-modal rcchat-confirm";
+      box.style.width = "min(440px,100%)";
+      box.style.padding = "20px 22px";
+      box.setAttribute("role", "alertdialog");
+      box.setAttribute("aria-modal", "true");
+      box.setAttribute("aria-label", options.title || "Please confirm");
+      var eyebrow = document.createElement("div");
+      eyebrow.className = "rcchat-private";
+      eyebrow.textContent = options.title || "Please confirm";
+      var text = document.createElement("p");
+      text.style.cssText = "margin:12px 0 16px;line-height:1.55";
+      text.textContent = options.message || "";
+      var row = document.createElement("div");
+      row.className = "rcchat-row";
+      row.style.cssText = "justify-content:flex-end;flex-wrap:wrap";
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "rcchat-btn";
+      cancel.textContent = options.cancelLabel || "Cancel";
+      var ok = document.createElement("button");
+      ok.type = "button";
+      ok.className = "rcchat-btn " + (options.danger ? "danger" : "primary");
+      ok.textContent = options.confirmLabel || "Continue";
+      row.appendChild(cancel);
+      row.appendChild(ok);
+      box.appendChild(eyebrow);
+      box.appendChild(text);
+      box.appendChild(row);
+      back.appendChild(box);
+      host.appendChild(back);
+      var finished = false;
+      function done(value) {
+        if (finished) return;
+        finished = true;
+        window.removeEventListener("rcv-locking", lock, true);
+        back.remove();
+        try { if (previous && previous.focus && document.contains(previous)) previous.focus(); } catch (e) {}
+        resolve(value);
+      }
+      function lock() { done(false); }
+      window.addEventListener("rcv-locking", lock, true);
+      back.addEventListener("rcchat-confirm-cancel", function () { done(false); });
+      back.addEventListener("mousedown", function (e) { if (e.target === back) done(false); });
+      back.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); }
+        else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === cancel ? ok : cancel).focus(); }
+      });
+      cancel.addEventListener("click", function () { done(false); });
+      ok.addEventListener("click", function () { done(true); });
+      cancel.focus();
+    });
+  }
+
   function portraitCrop(value) {
     value = value && typeof value === "object" ? value : {};
     function number(key, fallback, min, max) { var n = Number(value[key]); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback; }
@@ -3688,7 +3768,7 @@ h("p", { className: "rcchat-hint" }, "The first group reply and the end of a que
           h("div", { className: "rcchat-grid" }, h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-reading-mode" }, "Reading layout"), h("select", { id: "rcchat-reading-mode", value: active.readingMode || "bubbles", onChange: function (e) { props.onPatch({ readingMode: e.target.value }); } }, h("option", { value: "bubbles" }, "Chat bubbles"), h("option", { value: "novel" }, "Novel reading"))), h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-backdrop" }, "Bucket cover background"), h("select", { id: "rcchat-backdrop", value: active.chatBackdrop === false ? "off" : "on", onChange: function (e) { props.onPatch({ chatBackdrop: e.target.value === "on" }); } }, h("option", { value: "off" }, "Off"), h("option", { value: "on" }, "Use character’s bucket cover")))),
           h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-title" }, "Title"), h("input", { id: "rcchat-title", value: String(active.title || "").replace(/\s*\(memory rebuilt\)/gi, ""), onChange: function (e) { props.onPatch({ title: e.target.value }); } })),
           h(ModelControls, { chat: active, models: props.models, onPatch: props.onPatch, manualCommit: true }),
-          h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-temperature" }, "Creativity · " + active.temperature), h("input", { id: "rcchat-temperature", type: "range", min: 0, max: 2, step: .05, value: active.temperature, onChange: function (e) { props.onPatch({ temperature: Number(e.target.value) }); } })),
+          h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-temperature" }, "Creativity · " + (typeof active.temperature === "number" ? active.temperature : "1 (model default)")), h("input", { id: "rcchat-temperature", type: "range", min: 0, max: 2, step: .05, value: typeof active.temperature === "number" ? active.temperature : 1, onChange: function (e) { props.onPatch({ temperature: Number(e.target.value) }); } })),
           h("div", { className: "rcchat-field" }, h("label", { htmlFor: "rcchat-author" }, "Scene direction and boundaries"), h("textarea", { id: "rcchat-author", value: active.authorNote || "", onChange: function (e) { props.onPatch({ authorNote: e.target.value }); } }))),
         h("div", { className: "rcchat-pane", id: "rcchat-settings-tabs-writing", role: "tabpanel", "aria-label": "Writing", hidden: tab !== "writing" },
           h(PromptControls, { chat: active, onPatch: props.onPatch }),
