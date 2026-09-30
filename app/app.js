@@ -15,7 +15,7 @@ const {
 /* Single source of truth for the displayed version. Do not hand-edit: run
    `npm run set-version <v>`, which rewrites this line, app/package.json,
    FACTORY_BUILD in main.js and VERSION in build/installer.nsi together. */
-const APP_VERSION = "1.341";
+const APP_VERSION = "1.342";
 
 /* Version history shown in Settings.
    Only the 1.092 entry is a real record. Everything before it was reconstructed
@@ -26,6 +26,10 @@ const APP_VERSION = "1.341";
    in that order. Their version numbers are genuinely unknown, so none are
    claimed. The UI labels this section as reconstructed; keep that label. */
 const CHANGELOG = [{
+  heading: "1.342",
+  title: "Audit Fixes",
+  notes: ["New: Library stats is now in Settings and in Search, so phones can open it.","Improved: Escape closes Settings, the backup warning, New lorebook and the character editor.","Improved: Chat asks about paid group checks and deleting a message in Rolecraft's own dialog.","Improved: Larger touch targets in Chat and lists on touch screens; small labels are now 11px.","Fixed: Lorebook and prompt entries no longer overlap their buttons on phones.","Fixed: In the Light theme, Add portrait and Add page banner are readable.","Fixed: Chat settings no longer show \"Creativity · undefined\".","Fixed: On phones the character page's close button no longer covers the portrait.","Fixed: The character editor no longer opens with Delete selected.","Fixed: Better contrast on picture badges and brass buttons; firewall help names Rolecraft; unnamed menus now have names."]
+}, {
   heading: "1.341",
   title: "Gallery Polish",
   notes: ["New: On phones, selected pictures get a floating bar with Photo info, Download and Delete.", "Improved: Gallery pictures sit in even, framed tiles on the character page and in the grid. Nothing is cropped.", "Improved: On phones the picture grid opens straight to your pictures; editing tools appear when you select one.", "Improved: Character details such as age, gender and bucket show as tidy labelled cards.", "Improved: Character page buttons line up neatly on phones.", "Fixed: Grid captions stay readable in the Light theme, and the close button shows clearly in every theme.", "Note: Windows can update with the .rcvup file or the installer. Android needs the new APK."]
@@ -2049,7 +2053,10 @@ function customThemeVars(value, contrast) {
   const muted = readableThemeColour(mutedWanted, surfaces, 4.5);
   const dimWanted = contrast === "max" ? text : mixThemeHex(text, ink, contrast === "high" ? .16 : .32);
   const dim = readableThemeColour(dimWanted, surfaces, 4.5);
-  const accent = readableThemeColour(chosen.accent, surfaces, 4.5);
+  /* The accent is also text on its own 14% tint (ghost brass buttons, chips),
+     which is a little closer to it than the plain surfaces, so check both. */
+  const accentPlain = readableThemeColour(chosen.accent, surfaces, 4.5);
+  const accent = readableThemeColour(accentPlain, surfaces.concat(surfaces.map(sf => mixThemeHex(sf, accentPlain, .14))), 4.7);
   const darkCanvas = themeLuminance(ink) < .38;
   const accentDeep = mixThemeHex(accent, darkCanvas ? "#ffffff" : "#000000", .14);
   const buttonText = readableThemeColour(darkCanvas ? "#10131d" : "#ffffff", [accent, accentDeep], 4.5);
@@ -2151,7 +2158,7 @@ const CSS = `
   .rcv.charsnap .eyebrow { color: var(--blue); letter-spacing: .24em; }
   .rcv.charsnap .navitem.active { box-shadow: inset 3px 0 0 var(--brass); }
   .rcv .serif { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
-  .rcv .eyebrow { font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--brass); font-weight: 700; }
+  .rcv .eyebrow { font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--brass); font-weight: 700; }
   .rcv button { font: inherit; cursor: pointer; border: none; }
   /* Checkboxes and radios are excluded: the shared rule stretched them to full
      width with text-field padding, which is why they floated oddly beside their
@@ -2425,6 +2432,10 @@ const CSS = `
   /* A fade from clear to dark read as a grey smudge over the light theme's pale
      frame. Grid captions are a solid dark strip instead, legible in every theme. */
   .rcv .imggrid .tile .tlab { padding: 7px 10px; background: rgba(5,8,17,.8); }
+  .rcv .editor-title:focus { outline: none; }
+  /* A control focused by keyboard must not end up under the sticky Settings header. */
+  .rcv .settings-modal { scroll-padding-top: 170px; }
+  .rcv.phone .settings-nav { padding-right: 28px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent); }
   .rcv .cpage-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
   .rcv .cpage-fact { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 6px 12px 7px; min-width: 0; }
   .rcv .cpage-fact dt { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 2px; }
@@ -2786,9 +2797,11 @@ const CSS = `
        mobile override prevents them from occupying grid cells underneath the
        five-destination Android bar. */
     .rcv.phone .sidebar .brand, .rcv.phone .sidebar .side-tools { display: none !important; }
+    /* The fixed close button owns the top-right corner; start the page below it. */
+    .rcv.phone .hero .hero-inner { padding-top: 78px !important; }
     .rcv.phone #rcv-mobile-chat { min-width: 0; align-self: stretch; }
     .rcv.phone #rcv-mobile-chat .rcchat-launch { margin: 0; min-width: 0; min-height: 54px; display: flex; }
-    .rcv.phone .sidebar .primary-nav { width: auto; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 10px; line-height: 1.05; }
+    .rcv.phone .sidebar .primary-nav { width: auto; min-width: 0; min-height: 54px; padding: 5px 2px; gap: 2px; flex-direction: column; justify-content: center; border-radius: 9px; font-size: 11px; line-height: 1.05; }
     .rcv.phone .sidebar .primary-nav svg { display: block; flex: 0 0 auto; margin-left: auto; margin-right: auto; }
     .rcv.phone .sidebar .primary-nav .navlabel { display: block; width: 100%; max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
     .rcv.phone .sidebar .primary-nav.active { box-shadow: inset 0 2px 0 var(--brass); }
@@ -3009,13 +3022,15 @@ const CSS = `
   .rcv.phone :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]), select) { min-height: 48px; }
   .rcv.phone .closex { width: 48px !important; height: 48px !important; }
   .rcv.phone .disclosure-toggle { min-height: 44px; }
+  .rcv.phone .sec-head { min-height: 44px; }
+  .rcv.phone .vault-sync-panel .sync-help > summary { min-height: 44px; }
   .rcv.phone .modal summary { min-height: 44px; display: flex; align-items: center; }
   .rcv.phone .palette-row { min-height: 48px; }
 
   /* Text over artwork sits on a dark scrim in every theme, so it uses a light
      form of the accent. Light and dark Custom accents otherwise fell to about
      3.4:1 on card captions, album badges and bucket covers. */
-  .rcv { --art-accent: color-mix(in srgb, var(--brass) 60%, #fff6e0); }
+  .rcv { --art-accent: color-mix(in srgb, var(--brass) 50%, #fff6e0); }
   .rcv:is(.light, .custom) :is(.char-card .meta, .wtile .wacts, .grid-image-badge, button.stile:not([aria-label^="Create"])) {
     --brass: var(--art-accent); --brass-line: color-mix(in srgb, var(--art-accent) 55%, transparent);
     --brass-soft: color-mix(in srgb, var(--art-accent) 16%, transparent);
@@ -6642,6 +6657,7 @@ function ImageGridView({
     }
   }, /*#__PURE__*/React.createElement("select", {
     value: "",
+    "aria-label": "Assign selected pictures to a variant",
     disabled: !selCount,
     style: {
       width: 200,
@@ -7235,12 +7251,16 @@ function LoreEntryView({
     style: {
       display: "flex",
       alignItems: "flex-start",
+      flexWrap: "wrap",
       gap: 12,
-      marginBottom: 6
+      marginBottom: 6,
+      // leave the corner clear so nothing runs under the close button
+      paddingRight: 40
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      minWidth: 0
+      minWidth: 0,
+      flex: "1 1 220px"
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
@@ -7248,7 +7268,8 @@ function LoreEntryView({
     className: "serif",
     style: {
       fontSize: 26,
-      margin: "2px 0 4px"
+      margin: "2px 0 4px",
+      overflowWrap: "anywhere"
     }
   }, e.title || "Untitled"), e.entryType && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7271,9 +7292,9 @@ function LoreEntryView({
       marginLeft: "auto",
       display: "flex",
       gap: 8,
-      flexShrink: 0,
-      // leave the corner clear so the buttons do not run under the X
-      paddingRight: 40
+      flexWrap: "wrap",
+      // the title column already clears the X; on a phone the buttons drop to their own row
+      minWidth: 0
     }
   }, onCopy && /*#__PURE__*/React.createElement("button", {
     className: "btn btn-brass",
@@ -8431,6 +8452,7 @@ function CharacterPage({
       backgroundImage: "url(" + profile + ")"
     }
   }), /*#__PURE__*/React.createElement("div", {
+    className: "hero-inner",
     style: {
       position: "relative",
       maxWidth: 2280,
@@ -9266,6 +9288,7 @@ function PersonaPage({
       backgroundImage: "url(" + portrait + ")"
     }
   }), /*#__PURE__*/React.createElement("div", {
+    className: "hero-inner",
     style: {
       position: "relative",
       maxWidth: 2280,
@@ -10277,7 +10300,7 @@ function CharacterVoiceEditor({ voice, style, provider, elevenVoiceId, elevenVoi
     !eleven && /*#__PURE__*/React.createElement(React.Fragment, null,
       /*#__PURE__*/React.createElement("p", { className: "muted" }, "Play saved Chat replies with Gemini 3.8 Flash TTS through your protected OpenRouter key. Playback and AI suggestions are separate paid requests. Nothing is generated automatically unless you turn on auto-read in Chat."),
       /*#__PURE__*/React.createElement("label", { className: "lbl" }, "Voice"),
-      /*#__PURE__*/React.createElement("select", { className: "input", value: CHARACTER_TTS_VOICES.includes(voice) ? voice : "Kore", onChange: e => onVoice(e.target.value), style: { width: "100%", maxWidth: 400 } }, CHARACTER_TTS_VOICES.map(item => /*#__PURE__*/React.createElement("option", { key: item, value: item }, item))),
+      /*#__PURE__*/React.createElement("select", { className: "input", "aria-label": "Voice", value: CHARACTER_TTS_VOICES.includes(voice) ? voice : "Kore", onChange: e => onVoice(e.target.value), style: { width: "100%", maxWidth: 400 } }, CHARACTER_TTS_VOICES.map(item => /*#__PURE__*/React.createElement("option", { key: item, value: item }, item))),
       /*#__PURE__*/React.createElement("label", { className: "lbl", style: { display: "block", marginTop: 12 } }, "Voice direction"),
       /*#__PURE__*/React.createElement("textarea", { className: "input", rows: 2, maxLength: 300, value: style || "", onChange: e => onStyle(e.target.value), placeholder: "Warm, hushed, unhurried; soften on vulnerable lines.", style: { width: "100%", boxSizing: "border-box" } }),
       /*#__PURE__*/React.createElement("button", { className: "btn btn-brass", type: "button", disabled: suggesting, onClick: suggest }, suggesting ? "Suggesting…" : "Suggest from character details")),
@@ -10356,6 +10379,20 @@ function CharacterEditor({
   const tryClose = () => {
     if (editorDirty()) setConfirmLeave(true);else onClose();
   };
+  /* Escape leaves like every other editor, through the same unsaved-changes
+     guard as Cancel. With the guard already showing it keeps the writing. A
+     picture window, cropper or menu on top takes the key first. */
+  useEffect(() => {
+    const key = e => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector(".modal-back, .lb-root, .ss-root, .image-studio")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (confirmLeave) setConfirmLeave(false);else tryClose();
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [c, confirmLeave]);
   const [advOpen, setAdvOpenRaw] = useState(false);
   useEffect(() => {
     sGet("ui:advopen").then(v => {
@@ -10685,7 +10722,10 @@ function CharacterEditor({
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "eyebrow"
   }, initial.createdAt ? "Edit character" : "New character"), /*#__PURE__*/React.createElement("h1", {
-    className: "serif",
+    className: "serif editor-title",
+    // first focus lands on the heading, not on Delete (the first button in the row)
+    tabIndex: -1,
+    "data-initial-focus": "true",
     style: {
       fontSize: "clamp(23px, 2.8vw, 34px)",
       margin: "4px 0 0",
@@ -10783,7 +10823,7 @@ function CharacterEditor({
       aspectRatio: "3/4",
       borderRadius: 12,
       overflow: "hidden",
-      background: "rgba(8,12,26,.6)",
+      background: "var(--field)",
       border: "1px dashed var(--line2)",
       color: "var(--dim)",
       display: "flex",
@@ -10851,7 +10891,7 @@ function CharacterEditor({
       aspectRatio: "16/6",
       borderRadius: 10,
       overflow: "hidden",
-      background: "rgba(8,12,26,.6)",
+      background: "var(--field)",
       border: "1px dashed var(--line2)",
       color: "var(--dim)",
       display: "flex",
@@ -11610,7 +11650,7 @@ function CharacterEditor({
       overflow: "hidden",
       padding: 0,
       border: "1px solid var(--line)",
-      background: "rgba(8,12,26,.6)"
+      background: "var(--field)"
     }
   }, imgCache[g.imgId] ? /*#__PURE__*/React.createElement("img", {
     src: imgCache[g.imgId],
@@ -12436,6 +12476,7 @@ function TrashModal({
       key: String(g.type),
       style: { marginTop: 12 }
     }, /*#__PURE__*/React.createElement("button", {
+      className: "disclosure-toggle",
       onClick: () => setOpen(o => ({ ...o, [g.type]: !o[g.type] })),
       "aria-expanded": opened,
       disabled: total === 0,
@@ -12596,6 +12637,7 @@ function ChangelogModal({ onClose }) {
     key: rel.heading,
     style: { marginTop: ri ? 8 : 0 }
   }, /*#__PURE__*/React.createElement("button", {
+    className: "disclosure-toggle",
     onClick: () => setOpenRel(o => o === ri ? -1 : ri),
     "aria-expanded": openRel === ri,
     style: {
@@ -12632,6 +12674,32 @@ function ChangelogModal({ onClose }) {
     className: "release-notes",
     style: { fontSize: 13, lineHeight: 1.6, maxHeight: "none", overflow: "visible" }
   }, /*#__PURE__*/React.createElement(ReleaseNotes, { rel: rel })))))));
+}
+
+/* Escape for a dialog that is drawn inline rather than through SimpleModal.
+   Capture phase, so the page underneath never acts on the same press. A dialog
+   that owns a backdrop (backRef) steps aside when another overlay is on top,
+   leaving that one to take the key, which keeps "Escape closes only what is on
+   top" true for windows opened from it. */
+function useEscapeClose(onClose, active, backRef) {
+  const fn = useRef(onClose);
+  fn.current = onClose;
+  useEffect(() => {
+    if (!active) return;
+    const key = e => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const back = backRef && backRef.current;
+      if (back) {
+        const other = [...document.querySelectorAll(".modal-back, .lb-root, .ss-root, .image-studio")].some(el => el !== back && !back.contains(el) && !el.contains(back) && el.getClientRects().length > 0);
+        if (other) return;
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      fn.current();
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [active]);
 }
 
 function SimpleModal({ eyebrow, title, onClose, children, className, zIndex }) {
@@ -12987,6 +13055,7 @@ function SettingsModal({
   onOpenTrash,
   onOpenHistory,
   onOpenGuide,
+  onOpenStats,
   onOpenTransfer,
   onCopyDiagnostics,
   lastBackup,
@@ -13054,6 +13123,10 @@ function SettingsModal({
   /* The other device is asking to mirror from this one. Held in state rather
      than answered straight away, because a person has to read it. */
   const [mirrorAsk, setMirrorAsk] = useState(null);
+  const settingsBackRef = useRef(null);
+  useEscapeClose(() => {
+    if (xferScan) setXferScan(false);else if (!mirrorAsk) onClose();
+  }, true, settingsBackRef);
   const [reverseFrom, setReverseFrom] = useState(null); // their code, once we have said "the other way"
   useEffect(() => {
     if (!window.transfer || !window.transfer.onMirrorRequest) return;
@@ -13264,6 +13337,7 @@ function SettingsModal({
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-back",
+    ref: settingsBackRef,
     onClick: onClose
   }, /*#__PURE__*/React.createElement("div", {
     className: "card modal settings-modal",
@@ -14198,7 +14272,15 @@ function SettingsModal({
     className: "fr-label"
   }, "Guide"), /*#__PURE__*/React.createElement("div", {
     className: "fr-hint"
-  }, "How the dashboard, libraries, pictures, transfers, security and every edition work.")), /*#__PURE__*/React.createElement("button", {
+  }, "How the dashboard, libraries, pictures, transfers, security and every edition work.")), onOpenStats && /*#__PURE__*/React.createElement("button", {
+    className: "filerow",
+    "aria-label": "Library stats",
+    onClick: onOpenStats
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "fr-label"
+  }, "Library stats"), /*#__PURE__*/React.createElement("div", {
+    className: "fr-hint"
+  }, "How many records and pictures you have, and how much space they take.")), /*#__PURE__*/React.createElement("button", {
     className: "filerow",
     onClick: onOpenTrash
   }, /*#__PURE__*/React.createElement("div", {
@@ -16753,6 +16835,9 @@ function RolecraftVault() {
 
   /* --- backup --- */
   const [exportConfirm, setExportConfirm] = useState(null); // { what, fn }
+  useEscapeClose(() => setExportConfirm(null), !!exportConfirm);
+  useEscapeClose(() => setNewBookOpen(false), !!newBookOpen);
+  useEscapeClose(() => setNewPBookOpen(false), !!newPBookOpen);
   const askExport = (what, fn, warning) => setExportConfirm({
     what,
     fn,
@@ -17998,7 +18083,7 @@ function RolecraftVault() {
       letterSpacing: ".08em",
       marginTop: 3
     }
-  }, "PRIVATE VAULT"))), nav.map(n => /*#__PURE__*/React.createElement("button", {
+  }, "ROLEPLAY LIBRARY"))), nav.map(n => /*#__PURE__*/React.createElement("button", {
     key: n.id,
     className: "navitem primary-nav" + (view === n.id ? " active" : ""),
     /* Below 1020px wide the labels are hidden and these become bare icons, which
@@ -18689,7 +18774,7 @@ function RolecraftVault() {
         color: "var(--mut)",
         fontSize: 14
       }
-    }, "Build, organise and refine your roleplay library."), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", style: { marginTop: 10 }, onClick: () => navigatePrimary("prompts") }, /*#__PURE__*/React.createElement(Ic, { d: icons.prompt, size: 17 }), " Prompt Vault")), /*#__PURE__*/React.createElement("div", {
+    }, "Build, organise and refine your roleplay library."), /*#__PURE__*/React.createElement("button", { className: "btn btn-ghost", style: { marginTop: 10 }, onClick: () => navigatePrimary("prompts") }, /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", gap: 8, alignItems: "center" } }, /*#__PURE__*/React.createElement(Ic, { d: icons.prompt, size: 17 }), "Prompt Vault"))), /*#__PURE__*/React.createElement("div", {
       className: "dashboard-counts",
       style: {
         display: "grid",
@@ -18789,7 +18874,7 @@ function RolecraftVault() {
   }, /*#__PURE__*/React.createElement("input", {
     value: charQ,
     onChange: e => setCharQ(e.target.value),
-    placeholder: "Search names, tags, terms, story…",
+    placeholder: "Search names, tags, story…",
     style: {
       width: 240
     }
@@ -19174,7 +19259,7 @@ function RolecraftVault() {
       d: icons.plus,
       size: 12
     }), " Add characters"))));
-  })(), /*#__PURE__*/React.createElement("div", {
+  })(), chars.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 16,
       display: "flex",
@@ -21500,6 +21585,7 @@ function RolecraftVault() {
     },
     onClose: () => setShowSettings(false),
     onOpenGuide: () => { setShowSettings(false); setShowGuide(true); },
+    onOpenStats: () => { setShowSettings(false); openVaultStats(); },
     onOpenTrash: () => setShowTrash(true),
     onOpenHistory: () => setShowHistory(true),
     onOpenTransfer: () => { setShowSettings(false); setShowTransfer(true); },
@@ -21611,7 +21697,7 @@ function RolecraftVault() {
     onToggleFavorite: toggleFavorite,
     onOpen: openLibraryItem,
     onClose: () => setCommandOpen(false),
-    actions: [{ label: "New character", hint: "Open the character editor", run: () => { setCommandOpen(false); setEditingChar(blankChar()); } }, { label: "New persona", hint: "Create who you play as", run: () => { setCommandOpen(false); setEditingRecord({ type: "persona", record: { id: uid() } }); } }, { label: "New lore entry", hint: "Add a world rule, place or person", run: () => { setCommandOpen(false); setEditingRecord({ type: "lore", record: { id: uid() } }); } }, { label: "New prompt", hint: "Create a reusable scene starter", run: () => { setCommandOpen(false); setEditingRecord({ type: "prompt", record: { id: uid() } }); } }, { label: "Use a template", hint: "Built-in and saved starters", run: () => { setCommandOpen(false); setShowTemplates(true); } }, { label: "Guided device transfer", hint: "Copy over local Wi-Fi", run: () => { setCommandOpen(false); setShowTransfer(true); } }, { label: "Export full backup", hint: backupDue ? "Recommended now" : "Save a verified copy", run: () => { setCommandOpen(false); askExport("a full vault backup", exportAll); } }, { label: "Copy private diagnostics", hint: "No names, writing or pictures", run: () => { setCommandOpen(false); copyDiagnostics(); } }, { label: "Open Settings", key: "Ctrl+,", run: () => { setCommandOpen(false); setShowSettings(true); } }, { label: "Open guide", run: () => { setCommandOpen(false); setShowGuide(true); } }]
+    actions: [{ label: "New character", hint: "Open the character editor", run: () => { setCommandOpen(false); setEditingChar(blankChar()); } }, { label: "New persona", hint: "Create who you play as", run: () => { setCommandOpen(false); setEditingRecord({ type: "persona", record: { id: uid() } }); } }, { label: "New lore entry", hint: "Add a world rule, place or person", run: () => { setCommandOpen(false); setEditingRecord({ type: "lore", record: { id: uid() } }); } }, { label: "New prompt", hint: "Create a reusable scene starter", run: () => { setCommandOpen(false); setEditingRecord({ type: "prompt", record: { id: uid() } }); } }, { label: "Use a template", hint: "Built-in and saved starters", run: () => { setCommandOpen(false); setShowTemplates(true); } }, { label: "Guided device transfer", hint: "Copy over local Wi-Fi", run: () => { setCommandOpen(false); setShowTransfer(true); } }, { label: "Export full backup", hint: backupDue ? "Recommended now" : "Save a verified copy", run: () => { setCommandOpen(false); askExport("a full vault backup", exportAll); } }, { label: "Copy private diagnostics", hint: "No names, writing or pictures", run: () => { setCommandOpen(false); copyDiagnostics(); } }, { label: "Open Settings", key: "Ctrl+,", run: () => { setCommandOpen(false); setShowSettings(true); } }, { label: "Library stats", hint: "Records, pictures and space used", run: () => { setCommandOpen(false); openVaultStats(); } }, { label: "Open guide", run: () => { setCommandOpen(false); setShowGuide(true); } }]
   }), /*#__PURE__*/React.createElement("input", {
     ref: bucketCoverRef,
     type: "file",

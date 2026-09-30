@@ -1009,3 +1009,20 @@
 #rcv-chat-root .rcchat-check input{flex:none;width:20px;height:20px;margin:2px 0 0;accent-color:var(--brass)}
 #rcv-chat-root .rcchat-check small{display:block;margin-top:3px;color:var(--mut);font-size:12px;line-height:1.45}
 #rcv-chat-root .rcchat-check>span{font-size:14px;line-height:1.4}
+/* 1.342 touch sizing: Android tablets and other coarse-pointer screens wider than a phone keep every chat control at least 44px; phones already use 48px and keep the rest of this list there. */
+@media(min-width:761px) and (pointer:coarse){
+#rcv-chat-root .rcchat-btn,#rcv-chat-root .rcchat-tool,#rcv-chat-root .rcchat-model-switch,#rcv-chat-root .rcchat-jump{min-height:44px}
+#rcv-chat-root .rcchat-icon{min-width:44px}
+#rcv-chat-root .rcchat-message-actions>summary{box-sizing:border-box;min-width:44px;min-height:44px}
+#rcv-chat-root .rcchat-usage>summary,#rcv-chat-root .rcchat-composer-status>summary,#rcv-chat-root .rcchat-modal details>summary{display:flex;align-items:center;box-sizing:border-box;min-height:44px}
+#rcv-chat-root .rcchat-modal input:not([type=checkbox]):not([type=radio]):not([type=range]),#rcv-chat-root .rcchat-modal select{min-height:44px}
+}
+@media(max-width:760px){
+#rcv-chat-root .rcchat-jump{min-height:48px}
+#rcv-chat-root .rcchat-usage>summary,#rcv-chat-root .rcchat-composer-status>summary,#rcv-chat-root .rcchat-modal details>summary{display:flex;align-items:center;box-sizing:border-box;min-height:48px}
+#rcv-chat-root .rcchat-modal input:not([type=checkbox]):not([type=radio]):not([type=range]),#rcv-chat-root .rcchat-modal select{min-height:48px}
+}
+/* 1.342: small labels stay at 11px, and the scene summary wraps instead of scrolling sideways. */
+#rcv-chat-root .rcchat-private,#rcv-chat-root .rcchat-side>.rcchat-stat,#rcv-chat-root .rcchat-msghead time{font-size:11px}
+#rcv-chat-root .rcchat-scene-strip-body{overflow-x:hidden}
+#rcv-chat-root .rcchat-scene-strip-body>*{min-width:0;overflow-wrap:anywhere}
